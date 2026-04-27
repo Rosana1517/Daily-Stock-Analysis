@@ -1,0 +1,20 @@
+[project]
+name = "stock-signal-system"
+version = "0.1.0"
+description = "Daily industry and stock signal pipeline for watchlist generation."
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+market = ["yfinance>=0.2.66"]
+
+[tool.setuptools.packages.find]
+include = ["stock_signal_system*"]
+exclude = ["data*", "configs*", "reports*", "docs*", "tests*"]
+
+[project.scripts]
+stock-signals = "stock_signal_system.cli:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

@@ -1,0 +1,93 @@
+[
+  {
+    "name": "BBC Business",
+    "url": "https://feeds.bbci.co.uk/news/business/rss.xml",
+    "region": "global",
+    "category": "business",
+    "quality": "primary"
+  },
+  {
+    "name": "BBC Technology",
+    "url": "https://feeds.bbci.co.uk/news/technology/rss.xml",
+    "region": "global",
+    "category": "technology",
+    "quality": "primary"
+  },
+  {
+    "name": "CNA Finance",
+    "url": "https://feeds.feedburner.com/rsscna/finance",
+    "region": "taiwan",
+    "category": "finance",
+    "quality": "primary"
+  },
+  {
+    "name": "CNA Securities",
+    "url": "https://feeds.feedburner.com/rsscna/finance",
+    "region": "taiwan",
+    "category": "securities",
+    "quality": "primary"
+  },
+  {
+    "name": "CNA Technology",
+    "url": "https://feeds.feedburner.com/rsscna/technology",
+    "region": "taiwan",
+    "category": "technology",
+    "quality": "primary"
+  },
+  {
+    "name": "CNA International",
+    "url": "https://feeds.feedburner.com/rsscna/intworld",
+    "region": "taiwan",
+    "category": "world",
+    "quality": "primary"
+  },
+  {
+    "name": "LTN Business",
+    "url": "https://news.ltn.com.tw/rss/business.xml",
+    "region": "taiwan",
+    "category": "business",
+    "quality": "primary"
+  },
+  {
+    "name": "LTN World",
+    "url": "https://news.ltn.com.tw/rss/world.xml",
+    "region": "taiwan",
+    "category": "world",
+    "quality": "primary"
+  },
+  {
+    "name": "LTN Latest",
+    "url": "https://news.ltn.com.tw/rss/all.xml",
+    "region": "taiwan",
+    "category": "latest",
+    "quality": "primary"
+  },
+  {
+    "name": "NYTimes Business",
+    "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
+    "region": "us",
+    "category": "business",
+    "quality": "primary"
+  },
+  {
+    "name": "HuffPost World",
+    "url": "https://www.huffpost.com/section/world-news/feed",
+    "region": "global",
+    "category": "world",
+    "quality": "primary"
+  },
+  {
+    "name": "Fox News Latest",
+    "url": "http://feeds.foxnews.com/foxnews/latest",
+    "region": "us",
+    "category": "latest",
+    "quality": "primary"
+  },
+  {
+    "name": "LA Times World Nation",
+    "url": "https://www.latimes.com/world-nation/rss2.0.xml",
+    "region": "us",
+    "category": "world",
+    "quality": "primary"
+  }
+]
