@@ -12,8 +12,8 @@ on:
           - "true"
           - "false"
   schedule:
-    # 07:10 UTC = 15:10 Asia/Taipei, after Taiwan market close.
-    - cron: "10 7 * * 1-5"
+    # 00:30 UTC = 08:30 Asia/Taipei.
+    - cron: "30 0 * * 1-5"
 
 permissions:
   contents: write
