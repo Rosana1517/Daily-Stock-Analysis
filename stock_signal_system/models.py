@@ -12,6 +12,7 @@ class NewsItem:
     source: str
     body: str
     industries: tuple[str, ...]
+    source_weight: float = 1.0
 
 
 @dataclass(frozen=True)

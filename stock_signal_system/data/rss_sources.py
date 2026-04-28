@@ -73,6 +73,8 @@ class RssSource:
     region: str
     category: str
     quality: str
+    source_type: str = "media"
+    weight: float = 1.0
 
 
 def load_rss_sources(path: Path) -> list[RssSource]:
@@ -94,7 +96,7 @@ def fetch_rss_news(sources_path: Path, cache_dir: Path, limit_per_source: int = 
 def save_news_csv(news: list[NewsItem], path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["date", "title", "source", "body", "industries"])
+        writer = csv.DictWriter(f, fieldnames=["date", "title", "source", "source_weight", "body", "industries"])
         writer.writeheader()
         for item in news:
             writer.writerow(
@@ -102,6 +104,7 @@ def save_news_csv(news: list[NewsItem], path: Path) -> Path:
                     "date": item.date.isoformat(),
                     "title": item.title,
                     "source": item.source,
+                    "source_weight": item.source_weight,
                     "body": item.body,
                     "industries": ";".join(item.industries),
                 }
@@ -110,7 +113,13 @@ def save_news_csv(news: list[NewsItem], path: Path) -> Path:
 
 
 def _parse_feed(source: RssSource, xml_text: str, limit: int) -> list[NewsItem]:
-    root = ET.fromstring(xml_text)
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        try:
+            root = ET.fromstring(_sanitize_xml(xml_text))
+        except ET.ParseError:
+            return _parse_feed_with_regex(source, xml_text, limit)
     items = root.findall(".//item")[:limit]
     if not items:
         items = root.findall(".//{http://www.w3.org/2005/Atom}entry")[:limit]
@@ -128,9 +137,40 @@ def _parse_feed(source: RssSource, xml_text: str, limit: int) -> list[NewsItem]:
                     source=source.name,
                     body=body,
                     industries=tuple(industries),
+                    source_weight=float(source.weight),
                 )
             )
     return parsed
+
+
+def _parse_feed_with_regex(source: RssSource, xml_text: str, limit: int) -> list[NewsItem]:
+    parsed: list[NewsItem] = []
+    for raw_item in re.findall(r"<item\b.*?</item>", xml_text, flags=re.IGNORECASE | re.DOTALL)[:limit]:
+        title = _clean_text(_tag_text(raw_item, "title"))
+        body = _clean_text(_tag_text(raw_item, "description"))
+        industries = _classify_industries(title, body)
+        if not title or not industries:
+            continue
+        parsed.append(
+            NewsItem(
+                date=date.today(),
+                title=title,
+                source=source.name,
+                body=body,
+                industries=tuple(industries),
+                source_weight=float(source.weight),
+            )
+        )
+    return parsed
+
+
+def _tag_text(xml_fragment: str, tag: str) -> str:
+    match = re.search(rf"<{tag}\b[^>]*>(.*?)</{tag}>", xml_fragment, flags=re.IGNORECASE | re.DOTALL)
+    if not match:
+        return ""
+    text = match.group(1)
+    cdata = re.fullmatch(r"\s*<!\[CDATA\[(.*)\]\]>\s*", text, flags=re.DOTALL)
+    return cdata.group(1) if cdata else text
 
 
 def _text(item: ET.Element, tag: str) -> str:
@@ -144,6 +184,12 @@ def _clean_text(value: str) -> str:
     text = re.sub(r"<style.*?</style>", " ", text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _sanitize_xml(value: str) -> str:
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", value)
+    text = re.sub(r"&(?!amp;|lt;|gt;|quot;|apos;|#[0-9]+;|#x[0-9a-fA-F]+;)", "&amp;", text)
     return text
 
 

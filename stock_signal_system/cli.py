@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 
 from stock_signal_system.config import AppConfig
-from stock_signal_system.data.finmind import FinMindClient, enrich_stock_csv_with_tick_snapshot, save_tick_snapshot_csv
 from stock_signal_system.data.rss_sources import fetch_rss_news, save_news_csv
+from stock_signal_system.data.tpex import build_tpex_daily_price_csv, build_tpex_stock_csv, combine_csv_files
 from stock_signal_system.data.twse import build_twse_daily_price_csv, build_twse_material_news_csv, build_twse_stock_csv
 from stock_signal_system.data.yfinance_source import download_yfinance_history
 from stock_signal_system.pages_publish import publish_report_to_pages
@@ -28,24 +27,12 @@ def main() -> None:
     refresh_parser.add_argument("--config", required=True, help="Path to JSON config.")
     refresh_parser.add_argument("--cache-dir", default=".cache", help="Cache directory.")
     refresh_parser.add_argument("--skip-twse", action="store_true", help="Skip TWSE OpenAPI refresh.")
-    refresh_parser.add_argument("--finmind-token-env", default="FINMIND_TOKEN", help="Environment variable with FinMind token.")
+    refresh_parser.add_argument("--skip-tpex", action="store_true", help="Skip TPEx OpenAPI refresh.")
 
     rss_parser = subparsers.add_parser("fetch-news", help="Fetch RSS news into a CSV file.")
     rss_parser.add_argument("--sources", required=True, help="Path to RSS sources JSON.")
     rss_parser.add_argument("--output", required=True, help="Output CSV path.")
     rss_parser.add_argument("--cache-dir", default=".cache", help="Cache directory.")
-
-    finmind_parser = subparsers.add_parser("fetch-finmind", help="Fetch Taiwan stock price rows from FinMind.")
-    finmind_parser.add_argument("--stock-id", required=True, help="Taiwan stock id, e.g. 2330.")
-    finmind_parser.add_argument("--start-date", required=True, help="YYYY-MM-DD.")
-    finmind_parser.add_argument("--end-date", required=True, help="YYYY-MM-DD.")
-    finmind_parser.add_argument("--token-env", default="FINMIND_TOKEN", help="Environment variable with FinMind token.")
-    finmind_parser.add_argument("--cache-dir", default=".cache", help="Cache directory.")
-
-    snapshot_parser = subparsers.add_parser("fetch-finmind-snapshot", help="Fetch FinMind Taiwan stock tick snapshot.")
-    snapshot_parser.add_argument("--output", default="data/finmind_tick_snapshot.csv", help="Output snapshot CSV.")
-    snapshot_parser.add_argument("--token-env", default="FINMIND_TOKEN", help="Environment variable with FinMind token.")
-    snapshot_parser.add_argument("--cache-dir", default=".cache", help="Cache directory.")
 
     yf_parser = subparsers.add_parser("fetch-yfinance", help="Fetch yfinance daily history into cache CSV.")
     yf_parser.add_argument("--symbols", nargs="+", required=True, help="Symbols, e.g. AAPL MSFT 2330.TW.")
@@ -57,6 +44,11 @@ def main() -> None:
     twse_parser.add_argument("--prices-output", default="data/twse_price_daily.csv", help="Output daily OHLC CSV.")
     twse_parser.add_argument("--news-output", default="data/twse_material_news.csv", help="Output material news CSV.")
     twse_parser.add_argument("--cache-dir", default=".cache", help="Cache directory.")
+
+    tpex_parser = subparsers.add_parser("fetch-tpex", help="Fetch TPEx OpenAPI datasets into system CSV files.")
+    tpex_parser.add_argument("--stocks-output", default="data/tpex_stocks.csv", help="Output OTC stock snapshot CSV.")
+    tpex_parser.add_argument("--prices-output", default="data/tpex_price_daily.csv", help="Output OTC daily OHLC CSV.")
+    tpex_parser.add_argument("--cache-dir", default=".cache", help="Cache directory.")
 
     pages_parser = subparsers.add_parser("publish-pages", help="Publish a generated HTML report to GitHub Pages repo.")
     pages_parser.add_argument("--report-html", required=True, help="Path to generated report HTML.")
@@ -105,39 +97,28 @@ def main() -> None:
             print(f"twse_stocks_output={stocks_output}")
             print(f"twse_prices_output={prices_output}")
             print(f"twse_news_output={news_output}")
-            token = os.getenv(args.finmind_token_env)
-            if token:
-                try:
-                    client = FinMindClient(Path(args.cache_dir), token=token)
-                    rows = client.taiwan_stock_tick_snapshot()
-                    snapshot_output = save_tick_snapshot_csv(rows, Path("data/finmind_tick_snapshot.csv"))
-                    updated = enrich_stock_csv_with_tick_snapshot(stocks_output, rows)
-                    print(f"finmind_tick_snapshot_rows={len(rows)}")
-                    print(f"finmind_tick_snapshot_output={snapshot_output}")
-                    print(f"finmind_tick_snapshot_enriched_stocks={updated}")
-                except Exception as exc:
-                    print(f"finmind_tick_snapshot_skipped={exc}")
-            else:
-                print(f"finmind_tick_snapshot_skipped=missing_env:{args.finmind_token_env}")
+        if args.skip_tpex:
+            print("tpex_skipped=skip_tpex")
+        else:
+            tpex_stocks_output = build_tpex_stock_csv(Path("data/tpex_stocks.csv"), Path(args.cache_dir))
+            tpex_prices_output = build_tpex_daily_price_csv(Path("data/tpex_price_daily.csv"), Path(args.cache_dir))
+            print(f"tpex_stocks_output={tpex_stocks_output}")
+            print(f"tpex_prices_output={tpex_prices_output}")
+        if not args.skip_twse or not args.skip_tpex:
+            combined_stocks = combine_csv_files(
+                [Path("data/twse_stocks.csv"), Path("data/tpex_stocks.csv")],
+                Path("data/tw_listed_otc_stocks.csv"),
+            )
+            combined_prices = combine_csv_files(
+                [Path("data/twse_price_daily.csv"), Path("data/tpex_price_daily.csv")],
+                Path("data/tw_listed_otc_price_daily.csv"),
+            )
+            print(f"combined_stocks_output={combined_stocks}")
+            print(f"combined_prices_output={combined_prices}")
     elif args.command == "fetch-news":
         news = fetch_rss_news(Path(args.sources), Path(args.cache_dir))
         output = save_news_csv(news, Path(args.output))
         print(f"news_rows={len(news)}")
-        print(f"output={output}")
-    elif args.command == "fetch-finmind":
-        client = FinMindClient(Path(args.cache_dir), token=os.getenv(args.token_env))
-        rows = client.taiwan_stock_price(args.stock_id, args.start_date, args.end_date)
-        print(f"rows={len(rows)}")
-        if rows:
-            print(rows[-1])
-    elif args.command == "fetch-finmind-snapshot":
-        token = os.getenv(args.token_env)
-        if not token:
-            raise SystemExit(f"missing FinMind token env var: {args.token_env}")
-        client = FinMindClient(Path(args.cache_dir), token=token)
-        rows = client.taiwan_stock_tick_snapshot()
-        output = save_tick_snapshot_csv(rows, Path(args.output))
-        print(f"rows={len(rows)}")
         print(f"output={output}")
     elif args.command == "fetch-yfinance":
         output = download_yfinance_history(args.symbols, args.period, Path(args.cache_dir))
@@ -149,6 +130,11 @@ def main() -> None:
         print(f"stocks_output={stocks_output}")
         print(f"prices_output={prices_output}")
         print(f"news_output={news_output}")
+    elif args.command == "fetch-tpex":
+        stocks_output = build_tpex_stock_csv(Path(args.stocks_output), Path(args.cache_dir))
+        prices_output = build_tpex_daily_price_csv(Path(args.prices_output), Path(args.cache_dir))
+        print(f"stocks_output={stocks_output}")
+        print(f"prices_output={prices_output}")
     elif args.command == "publish-pages":
         result = publish_report_to_pages(
             Path(args.report_html),

@@ -53,7 +53,7 @@ class RateLimitedHttpClient:
         for attempt in range(3):
             try:
                 with urllib.request.urlopen(request, timeout=20) as response:
-                    text = response.read().decode("utf-8-sig")
+                    text = _decode_response(response.read())
                 cache_path.write_text(text, encoding="utf-8")
                 return text
             except urllib.error.HTTPError as exc:
@@ -78,3 +78,11 @@ def _with_params(url: str, params: Optional[dict]) -> str:
 def _safe_key(value: str) -> str:
     return "".join(char if char.isalnum() else "_" for char in value)[:180]
 
+
+def _decode_response(raw: bytes) -> str:
+    for encoding in ("utf-8-sig", "utf-8", "cp950", "big5", "latin-1"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")

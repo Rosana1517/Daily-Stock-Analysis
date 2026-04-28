@@ -1,149 +1,254 @@
 [
   {
-    "name": "BBC Business",
-    "url": "https://feeds.bbci.co.uk/news/business/rss.xml",
-    "region": "global",
-    "category": "business",
-    "quality": "primary"
+    "name": "MOPS RSS",
+    "url": "https://mops.twse.com.tw/mops/web/rss",
+    "region": "taiwan",
+    "category": "exchange_disclosure",
+    "quality": "primary",
+    "source_type": "exchange",
+    "weight": 5
   },
   {
-    "name": "BBC Technology",
-    "url": "https://feeds.bbci.co.uk/news/technology/rss.xml",
-    "region": "global",
-    "category": "technology",
-    "quality": "primary"
+    "name": "TPEx RSS",
+    "url": "https://www.tpex.org.tw/rss",
+    "region": "taiwan",
+    "category": "exchange_disclosure",
+    "quality": "primary",
+    "source_type": "exchange",
+    "weight": 5
+  },
+  {
+    "name": "Trade Gov News",
+    "url": "https://www.trade.gov.tw/Pages/RSS.aspx?nodeID=39",
+    "region": "taiwan",
+    "category": "policy",
+    "quality": "primary",
+    "source_type": "government",
+    "weight": 5
+  },
+  {
+    "name": "Trade Gov Announcements",
+    "url": "https://www.trade.gov.tw/Pages/RSS.aspx?nodeID=40",
+    "region": "taiwan",
+    "category": "policy",
+    "quality": "primary",
+    "source_type": "government",
+    "weight": 5
+  },
+  {
+    "name": "Trade Gov Measures",
+    "url": "https://www.trade.gov.tw/Pages/RSS.aspx?nodeID=41",
+    "region": "taiwan",
+    "category": "policy",
+    "quality": "primary",
+    "source_type": "government",
+    "weight": 5
+  },
+  {
+    "name": "CNA Politics",
+    "url": "https://feeds.feedburner.com/rsscna/politics",
+    "region": "taiwan",
+    "category": "policy",
+    "quality": "primary",
+    "source_type": "finance_media",
+    "weight": 4
   },
   {
     "name": "CNA Finance",
     "url": "https://feeds.feedburner.com/rsscna/finance",
     "region": "taiwan",
     "category": "finance",
-    "quality": "primary"
-  },
-  {
-    "name": "CNA Securities",
-    "url": "https://feeds.feedburner.com/rsscna/finance",
-    "region": "taiwan",
-    "category": "securities",
-    "quality": "primary"
-  },
-  {
-    "name": "CNA Technology",
-    "url": "https://feeds.feedburner.com/rsscna/technology",
-    "region": "taiwan",
-    "category": "technology",
-    "quality": "primary"
-  },
-  {
-    "name": "CNA International",
-    "url": "https://feeds.feedburner.com/rsscna/intworld",
-    "region": "taiwan",
-    "category": "world",
-    "quality": "primary"
-  },
-  {
-    "name": "DIGITIMES Semiconductor",
-    "url": "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_0.xml",
-    "region": "taiwan",
-    "category": "semiconductor",
-    "quality": "primary"
-  },
-  {
-    "name": "DIGITIMES Technology",
-    "url": "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_30_0.xml",
-    "region": "taiwan",
-    "category": "technology",
-    "quality": "primary"
-  },
-  {
-    "name": "DIGITIMES Emerging Tech",
-    "url": "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_90_0.xml",
-    "region": "taiwan",
-    "category": "emerging_technology",
-    "quality": "primary"
-  },
-  {
-    "name": "NewTalk Finance",
-    "url": "https://newtalk.tw/rss/category/3",
-    "region": "taiwan",
-    "category": "finance",
-    "quality": "secondary"
-  },
-  {
-    "name": "NewTalk Technology",
-    "url": "https://newtalk.tw/rss/category/8",
-    "region": "taiwan",
-    "category": "technology",
-    "quality": "secondary"
-  },
-  {
-    "name": "NewTalk World",
-    "url": "https://newtalk.tw/rss/category/2",
-    "region": "taiwan",
-    "category": "world",
-    "quality": "secondary"
-  },
-  {
-    "name": "NewTalk Politics",
-    "url": "https://newtalk.tw/rss/category/1",
-    "region": "taiwan",
-    "category": "policy",
-    "quality": "secondary"
-  },
-  {
-    "name": "LTN Business",
-    "url": "https://news.ltn.com.tw/rss/business.xml",
-    "region": "taiwan",
-    "category": "business",
-    "quality": "primary"
-  },
-  {
-    "name": "LTN Politics",
-    "url": "https://news.ltn.com.tw/rss/politics.xml",
-    "region": "taiwan",
-    "category": "policy",
-    "quality": "secondary"
-  },
-  {
-    "name": "LTN World",
-    "url": "https://news.ltn.com.tw/rss/world.xml",
-    "region": "taiwan",
-    "category": "world",
-    "quality": "primary"
+    "quality": "primary",
+    "source_type": "finance_media",
+    "weight": 4
   },
   {
     "name": "LTN Latest",
     "url": "https://news.ltn.com.tw/rss/all.xml",
     "region": "taiwan",
     "category": "latest",
-    "quality": "primary"
+    "quality": "secondary",
+    "source_type": "finance_media",
+    "weight": 4
   },
   {
-    "name": "NYTimes Business",
-    "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
-    "region": "us",
+    "name": "LTN Politics",
+    "url": "https://news.ltn.com.tw/rss/politics.xml",
+    "region": "taiwan",
+    "category": "policy",
+    "quality": "secondary",
+    "source_type": "finance_media",
+    "weight": 4
+  },
+  {
+    "name": "LTN World",
+    "url": "https://news.ltn.com.tw/rss/world.xml",
+    "region": "taiwan",
+    "category": "world",
+    "quality": "secondary",
+    "source_type": "finance_media",
+    "weight": 4
+  },
+  {
+    "name": "LTN Business",
+    "url": "https://news.ltn.com.tw/rss/business.xml",
+    "region": "taiwan",
     "category": "business",
-    "quality": "primary"
+    "quality": "primary",
+    "source_type": "finance_media",
+    "weight": 4
   },
   {
-    "name": "HuffPost World",
-    "url": "https://www.huffpost.com/section/world-news/feed",
+    "name": "LTN Economic",
+    "url": "https://ec.ltn.com.tw/rss.xml",
+    "region": "taiwan",
+    "category": "finance",
+    "quality": "primary",
+    "source_type": "finance_media",
+    "weight": 4
+  },
+  {
+    "name": "UDN Money",
+    "url": "https://money.udn.com/rssfeed/news/1001/5590",
+    "region": "taiwan",
+    "category": "finance",
+    "quality": "primary",
+    "source_type": "finance_media",
+    "weight": 4
+  },
+  {
+    "name": "Commercial Times",
+    "url": "https://ctee.com.tw/feed",
+    "region": "taiwan",
+    "category": "finance",
+    "quality": "primary",
+    "source_type": "finance_media",
+    "weight": 4
+  },
+  {
+    "name": "MoneyDJ",
+    "url": "https://www.moneydj.com/rss/rss.aspx",
+    "region": "taiwan",
+    "category": "finance",
+    "quality": "primary",
+    "source_type": "finance_media",
+    "weight": 4
+  },
+  {
+    "name": "TechNews",
+    "url": "https://technews.tw/feed/",
+    "region": "taiwan",
+    "category": "technology",
+    "quality": "primary",
+    "source_type": "technology_media",
+    "weight": 4
+  },
+  {
+    "name": "DIGITIMES Daily",
+    "url": "https://www.digitimes.com/rss/daily.xml",
+    "region": "taiwan",
+    "category": "technology",
+    "quality": "primary",
+    "source_type": "technology_media",
+    "weight": 4
+  },
+  {
+    "name": "DIGITIMES Semiconductor",
+    "url": "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_0.xml",
+    "region": "taiwan",
+    "category": "semiconductor",
+    "quality": "primary",
+    "source_type": "technology_media",
+    "weight": 4
+  },
+  {
+    "name": "DIGITIMES Technology",
+    "url": "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_30_0.xml",
+    "region": "taiwan",
+    "category": "technology",
+    "quality": "primary",
+    "source_type": "technology_media",
+    "weight": 4
+  },
+  {
+    "name": "DIGITIMES Emerging Tech",
+    "url": "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_90_0.xml",
+    "region": "taiwan",
+    "category": "emerging_technology",
+    "quality": "primary",
+    "source_type": "technology_media",
+    "weight": 4
+  },
+  {
+    "name": "Nikkei Asia",
+    "url": "https://asia.nikkei.com/rss/feed/nar",
+    "region": "asia",
+    "category": "international",
+    "quality": "secondary",
+    "source_type": "international_news",
+    "weight": 2
+  },
+  {
+    "name": "BBC Latest",
+    "url": "https://feeds.bbci.co.uk/news/rss.xml",
     "region": "global",
-    "category": "world",
-    "quality": "primary"
+    "category": "international",
+    "quality": "secondary",
+    "source_type": "international_news",
+    "weight": 2
   },
   {
-    "name": "Fox News Latest",
-    "url": "http://feeds.foxnews.com/foxnews/latest",
+    "name": "NYTimes Home",
+    "url": "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
     "region": "us",
-    "category": "latest",
-    "quality": "primary"
+    "category": "international",
+    "quality": "secondary",
+    "source_type": "international_news",
+    "weight": 2
   },
   {
-    "name": "LA Times World Nation",
-    "url": "https://www.latimes.com/world-nation/rss2.0.xml",
-    "region": "us",
-    "category": "world",
-    "quality": "primary"
+    "name": "Reddit Stocks",
+    "url": "https://www.reddit.com/r/stocks/.rss",
+    "region": "global",
+    "category": "social",
+    "quality": "social",
+    "source_type": "social",
+    "weight": 1
+  },
+  {
+    "name": "Reddit Investing",
+    "url": "https://www.reddit.com/r/investing/.rss",
+    "region": "global",
+    "category": "social",
+    "quality": "social",
+    "source_type": "social",
+    "weight": 1
+  },
+  {
+    "name": "Reddit Technology",
+    "url": "https://www.reddit.com/r/technology/.rss",
+    "region": "global",
+    "category": "social",
+    "quality": "social",
+    "source_type": "social",
+    "weight": 1
+  },
+  {
+    "name": "Reddit WallStreetBets",
+    "url": "https://www.reddit.com/r/wallstreetbets/.rss",
+    "region": "global",
+    "category": "social",
+    "quality": "social",
+    "source_type": "social",
+    "weight": 1
+  },
+  {
+    "name": "Hacker News Frontpage",
+    "url": "https://hnrss.org/frontpage",
+    "region": "global",
+    "category": "social_technology",
+    "quality": "social",
+    "source_type": "social",
+    "weight": 1
   }
 ]

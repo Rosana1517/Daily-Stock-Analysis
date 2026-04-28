@@ -48,19 +48,22 @@ def analyze_industries(news: list[NewsItem]) -> list[IndustrySignal]:
     scores: dict[str, float] = defaultdict(float)
     catalysts: dict[str, list[str]] = defaultdict(list)
     counts: dict[str, int] = defaultdict(int)
+    weights: dict[str, float] = defaultdict(float)
 
     for item in news:
         text = f"{item.title} {item.body}"
         sentiment = _term_score(text)
+        weight = max(0.1, float(getattr(item, "source_weight", 1.0)))
         for industry in item.industries:
             counts[industry] += 1
-            scores[industry] += 45 + sentiment
+            weights[industry] += weight
+            scores[industry] += (45 + sentiment) * weight
             catalysts[industry].append(item.title)
 
     signals = [
         IndustrySignal(
             industry=industry,
-            score=round(scores[industry] / counts[industry], 1),
+            score=round(scores[industry] / max(0.1, weights[industry]), 1),
             catalysts=tuple(catalysts[industry][:3]),
             evidence_count=counts[industry],
         )

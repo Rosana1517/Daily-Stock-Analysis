@@ -1,8 +1,8 @@
 {
   "news_path": "data/news_rss.csv",
   "rss_sources_path": "configs/rss_sources.example.json",
-  "stock_path": "data/twse_stocks.csv",
-  "price_history_path": "data/twse_price_daily.csv",
+  "stock_path": "data/tw_listed_otc_stocks.csv",
+  "price_history_path": "data/tw_listed_otc_price_daily.csv",
   "price_1h_path": "examples/price_1h.csv",
   "price_5m_path": "examples/price_5m.csv",
   "watch_industries": [],

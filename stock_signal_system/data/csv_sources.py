@@ -16,6 +16,7 @@ def load_news(path: Path) -> list[NewsItem]:
                 source=row["source"].strip(),
                 body=row["body"].strip(),
                 industries=tuple(_split_industries(row.get("industries", ""))),
+                source_weight=float(row.get("source_weight") or 1.0),
             )
             for row in csv.DictReader(f)
         ]
