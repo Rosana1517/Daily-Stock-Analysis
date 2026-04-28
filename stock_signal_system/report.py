@@ -5,7 +5,7 @@ import re
 from datetime import date
 from pathlib import Path
 
-from stock_signal_system.models import IndustrySignal, StockRecommendation
+from stock_signal_system.models import ChangeSummary, IndustrySignal, StockRecommendation
 from stock_signal_system.translation import zh_text
 
 
@@ -13,67 +13,93 @@ def build_report(
     report_date: date,
     industry_signals: list[IndustrySignal],
     recommendations: list[StockRecommendation],
+    change_summary: ChangeSummary | None = None,
 ) -> str:
+    change_summary = change_summary or ChangeSummary()
+    high_priority = recommendations[:5]
+    new_candidates = [item for item in recommendations if item.status == "新進候選"][:3]
+    continuing = [item for item in recommendations if item.status != "新進候選"][:5]
+
     lines = [
         f"# 每日選股觀察報告 - {report_date.isoformat()}",
         "",
         "## 資料更新摘要",
         "",
-        f"- 分析日期：{report_date.isoformat()}",
-        "- 每日流程：先更新 RSS/新聞與市場資料，再依產業訊號、基本面、流動性、技術結構與風險收益比篩選。",
-        "- 策略限制：台股上市/上櫃、只做多、波段 3-20 天、每日最多 5 檔觀察名單。",
-        "- 模型與回測資料：排除黑天鵝、普漲行情、漲跌停、暫停交易與明顯資料錯誤，避免過擬合。",
+        f"- 資料日期：{report_date.isoformat()}",
+        "- 股票池：每日由 TWSE OpenAPI 重新產生上市普通股快照；若欄位不足，保守標示待 FinMind 或財報資料補強。",
+        "- 策略：只做多、3-20 天波段；以新聞/政策/輿情產業訊號、基本面、量價、蠟燭圖與 1H/5M 結構共同篩選。",
+        "- 排名：加入新鮮度與變化率，避免同一批股票只因舊分數長期霸榜。",
+        "",
+        "## 今日變化",
+        "",
+        f"- 新進候選：{_names(change_summary.new_symbols) or '無明顯新進標的'}",
+        f"- 移出前次名單：{_names(change_summary.removed_symbols) or '無'}",
+        f"- 分數改善：{_names(change_summary.improved_symbols) or '無明顯改善'}",
+        f"- 分數轉弱：{_names(change_summary.weakened_symbols) or '無明顯轉弱'}",
+        f"- 新增產業訊號：{_names(change_summary.industry_new) or '無'}",
         "",
         "## 今日產業訊號",
         "",
     ]
 
     if not industry_signals:
-        lines.append("- 今日未偵測到足夠明確且可對應台股供應鏈的產業訊號。")
+        lines.append("- 今日未取得足夠有效產業訊號，暫不擴大追價。")
     for signal in industry_signals:
         catalysts = "；".join(zh_text(item) for item in signal.catalysts)
         lines.append(
-            f"- {zh_text(signal.industry)}: 訊號分數 {signal.score:.1f}，證據 {signal.evidence_count} 則。催化因素：{catalysts}"
+            f"- {zh_text(signal.industry)}：訊號分數 {signal.score:.1f}，證據 {signal.evidence_count} 則。催化因素：{catalysts}"
         )
 
-    lines.extend(["", "## 篩選結果", ""])
-    if recommendations:
-        actionable = sum(1 for item in recommendations if item.score >= 60)
-        watch_only = len(recommendations) - actionable
-        lines.append(f"- 今日輸出觀察名單：{len(recommendations)} 檔，其中 {actionable} 檔達基本分數門檻，{watch_only} 檔為等待技術轉強的備選追蹤。")
-        lines.append("- 排序依據：產業催化、20日動能、量能、營收成長、營業利益率、自由現金流、負債、本益比、日線蠟燭圖、1H/5M 結構與風險收益比。")
-    else:
-        lines.append("- 今日沒有符合分數、風險收益比與只做多條件的候選標的。")
+    actionable = sum(1 for item in recommendations if item.score >= 60)
+    watch_only = len(recommendations) - actionable
+    lines.extend(
+        [
+            "",
+            "## 篩選結果",
+            "",
+            f"- 今日候選股：{len(recommendations)} 檔；可行動觀察 {actionable} 檔，續觀察 {watch_only} 檔。",
+            f"- 高優先觀察：{len(high_priority[:5])} 檔；新進候選：{len(new_candidates[:3])} 檔；續抱/續觀察：{len(continuing[:5])} 檔。",
+        ]
+    )
 
-    lines.extend(["", "## 值得關注股票", ""])
+    lines.extend(["", "## 高優先觀察 3-5 檔", ""])
+    _append_summary_list(lines, high_priority[:5])
 
+    lines.extend(["", "## 新進候選 1-3 檔", ""])
+    _append_summary_list(lines, new_candidates[:3])
+
+    lines.extend(["", "## 續抱/續觀察", ""])
+    _append_summary_list(lines, continuing[:5])
+
+    lines.extend(["", "## 個股分析", ""])
     if not recommendations:
-        lines.append("今日暫不新增觀察標的。")
+        lines.append("今日沒有股票同時符合產業訊號、量價、基本面與只做多策略門檻。")
     else:
         for item in recommendations:
             stock = item.stock
-            risk_lines = (
-                [f"- {zh_text(risk)}" for risk in item.risks]
-                if item.risks
-                else ["- 尚未偵測到重大單一風險，但仍需留意大盤、產業與財報事件。"]
-            )
+            risk_lines = [f"- {zh_text(risk)}" for risk in item.risks] if item.risks else ["- 仍需留意大盤、匯率與產業新聞變化。"]
             lines.extend(
                 [
                     f"### {stock.symbol} {stock.name} - {zh_text(item.rating)} ({item.score:.1f})",
                     "",
-                    "**為何值得關注**",
+                    f"- 產業：{zh_text(stock.industry)}",
+                    f"- 今日狀態：{item.status}",
+                    f"- 分數變化：{_score_delta(item.score_delta)}；排名參考：{_rank_delta(item.rank_delta)}",
+                    f"- 新鮮度/變化率：{item.freshness_score:+.1f} / {item.change_score:+.1f}",
                     "",
-                    *[f"- {zh_text(reason)}" for reason in item.reasons],
+                    "**值得關注原因**",
                     "",
-                    "**進場條件**",
+                    *[f"- {zh_text(reason)}" for reason in item.reasons[:8]],
+                    "",
+                    "**進場計畫**",
                     "",
                     f"- {zh_text(item.entry_plan)}",
                     "",
-                    "**停損條件**",
+                    "**停損計畫**",
                     "",
                     f"- {zh_text(item.stop_loss)}",
                     "",
-                    "**出場條件**",
+                    "**出場計畫**",
                     "",
                     f"- {zh_text(item.exit_plan)}",
                     "",
@@ -148,7 +174,7 @@ def markdown_to_html(markdown: str, title: str) -> str:
   <title>{html.escape(title)}</title>
   <style>
     body {{ margin: 0; background: #f6f7f9; color: #202124; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif; line-height: 1.7; }}
-    main {{ max-width: 880px; margin: 0 auto; padding: 28px 18px 56px; background: #fff; min-height: 100vh; }}
+    main {{ max-width: 920px; margin: 0 auto; padding: 28px 18px 56px; background: #fff; min-height: 100vh; }}
     h1 {{ font-size: 28px; margin: 0 0 20px; }}
     h2 {{ font-size: 21px; margin: 28px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #e5e7eb; }}
     h3 {{ font-size: 18px; margin: 22px 0 8px; }}
@@ -172,6 +198,34 @@ def public_report_url(base_url: str | None, report_path: Path) -> str | None:
     if not base_url:
         return None
     return f"{base_url.rstrip('/')}/{report_path.name}"
+
+
+def _append_summary_list(lines: list[str], items: list[StockRecommendation]) -> None:
+    if not items:
+        lines.append("- 無符合條件標的。")
+        return
+    for item in items:
+        stock = item.stock
+        lines.append(
+            f"- {stock.symbol} {stock.name}：{item.score:.1f} 分，{item.status}，"
+            f"分數變化 {_score_delta(item.score_delta)}，理由：{zh_text(item.reasons[0]) if item.reasons else '無'}"
+        )
+
+
+def _score_delta(value: float | None) -> str:
+    if value is None:
+        return "新進"
+    return f"{value:+.1f}"
+
+
+def _rank_delta(value: int | None) -> str:
+    if value is None:
+        return "新進"
+    return f"前次第 {value} 名"
+
+
+def _names(values: tuple[str, ...]) -> str:
+    return "、".join(values)
 
 
 def _inline_markdown(text: str) -> str:

@@ -74,3 +74,18 @@ class StockRecommendation:
     entry_plan: str = ""
     stop_loss: str = ""
     exit_plan: str = ""
+    freshness_score: float = 0.0
+    change_score: float = 0.0
+    score_delta: Optional[float] = None
+    rank_delta: Optional[int] = None
+    status: str = "續抱/續觀察"
+
+
+@dataclass(frozen=True)
+class ChangeSummary:
+    new_symbols: tuple[str, ...] = ()
+    removed_symbols: tuple[str, ...] = ()
+    improved_symbols: tuple[str, ...] = ()
+    weakened_symbols: tuple[str, ...] = ()
+    industry_new: tuple[str, ...] = ()
+    industry_removed: tuple[str, ...] = ()
