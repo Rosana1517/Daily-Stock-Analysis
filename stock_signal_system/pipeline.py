@@ -73,7 +73,13 @@ def run_pipeline(config: AppConfig, report_date: Optional[date] = None) -> Pipel
     recommendations = _apply_final_rank_changes(recommendations, previous_state)[:limit]
     change_summary = _build_change_summary(recommendations, industry_signals, previous_state)
 
-    report = build_report(current_date, industry_signals, recommendations, change_summary)
+    report = build_report(
+        current_date,
+        industry_signals,
+        recommendations,
+        change_summary,
+        stock_universe_count=len(stocks),
+    )
     report_path = save_report(config.report_dir, current_date, report)
     html_report_path = save_report_html(config.report_dir, current_date, report)
     report_url = public_report_url(config.report_public_base_url, html_report_path)

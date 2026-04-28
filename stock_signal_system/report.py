@@ -14,11 +14,14 @@ def build_report(
     industry_signals: list[IndustrySignal],
     recommendations: list[StockRecommendation],
     change_summary: ChangeSummary | None = None,
+    stock_universe_count: int | None = None,
 ) -> str:
     change_summary = change_summary or ChangeSummary()
-    high_priority = recommendations[:5]
+    high_priority = [item for item in recommendations if item.score >= 70][:5]
+    ranked_watchlist = recommendations[:5]
     new_candidates = [item for item in recommendations if item.status == "新進候選"][:3]
     continuing = [item for item in recommendations if item.status != "新進候選"][:5]
+    universe_text = f"{stock_universe_count} 檔" if stock_universe_count is not None else "每日刷新"
 
     lines = [
         f"# 每日選股觀察報告 - {report_date.isoformat()}",
@@ -26,7 +29,7 @@ def build_report(
         "## 資料更新摘要",
         "",
         f"- 資料日期：{report_date.isoformat()}",
-        "- 股票池：每日由 TWSE OpenAPI 重新產生上市普通股快照；若欄位不足，保守標示待 FinMind 或財報資料補強。",
+        f"- 股票池：本次由 TWSE OpenAPI 重新產生上市普通股快照，共 {universe_text}；未使用範例股票池。",
         "- 策略：只做多、3-20 天波段；以新聞/政策/輿情產業訊號、基本面、量價、蠟燭圖與 1H/5M 結構共同篩選。",
         "- 排名：加入新鮮度與變化率，避免同一批股票只因舊分數長期霸榜。",
         "",
@@ -58,12 +61,16 @@ def build_report(
             "## 篩選結果",
             "",
             f"- 今日候選股：{len(recommendations)} 檔；可行動觀察 {actionable} 檔，續觀察 {watch_only} 檔。",
-            f"- 高優先觀察：{len(high_priority[:5])} 檔；新進候選：{len(new_candidates[:3])} 檔；續抱/續觀察：{len(continuing[:5])} 檔。",
+            f"- 高優先觀察：{len(high_priority)} 檔；新進候選：{len(new_candidates[:3])} 檔；續抱/續觀察：{len(continuing[:5])} 檔。",
+            "- 若高優先觀察不足 3 檔，代表今日沒有足夠標的同時達到產業、量價與風險門檻，系統會保守列出前 5 名觀察清單而不強行給買進結論。",
         ]
     )
 
     lines.extend(["", "## 高優先觀察 3-5 檔", ""])
-    _append_summary_list(lines, high_priority[:5])
+    _append_summary_list(lines, high_priority)
+
+    lines.extend(["", "## 前 5 名觀察清單", ""])
+    _append_summary_list(lines, ranked_watchlist)
 
     lines.extend(["", "## 新進候選 1-3 檔", ""])
     _append_summary_list(lines, new_candidates[:3])
