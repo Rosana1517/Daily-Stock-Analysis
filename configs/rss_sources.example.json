@@ -42,11 +42,67 @@
     "quality": "primary"
   },
   {
+    "name": "DIGITIMES Semiconductor",
+    "url": "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_0.xml",
+    "region": "taiwan",
+    "category": "semiconductor",
+    "quality": "primary"
+  },
+  {
+    "name": "DIGITIMES Technology",
+    "url": "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_30_0.xml",
+    "region": "taiwan",
+    "category": "technology",
+    "quality": "primary"
+  },
+  {
+    "name": "DIGITIMES Emerging Tech",
+    "url": "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_90_0.xml",
+    "region": "taiwan",
+    "category": "emerging_technology",
+    "quality": "primary"
+  },
+  {
+    "name": "NewTalk Finance",
+    "url": "https://newtalk.tw/rss/category/3",
+    "region": "taiwan",
+    "category": "finance",
+    "quality": "secondary"
+  },
+  {
+    "name": "NewTalk Technology",
+    "url": "https://newtalk.tw/rss/category/8",
+    "region": "taiwan",
+    "category": "technology",
+    "quality": "secondary"
+  },
+  {
+    "name": "NewTalk World",
+    "url": "https://newtalk.tw/rss/category/2",
+    "region": "taiwan",
+    "category": "world",
+    "quality": "secondary"
+  },
+  {
+    "name": "NewTalk Politics",
+    "url": "https://newtalk.tw/rss/category/1",
+    "region": "taiwan",
+    "category": "policy",
+    "quality": "secondary"
+  },
+  {
     "name": "LTN Business",
     "url": "https://news.ltn.com.tw/rss/business.xml",
     "region": "taiwan",
     "category": "business",
     "quality": "primary"
+  },
+  {
+    "name": "LTN Politics",
+    "url": "https://news.ltn.com.tw/rss/politics.xml",
+    "region": "taiwan",
+    "category": "policy",
+    "quality": "secondary"
   },
   {
     "name": "LTN World",

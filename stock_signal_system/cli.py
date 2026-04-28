@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 from stock_signal_system.config import AppConfig
-from stock_signal_system.data.finmind import FinMindClient
+from stock_signal_system.data.finmind import FinMindClient, enrich_stock_csv_with_tick_snapshot, save_tick_snapshot_csv
 from stock_signal_system.data.rss_sources import fetch_rss_news, save_news_csv
 from stock_signal_system.data.twse import build_twse_daily_price_csv, build_twse_material_news_csv, build_twse_stock_csv
 from stock_signal_system.data.yfinance_source import download_yfinance_history
@@ -28,6 +28,7 @@ def main() -> None:
     refresh_parser.add_argument("--config", required=True, help="Path to JSON config.")
     refresh_parser.add_argument("--cache-dir", default=".cache", help="Cache directory.")
     refresh_parser.add_argument("--skip-twse", action="store_true", help="Skip TWSE OpenAPI refresh.")
+    refresh_parser.add_argument("--finmind-token-env", default="FINMIND_TOKEN", help="Environment variable with FinMind token.")
 
     rss_parser = subparsers.add_parser("fetch-news", help="Fetch RSS news into a CSV file.")
     rss_parser.add_argument("--sources", required=True, help="Path to RSS sources JSON.")
@@ -40,6 +41,11 @@ def main() -> None:
     finmind_parser.add_argument("--end-date", required=True, help="YYYY-MM-DD.")
     finmind_parser.add_argument("--token-env", default="FINMIND_TOKEN", help="Environment variable with FinMind token.")
     finmind_parser.add_argument("--cache-dir", default=".cache", help="Cache directory.")
+
+    snapshot_parser = subparsers.add_parser("fetch-finmind-snapshot", help="Fetch FinMind Taiwan stock tick snapshot.")
+    snapshot_parser.add_argument("--output", default="data/finmind_tick_snapshot.csv", help="Output snapshot CSV.")
+    snapshot_parser.add_argument("--token-env", default="FINMIND_TOKEN", help="Environment variable with FinMind token.")
+    snapshot_parser.add_argument("--cache-dir", default=".cache", help="Cache directory.")
 
     yf_parser = subparsers.add_parser("fetch-yfinance", help="Fetch yfinance daily history into cache CSV.")
     yf_parser.add_argument("--symbols", nargs="+", required=True, help="Symbols, e.g. AAPL MSFT 2330.TW.")
@@ -99,6 +105,20 @@ def main() -> None:
             print(f"twse_stocks_output={stocks_output}")
             print(f"twse_prices_output={prices_output}")
             print(f"twse_news_output={news_output}")
+            token = os.getenv(args.finmind_token_env)
+            if token:
+                try:
+                    client = FinMindClient(Path(args.cache_dir), token=token)
+                    rows = client.taiwan_stock_tick_snapshot()
+                    snapshot_output = save_tick_snapshot_csv(rows, Path("data/finmind_tick_snapshot.csv"))
+                    updated = enrich_stock_csv_with_tick_snapshot(stocks_output, rows)
+                    print(f"finmind_tick_snapshot_rows={len(rows)}")
+                    print(f"finmind_tick_snapshot_output={snapshot_output}")
+                    print(f"finmind_tick_snapshot_enriched_stocks={updated}")
+                except Exception as exc:
+                    print(f"finmind_tick_snapshot_skipped={exc}")
+            else:
+                print(f"finmind_tick_snapshot_skipped=missing_env:{args.finmind_token_env}")
     elif args.command == "fetch-news":
         news = fetch_rss_news(Path(args.sources), Path(args.cache_dir))
         output = save_news_csv(news, Path(args.output))
@@ -110,6 +130,15 @@ def main() -> None:
         print(f"rows={len(rows)}")
         if rows:
             print(rows[-1])
+    elif args.command == "fetch-finmind-snapshot":
+        token = os.getenv(args.token_env)
+        if not token:
+            raise SystemExit(f"missing FinMind token env var: {args.token_env}")
+        client = FinMindClient(Path(args.cache_dir), token=token)
+        rows = client.taiwan_stock_tick_snapshot()
+        output = save_tick_snapshot_csv(rows, Path(args.output))
+        print(f"rows={len(rows)}")
+        print(f"output={output}")
     elif args.command == "fetch-yfinance":
         output = download_yfinance_history(args.symbols, args.period, Path(args.cache_dir))
         print(f"output={output}")

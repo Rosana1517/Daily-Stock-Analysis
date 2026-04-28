@@ -1,60 +1,64 @@
 {
   "date": "2026-04-28",
   "industries": {
-    "半導體": {
+    "散熱": {
       "score": 52.0,
       "rank": 1
     },
     "AI伺服器": {
-      "score": 49.4,
+      "score": 49.9,
       "rank": 2
     },
-    "散熱": {
-      "score": 45.0,
+    "半導體": {
+      "score": 49.0,
       "rank": 3
     },
     "儲能": {
-      "score": 45.0,
+      "score": 48.5,
       "rank": 4
     },
     "電力設備": {
-      "score": 42.0,
+      "score": 45.0,
       "rank": 5
+    },
+    "消費電子": {
+      "score": 43.3,
+      "rank": 6
     }
   },
   "recommendations": {
-    "2303": {
-      "name": "聯電",
-      "industry": "半導體",
-      "score": 47.2,
+    "3515": {
+      "name": "華擎",
+      "industry": "電腦及週邊",
+      "score": 46.5,
       "rank": 1,
       "rating": "續抱/續觀察"
     },
-    "2317": {
-      "name": "鴻海",
-      "industry": "其他電子",
-      "score": 46.3,
+    "3135": {
+      "name": "凌航",
+      "industry": "半導體",
+      "score": 46.1,
       "rank": 2,
       "rating": "續抱/續觀察"
     },
-    "3652": {
-      "name": "精聯",
-      "industry": "電腦及週邊",
-      "score": 46.3,
+    "4967": {
+      "name": "十銓",
+      "industry": "半導體",
+      "score": 46.1,
       "rank": 3,
       "rating": "續抱/續觀察"
     },
-    "6117": {
-      "name": "迎廣",
-      "industry": "電腦及週邊",
-      "score": 46.3,
+    "6799": {
+      "name": "來頡",
+      "industry": "半導體",
+      "score": 46.1,
       "rank": 4,
       "rating": "續抱/續觀察"
     },
-    "6669": {
-      "name": "緯穎",
-      "industry": "電腦及週邊",
-      "score": 46.3,
+    "8271": {
+      "name": "宇瞻",
+      "industry": "半導體",
+      "score": 46.1,
       "rank": 5,
       "rating": "續抱/續觀察"
     }

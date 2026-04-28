@@ -33,6 +33,7 @@ jobs:
     env:
       CONFIG: configs/rss.example.json
       REPORT_BASE_URL: https://rosana1517.github.io/Daily-Stock-Analysis/reports
+      FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
