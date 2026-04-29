@@ -68,6 +68,14 @@ class RssClassificationTest(unittest.TestCase):
 
         self.assertIn("儲能", industries)
 
+    def test_fashion_story_does_not_trigger_power_equipment(self):
+        industries = _classify_industries(
+            "張員瑛「不科學身材」全靠黑繃帶洋裝！鬆緊帶勒出凹凸S線 超強效果秒售罄",
+            "娛樂與穿搭新聞，和電網、變壓器、輸配電設備無關。",
+        )
+
+        self.assertEqual([], industries)
+
 
 if __name__ == "__main__":
     unittest.main()

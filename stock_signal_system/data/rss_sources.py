@@ -65,6 +65,32 @@ INDUSTRY_RULES = {
     },
 }
 
+GLOBAL_NOISE_TERMS = (
+    "張員瑛",
+    "身材",
+    "洋裝",
+    "繃帶",
+    "鬆緊帶",
+    "穿搭",
+    "時尚",
+    "女星",
+    "男星",
+    "韓星",
+    "藝人",
+    "演員",
+    "歌手",
+    "性感",
+    "售罄",
+    "妝容",
+    "球員",
+    "賽事",
+    "演唱會",
+    "電影",
+    "影集",
+    "餐廳",
+    "食譜",
+)
+
 
 @dataclass(frozen=True)
 class RssSource:
@@ -195,11 +221,17 @@ def _sanitize_xml(value: str) -> str:
 
 def _classify_industries(title: str, body: str) -> list[str]:
     text = f"{title} {title} {body}".lower()
+    if _is_noise_story(text):
+        return []
     industries = []
     for industry, rule in INDUSTRY_RULES.items():
         if _matches_rule(text, rule):
             industries.append(industry)
     return industries
+
+
+def _is_noise_story(text: str) -> bool:
+    return any(term.lower() in text for term in GLOBAL_NOISE_TERMS)
 
 
 def _matches_rule(text: str, rule: dict[str, tuple[str, ...]]) -> bool:
