@@ -6,7 +6,7 @@ from datetime import date
 from pathlib import Path
 
 from stock_signal_system.config import AppConfig
-from stock_signal_system.pipeline import run_pipeline
+from stock_signal_system.pipeline import _notification_body, run_pipeline
 
 
 class PipelineTest(unittest.TestCase):
@@ -54,6 +54,23 @@ class PipelineTest(unittest.TestCase):
             self.assertIn("篩選結果", report)
             self.assertNotIn("本次分析流程", report)
             self.assertIn("<html", html_report)
+
+    def test_report_link_notification_contains_only_report_url(self):
+        body = _notification_body(
+            recommendations=[],
+            report_path="reports/stock_signals_2026-04-29.md",
+            notification_min_score=80,
+            notification_mode="report_link",
+            report="full report",
+            report_url="https://example.com/reports/stock_signals_2026-04-29.html",
+        )
+
+        self.assertEqual(
+            body,
+            "完整報告連結：https://example.com/reports/stock_signals_2026-04-29.html",
+        )
+        self.assertNotIn("前 5 名觀察", body)
+        self.assertNotIn("reports/stock_signals_2026-04-29.md", body)
 
 
 if __name__ == "__main__":

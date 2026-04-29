@@ -279,21 +279,14 @@ def _notification_body(
     if notification_mode == "full_report":
         return report
     if notification_mode == "report_link":
-        return _notification_link_summary(recommendations, report_path, notification_min_score, report_url)
+        return _notification_link_only(report_path, report_url)
     return _notification_summary(recommendations, report_path, notification_min_score)
 
 
-def _notification_link_summary(
-    recommendations: list[StockRecommendation],
-    report_path: str,
-    notification_min_score: float,
-    report_url: str | None,
-) -> str:
-    summary = _notification_summary(recommendations, report_path, notification_min_score)
+def _notification_link_only(report_path: str, report_url: str | None) -> str:
     if report_url:
-        return f"{summary}\n\n完整報告連結：\n{report_url}"
-    return f"{summary}\n\n完整報告已產出：{report_path}"
-
+        return f"\u5b8c\u6574\u5831\u544a\u9023\u7d50\uff1a{report_url}"
+    return f"\u5b8c\u6574\u5831\u544a\u5df2\u7522\u51fa\uff1a{report_path}"
 
 def _notification_summary(
     recommendations: list[StockRecommendation],
