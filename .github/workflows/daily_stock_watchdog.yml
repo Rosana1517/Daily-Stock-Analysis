@@ -1,0 +1,40 @@
+name: Daily Stock Analysis Watchdog
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Cloud-side backup checks for the main daily workflow.
+    # 00:35 UTC = 08:35 Asia/Taipei.
+    - cron: "35 0 * * 1-5"
+    # 00:50 UTC = 08:50 Asia/Taipei.
+    - cron: "50 0 * * 1-5"
+    # 01:05 UTC = 09:05 Asia/Taipei.
+    - cron: "5 1 * * 1-5"
+    # 01:20 UTC = 09:20 Asia/Taipei.
+    - cron: "20 1 * * 1-5"
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: daily-stock-analysis-watchdog
+  cancel-in-progress: false
+
+jobs:
+  dispatch-if-needed:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger daily analysis if today's LINE marker is missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          today="$(TZ=Asia/Taipei date +%F)"
+          marker="reports/line_sent_${today}.txt"
+          if gh api "repos/${GITHUB_REPOSITORY}/contents/${marker}?ref=main" >/dev/null 2>&1; then
+            echo "line_marker_exists=${marker}"
+            exit 0
+          fi
+
+          echo "line_marker_missing=${marker}"
+          gh workflow run "Daily Stock Analysis" --repo "${GITHUB_REPOSITORY}" --ref main -f send_line=true
