@@ -14,9 +14,16 @@ on:
   schedule:
     # 00:30 UTC = 08:30 Asia/Taipei.
     - cron: "30 0 * * 1-5"
-    # Backup trigger in case the primary scheduled run is delayed or dropped.
-    # 00:45 UTC = 08:45 Asia/Taipei. The LINE step is guarded by a per-day marker.
+    # Backup triggers in case the primary scheduled run is delayed or dropped.
+    # The LINE step is guarded by a per-day marker, so these do not duplicate sends.
+    # 00:45 UTC = 08:45 Asia/Taipei.
     - cron: "45 0 * * 1-5"
+    # 01:00 UTC = 09:00 Asia/Taipei.
+    - cron: "0 1 * * 1-5"
+    # 01:15 UTC = 09:15 Asia/Taipei.
+    - cron: "15 1 * * 1-5"
+    # 01:30 UTC = 09:30 Asia/Taipei.
+    - cron: "30 1 * * 1-5"
 
 permissions:
   contents: write
