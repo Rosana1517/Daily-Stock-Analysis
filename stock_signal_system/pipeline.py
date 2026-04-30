@@ -79,6 +79,7 @@ def run_pipeline(config: AppConfig, report_date: Optional[date] = None) -> Pipel
         recommendations,
         change_summary,
         stock_universe_count=len(stocks),
+        daily_history=daily_history,
     )
     report_path = save_report(config.report_dir, current_date, report)
     html_report_path = save_report_html(config.report_dir, current_date, report)

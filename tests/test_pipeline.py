@@ -50,8 +50,9 @@ class PipelineTest(unittest.TestCase):
             report = (tmp_path / "stock_signals_2026-04-24.md").read_text(encoding="utf-8")
             html_report = (tmp_path / "stock_signals_2026-04-24.html").read_text(encoding="utf-8")
             self.assertIn("每日選股觀察報告", report)
-            self.assertIn("資料更新摘要", report)
-            self.assertIn("篩選結果", report)
+            self.assertIn("今日資料概況", report)
+            self.assertIn("工作台總覽", report)
+            self.assertIn("個股詳細分析", report)
             self.assertNotIn("本次分析流程", report)
             self.assertIn("<html", html_report)
 
@@ -69,7 +70,7 @@ class PipelineTest(unittest.TestCase):
             body,
             "完整報告連結：https://example.com/reports/stock_signals_2026-04-29.html",
         )
-        self.assertNotIn("前 5 名觀察", body)
+        self.assertNotIn("今日前 5 名觀察", body)
         self.assertNotIn("reports/stock_signals_2026-04-29.md", body)
 
 
