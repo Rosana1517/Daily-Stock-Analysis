@@ -1,4 +1,6 @@
 .cache/
+py-yfinance/
+reports/qlib_data_custom_tw/
 __pycache__/
 *.pyc
 /data/

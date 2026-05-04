@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from quant_research_platform.analysis_workflow import StockWorkflowAudit, build_workflow_audits
 from quant_research_platform.backtest import run_top_n_backtest
 from quant_research_platform.config import QuantPlatformConfig
 from quant_research_platform.daily_stock_bridge import (
@@ -18,7 +19,14 @@ from quant_research_platform.daily_stock_bridge import (
     stock_name,
 )
 from quant_research_platform.data import fetch_openbb_ohlcv, load_csv_ohlcv
-from quant_research_platform.qlib_adapter import build_qlib_signal_backtest_config
+from quant_research_platform.fundamentals import load_fundamental_snapshots
+from quant_research_platform.intraday import load_or_fetch_intraday_history
+from quant_research_platform.liquidity import build_liquidity_snapshots
+from quant_research_platform.qlib_adapter import (
+    build_qlib_signal_backtest_config,
+    run_inline_signal_diagnostics,
+    run_qlib_engine_portfolio_backtest,
+)
 from quant_research_platform.signals import build_signals
 from stock_signal_system.data.csv_sources import load_news
 
@@ -52,6 +60,9 @@ def run_tw_hybrid(
     line_channel_access_token_env: str | None = None,
     line_to_env: str | None = None,
     line_broadcast: bool = False,
+    stock_snapshot_path: Path | None = None,
+    price_1h_path: Path | None = None,
+    price_5m_path: Path | None = None,
 ) -> tuple[Path, Path, Path, str]:
     bars_by_symbol = _load_bars(config)
     kronos_signals = build_signals(
@@ -62,10 +73,14 @@ def run_tw_hybrid(
         kronos_tokenizer=config.kronos_tokenizer,
         kronos_model=config.kronos_model,
     )
-    technicals = build_technical_signals(bars_by_symbol)
+    structure_history = load_or_fetch_intraday_history(price_1h_path, config.symbols, "1h", "5d")
+    trigger_history = load_or_fetch_intraday_history(price_5m_path, config.symbols, "5m", "5d")
+    technicals = build_technical_signals(bars_by_symbol, structure_history, trigger_history)
     industry_signals = load_or_fetch_industry_signals(news_path, rss_sources_path)
     news_items = load_news(news_path) if news_path and news_path.exists() else []
     realtime_states = load_latest_realtime_states(realtime_cache)
+    fundamental_snapshots = load_fundamental_snapshots(stock_snapshot_path)
+    liquidity_snapshots = build_liquidity_snapshots(bars_by_symbol, fundamental_snapshots)
 
     rows = []
     for signal in kronos_signals:
@@ -117,8 +132,49 @@ def run_tw_hybrid(
         benchmark_symbol=config.benchmark_symbol,
     )
     _save_csv(csv_path, rows)
-    _save_report(report_path, rows, report_date, csv_path, qlib_path, backtest, industry_signals, news_items)
     build_qlib_signal_backtest_config(csv_path, "custom_tw", config.benchmark_symbol or "2330.TW", qlib_path, config.top_n, 1)
+    qlib_metrics = run_inline_signal_diagnostics(rows, bars_by_symbol, config.top_n)
+    qlib_engine = run_qlib_engine_portfolio_backtest(
+        rows=rows,
+        bars_by_symbol=bars_by_symbol,
+        provider_dir=config.qlib_data_path or (config.output_dir / "qlib_data_custom_tw"),
+        output_path=config.output_dir / f"qlib_engine_portfolio_{report_date.isoformat()}.csv",
+        benchmark_symbol=config.benchmark_symbol,
+        top_n=config.top_n,
+        initial_cash=config.initial_cash,
+        transaction_cost_bps=config.transaction_cost_bps,
+    )
+    workflow_audits = build_workflow_audits(
+        rows=rows,
+        bars_by_symbol=bars_by_symbol,
+        technicals=technicals,
+        realtime_states=realtime_states,
+        industry_signals=industry_signals,
+        news_items=news_items,
+        qlib_path=qlib_path,
+        data_source=config.data_source,
+        openbb_provider=config.openbb_provider,
+        fundamental_snapshots=fundamental_snapshots,
+        liquidity_snapshots=liquidity_snapshots,
+        qlib_metrics=qlib_metrics,
+        qlib_engine=qlib_engine,
+        structure_symbols=set(structure_history),
+        trigger_symbols=set(trigger_history),
+    )
+    _save_report(
+        report_path,
+        rows,
+        report_date,
+        csv_path,
+        qlib_path,
+        backtest,
+        industry_signals,
+        news_items,
+        workflow_audits,
+        qlib_metrics,
+        qlib_engine,
+        bars_by_symbol,
+    )
 
     status = "disabled"
     if notify:
@@ -186,16 +242,20 @@ def _save_report(
     backtest,
     industry_signals: list,
     news_items: list,
+    workflow_audits: dict[str, StockWorkflowAudit],
+    qlib_metrics,
+    qlib_engine,
+    bars_by_symbol: dict[str, list],
 ) -> None:
     lines = [
-        f"# Hybrid Quant Daily Stock Report - {report_date.isoformat()}",
+        f"# Hybrid Quant 每日股票分析報告 - {report_date.isoformat()}",
         "",
         "## Workflow Coverage",
         "",
-        "- Kronos: forecast return and confidence for each symbol; falls back to momentum only if local model loading is unavailable.",
-        "- OpenBB: supported as the market data gateway when `data_source` is `openbb`; CSV cache remains available for scheduled offline runs.",
-        "- Qlib: emits a signal CSV and a Qlib TopK-Dropout backtest scaffold for deeper IC, Rank IC, turnover, and drawdown evaluation.",
-        "- Daily Stock Analysis: RSS/news industry score, candlestick structure score, report rendering, and LINE/webhook delivery are reused.",
+        "- Kronos：產生每檔股票的預估報酬與信心分數；若本機模型未載入，會以動能模型作為保守備援。",
+        "- OpenBB/CSV：作為每日行情資料入口；雲端排程先刷新 TWSE/TPEx 資料，再提供給本報告使用。",
+        "- Qlib：由每日 OHLCV 建立本地資料庫，並執行 TopK-Dropout 投組回測，納入週轉率、成本、基準與最大回撤。",
+        "- Daily Stock Analysis：沿用 RSS 新聞產業分數、蠟燭圖策略、報告產生與 LINE/webhook 推播流程。",
         "",
         "## Top Ranking",
         "",
@@ -218,10 +278,10 @@ def _save_report(
         ]
     )
     for signal in industry_signals[:8]:
-        catalyst = signal.catalysts[0] if signal.catalysts else "No fresh catalyst"
+        catalyst = signal.catalysts[0] if signal.catalysts else "暫無新的明確催化題材"
         lines.append(f"| {signal.industry} | {signal.score:.1f} | {signal.evidence_count} | {catalyst} |")
     if not industry_signals:
-        lines.append("| Market Watch | 50.0 | 0 | RSS temporarily unavailable; using neutral news score. |")
+        lines.append("| 市場觀察 | 50.0 | 0 | RSS 暫時無法取得，新聞分數採中性值。 |")
 
     lines.extend(["", "## Industry Groups", "", "| Industry | Symbols | Average Hybrid | Bias |", "|---|---|---:|---|"])
     for industry, group in _group_rows_by_industry(rows).items():
@@ -233,23 +293,40 @@ def _save_report(
     for row in rows[:5]:
         entry, stop, target, take_profit = _strategy_points(row)
         lines.append(
-            f"- {row.symbol} {row.name}: current {row.current_close:.2f}, "
-            f"predicted {row.predicted_close:.2f}, hybrid {row.hybrid_score:.1f}. "
-            f"{row.action}. Entry {entry:.2f}, add {target:.2f}, stop {stop:.2f}, take-profit {take_profit:.2f}. "
-            f"Risk: {row.risk_note}."
+            f"- {row.symbol} {row.name}：現價 {row.current_close:.2f}，"
+            f"預估價 {row.predicted_close:.2f}，Hybrid 分數 {row.hybrid_score:.1f}。"
+            f"{row.action}。進場 {entry:.2f}，加碼 {target:.2f}，停損 {stop:.2f}，停利 {take_profit:.2f}。"
+            f"風險：{row.risk_note}。"
         )
     lines.extend(
         [
             "",
             "## Portfolio Simulation",
             "",
-            f"- Gross expected return: {backtest.gross_expected_return:.2%}",
-            f"- Net expected return after cost: {backtest.net_expected_return:.2%}",
-            f"- Estimated PnL: {backtest.estimated_pnl:,.2f}",
+            f"- 投組預估毛報酬：{backtest.gross_expected_return:.2%}",
+            f"- 扣除交易成本後預估報酬：{backtest.net_expected_return:.2%}",
+            f"- 預估損益：{backtest.estimated_pnl:,.2f}",
+            f"- Qlib 即時 IC：{_optional_pct(qlib_metrics.ic)}",
+            f"- Qlib 即時 Rank IC：{_optional_pct(qlib_metrics.rank_ic)}",
+            f"- Qlib TopK 報酬：{_optional_pct(qlib_metrics.topk_return)}",
+            f"- Qlib 樣本數：{qlib_metrics.observations}",
+            f"- Qlib engine 是否執行：{'是' if getattr(qlib_engine, 'executed', False) else '否'}",
+            f"- Qlib engine 回測期間：{getattr(qlib_engine, 'start_time', None) or '無'} 至 {getattr(qlib_engine, 'end_time', None) or '無'}",
+            f"- Qlib engine 投組報酬：{_optional_pct(getattr(qlib_engine, 'portfolio_return', None))}",
+            f"- Qlib engine 年化報酬：{_optional_pct(getattr(qlib_engine, 'annualized_return', None))}",
+            f"- Qlib engine 基準報酬：{_optional_pct(getattr(qlib_engine, 'benchmark_return', None))}",
+            f"- Qlib engine 超額報酬：{_optional_pct(getattr(qlib_engine, 'excess_return', None))}",
+            f"- Qlib engine 最大回撤：{_optional_pct(getattr(qlib_engine, 'max_drawdown', None))}",
+            f"- Qlib engine 資訊比率：{_optional_number(getattr(qlib_engine, 'information_ratio', None))}",
+            f"- Qlib engine 平均週轉率：{_optional_pct(getattr(qlib_engine, 'average_turnover', None))}",
         ]
     )
+    if getattr(qlib_engine, "report_path", None):
+        lines.append(f"- Qlib engine 明細 CSV：`{qlib_engine.report_path}`")
+    if getattr(qlib_engine, "error", None):
+        lines.append(f"- Qlib engine 錯誤：{qlib_engine.error}")
     if backtest.benchmark_return is not None:
-        lines.append(f"- Benchmark lookback return: {backtest.benchmark_return:.2%}")
+        lines.append(f"- 基準期間報酬：{backtest.benchmark_return:.2%}")
     lines.extend(
         [
             "",
@@ -258,10 +335,56 @@ def _save_report(
         ]
     )
     for item in news_items[:6]:
-        industries = ", ".join(item.industries) if item.industries else "Market"
+        industries = ", ".join(item.industries) if item.industries else "市場"
         lines.append(f"- [{industries}] {item.title} ({item.source}, {item.date.isoformat()})")
     if not news_items:
-        lines.append("- RSS feed unavailable in this run; report used cached market data and neutral RSS scoring.")
+        lines.append("- 本次未取得 RSS 新聞，報告改用快取行情與中性新聞分數。")
+
+    lines.extend(
+        [
+            "",
+            "## OHLCV Chart Data",
+            "",
+            "| Symbol | Date | Open | High | Low | Close | Volume |",
+            "|---|---|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for row in rows:
+        for bar in bars_by_symbol.get(row.symbol, [])[-90:]:
+            lines.append(
+                f"| {_md_cell(row.symbol)} | {bar.timestamp.date().isoformat()} | "
+                f"{bar.open:.4f} | {bar.high:.4f} | {bar.low:.4f} | {bar.close:.4f} | {bar.volume:.0f} |"
+            )
+
+    lines.extend(
+        [
+            "",
+            "## Workflow Coverage Matrix",
+            "",
+            "| Symbol | Step | Task | Status | Evidence | Missing | Modules |",
+            "|---|---:|---|---|---|---|---|",
+        ]
+    )
+    for row in rows:
+        audit = workflow_audits.get(row.symbol)
+        if not audit:
+            continue
+        for step in audit.steps:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        _md_cell(row.symbol),
+                        str(step.step),
+                        _md_cell(step.task),
+                        step.status,
+                        _md_cell("; ".join(step.evidence) or "-"),
+                        _md_cell("; ".join(step.missing) or "-"),
+                        _md_cell(", ".join(step.modules)),
+                    ]
+                )
+                + " |"
+            )
     lines.extend(
         [
             "",
@@ -304,3 +427,15 @@ def _strategy_points(row: HybridRow) -> tuple[float, float, float, float]:
     stop = row.current_close * 0.955
     take_profit = max(row.predicted_close, row.current_close * 1.06)
     return entry, stop, add, take_profit
+
+
+def _md_cell(value: str) -> str:
+    return str(value).replace("|", "/").replace("\n", " ").strip()
+
+
+def _optional_pct(value) -> str:
+    return "n/a" if value is None else f"{float(value):.2%}"
+
+
+def _optional_number(value) -> str:
+    return "n/a" if value is None else f"{float(value):.4f}"

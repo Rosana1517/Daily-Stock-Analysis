@@ -107,13 +107,16 @@ def _run_quant_hybrid_pipeline(config: AppConfig, current_date: date) -> Pipelin
         news_path=config.news_path,
         rss_sources_path=config.rss_sources_path,
         notify=False,
+        stock_snapshot_path=config.stock_path,
+        price_1h_path=config.price_1h_path,
+        price_5m_path=config.price_5m_path,
     )
     report = report_path.read_text(encoding="utf-8")
     html_report_path = save_report_html(config.report_dir, current_date, report)
     report_url = public_report_url(config.report_public_base_url, html_report_path)
     notification_body = _quant_notification_body(report, str(report_path), config.notification_mode, report_url)
     notification_status = send_notification(
-        title=f"Hybrid Quant Daily Stock Report - {current_date.isoformat()}",
+        title=current_date.isoformat() if config.notification_mode == "report_link" and report_url else f"Hybrid Quant 每日股票報告 - {current_date.isoformat()}",
         body=notification_body,
         webhook_env=config.notification_webhook_env,
         line_channel_access_token_env=config.line_channel_access_token_env,
@@ -125,9 +128,9 @@ def _run_quant_hybrid_pipeline(config: AppConfig, current_date: date) -> Pipelin
 
 def _quant_notification_body(report: str, report_path: str, notification_mode: str, report_url: str | None) -> str:
     if notification_mode == "report_link" and report_url:
-        return f"{_first_report_sections(report)}\n\nFull report:\n{report_url}"
+        return report_url
     if notification_mode == "report_link":
-        return f"{_first_report_sections(report)}\n\nFull report path:\n{report_path}"
+        return report_path
     return report
 
 
@@ -195,7 +198,7 @@ def _notification_body(
     if notification_mode == "full_report":
         return report
     if notification_mode == "report_link":
-        return _notification_link_summary(recommendations, report_path, notification_min_score, report_url)
+        return report_url or report_path
     return _notification_summary(recommendations, report_path, notification_min_score)
 
 

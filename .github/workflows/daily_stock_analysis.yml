@@ -54,7 +54,9 @@ jobs:
           python-version: "3.11"
 
       - name: Install package
-        run: python -m pip install -e .
+        run: |
+          python -m pip install -e ".[market]"
+          python -m pip install "greenlet==3.1.1" "pyqlib>=0.9.6" || echo "pyqlib install failed; Qlib engine will report missing runtime and the daily report will continue"
 
       - name: Verify TWSE endpoints
         timeout-minutes: 5

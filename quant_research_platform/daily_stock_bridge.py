@@ -68,7 +68,11 @@ class RealtimeState:
     timestamp: str
 
 
-def build_technical_signals(bars_by_symbol: dict[str, list[Bar]]):
+def build_technical_signals(
+    bars_by_symbol: dict[str, list[Bar]],
+    structure_history: dict[str, list[PriceBar]] | None = None,
+    trigger_history: dict[str, list[PriceBar]] | None = None,
+):
     history = {
         symbol: [
             PriceBar(
@@ -84,7 +88,7 @@ def build_technical_signals(bars_by_symbol: dict[str, list[Bar]]):
         ]
         for symbol, bars in bars_by_symbol.items()
     }
-    return analyze_candlesticks(history)
+    return analyze_candlesticks(history, structure_history, trigger_history)
 
 
 def load_or_fetch_industry_signals(

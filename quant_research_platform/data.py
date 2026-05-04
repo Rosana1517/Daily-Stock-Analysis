@@ -53,18 +53,18 @@ def fetch_openbb_ohlcv(symbols: Iterable[str], provider: str | None = None, peri
     os.environ["USERPROFILE"] = str(openbb_home)
     try:
         from openbb import obb
-    except ImportError as exc:
-        raise RuntimeError("OpenBB is not installed. Install it with `pip install openbb`.") from exc
+    except ImportError:
+        return {symbol.upper(): _fetch_yfinance_bars(_tw_yahoo_symbol(symbol), period) for symbol in symbols}
 
     grouped: dict[str, list[Bar]] = {}
     for symbol in symbols:
         kwargs = {"provider": provider} if provider else {}
         try:
-            output = obb.equity.price.historical(symbol, **kwargs)
+            output = obb.equity.price.historical(_tw_yahoo_symbol(symbol), **kwargs)
             frame = output.to_dataframe().reset_index()
             grouped[symbol.upper()] = _bars_from_frame(symbol, frame)
         except Exception:
-            grouped[symbol.upper()] = _fetch_yfinance_bars(symbol, period)
+            grouped[symbol.upper()] = _fetch_yfinance_bars(_tw_yahoo_symbol(symbol), period)
     return grouped
 
 
@@ -138,6 +138,15 @@ def _bars_from_frame(symbol: str, frame) -> list[Bar]:
             )
         )
     return bars
+
+
+def _tw_yahoo_symbol(symbol: str) -> str:
+    value = symbol.upper().strip()
+    if "." in value:
+        return value
+    if len(value) == 4 and value.isdigit():
+        return f"{value}.TW"
+    return value
 
 
 def save_ohlcv_csv(path: Path, bars_by_symbol: dict[str, list[Bar]]) -> Path:
