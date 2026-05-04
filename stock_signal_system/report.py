@@ -1075,11 +1075,31 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
       .indicator-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
     }}
     @media (max-width: 680px) {{
-      main {{ width: min(100vw - 18px, 1280px); }}
+      body {{ background: #05070c; }}
+      main {{ width: min(100vw - 12px, 1280px); margin: 6px auto 18px; }}
+      .toolbar {{ position: sticky; top: 0; z-index: 10; grid-template-columns: minmax(0, 1fr) 64px; gap: 8px; padding: 6px 0 10px; background: #05070c; }}
+      .search {{ min-height: 40px; padding: 8px 10px; font-size: 13px; line-height: 1.35; }}
+      .tool-chip {{ min-height: 40px; padding: 0 10px; }}
+      .grid {{ display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }}
+      .industry-panel {{ order: 1; }}
+      .stock-panel {{ order: 2; }}
+      #detailRoot {{ order: 3; }}
+      .pad, .hero, .section {{ padding: 12px; }}
+      .panel {{ border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.3); }}
+      .sticky {{ max-height: none; overflow: visible; }}
+      .industry-panel h2, .stock-panel h2 {{ margin-bottom: 8px; font-size: 16px; }}
+      .industry-list, .stock-list {{ display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden; padding: 0 2px 8px 0; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }}
+      .industry-btn, .stock-btn {{ min-width: 178px; min-height: 64px; padding: 10px; scroll-snap-align: start; }}
+      .industry-btn p, .stock-btn small {{ font-size: 12px; line-height: 1.35; }}
+      .group-title {{ min-width: 88px; margin: 0; display: flex; align-items: center; color: var(--cyan); font-size: 12px; }}
       .toolbar, .model-grid, .metrics, .indicator-grid, .thesis-grid, .coverage-summary, .coverage-row {{ grid-template-columns: 1fr; }}
-      .chart-box svg {{ min-height: 310px; }}
+      .chart-box {{ padding: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; }}
+      .chart-box svg {{ width: 680px; max-width: none; min-height: 360px; }}
       .hero-head {{ display: block; }}
+      .hero h1 {{ font-size: 24px; line-height: 1.2; }}
       .score {{ margin-top: 10px; }}
+      .summary {{ font-size: 15px; }}
+      .model-card, .metric, .indicator, .thesis, .reason-list li, .strategy-list li, .news-list li, .portfolio-list li {{ padding: 10px; }}
     }}
   </style>
 </head>
@@ -1090,13 +1110,13 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
       <button class="tool-chip" id="showAllBtn">全部</button>
     </div>
     <div class="grid">
-      <aside class="panel pad sticky">
+      <aside class="panel pad sticky industry-panel">
         <span class="eyebrow">RSS</span>
         <h2>產業分析</h2>
         <div id="industryList" class="industry-list"></div>
       </aside>
       <section id="detailRoot"></section>
-      <aside class="panel pad sticky">
+      <aside class="panel pad sticky stock-panel">
         <span class="eyebrow">Recommended</span>
         <h2>推薦股票</h2>
         <div id="stockList" class="stock-list"></div>
@@ -1138,11 +1158,22 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
         selectedSymbol = visible[0]?.symbol || report.stocks[0]?.symbol || '';
       }}
       render();
+      focusMobilePanel(stockList);
     }}
 
     function selectStock(symbol) {{
       selectedSymbol = symbol;
       render();
+      focusMobilePanel(detailRoot);
+    }}
+
+    function isMobileLayout() {{
+      return window.matchMedia('(max-width: 680px)').matches;
+    }}
+
+    function focusMobilePanel(element) {{
+      if (!isMobileLayout() || !element) return;
+      window.setTimeout(() => element.scrollIntoView({{ behavior: 'smooth', block: 'start' }}), 40);
     }}
 
     function renderIndustries() {{
@@ -1161,9 +1192,10 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
           <header><span>${{escapeHtml(name)}}</span><b>${{escapeHtml(scoreText)}}</b></header>
           <p>${{escapeHtml(detailText)}}</p>
         `;
-        button.addEventListener('click', () => selectIndustry(name));
-        industryList.appendChild(button);
+          button.addEventListener('click', () => selectIndustry(name));
+          industryList.appendChild(button);
       }});
+      keepActiveChipVisible(industryList);
     }}
 
     function renderStocks() {{
@@ -1193,6 +1225,13 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
           stockList.appendChild(button);
         }});
       }});
+      keepActiveChipVisible(stockList);
+    }}
+
+    function keepActiveChipVisible(container) {{
+      if (!isMobileLayout() || !container) return;
+      const active = container.querySelector('.active');
+      if (active) window.setTimeout(() => active.scrollIntoView({{ behavior: 'smooth', inline: 'center', block: 'nearest' }}), 20);
     }}
 
     function renderDetail() {{
