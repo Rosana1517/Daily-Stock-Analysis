@@ -13,7 +13,12 @@ from stock_signal_system.data.tpex import (
     combine_csv_files,
     fetch_tpex_dataset,
 )
-from stock_signal_system.data.twse import build_twse_daily_price_csv, build_twse_material_news_csv, build_twse_stock_csv
+from stock_signal_system.data.twse import (
+    build_twse_daily_price_csv,
+    build_twse_material_news_csv,
+    build_twse_stock_csv,
+    fetch_twse_dataset,
+)
 from stock_signal_system.data.yfinance_source import download_yfinance_history
 from stock_signal_system.pages_publish import publish_report_to_pages
 from stock_signal_system.pipeline import run_pipeline
@@ -59,6 +64,9 @@ def main() -> None:
 
     tpex_verify_parser = subparsers.add_parser("verify-tpex", help="Verify TPEx quotes and peratio endpoints.")
     tpex_verify_parser.add_argument("--cache-dir", default=".cache", help="Cache directory.")
+
+    twse_verify_parser = subparsers.add_parser("verify-twse", help="Verify core TWSE OpenAPI endpoints.")
+    twse_verify_parser.add_argument("--cache-dir", default=".cache", help="Cache directory.")
 
     pages_parser = subparsers.add_parser("publish-pages", help="Publish a generated HTML report to GitHub Pages repo.")
     pages_parser.add_argument("--report-html", required=True, help="Path to generated report HTML.")
@@ -179,6 +187,15 @@ def main() -> None:
             pe_rows = sum(1 for row in peratio if str(row.get("PriceEarningRatio", "")).strip())
             print(f"tpex_peratio_rows={len(peratio)}", flush=True)
             print(f"tpex_peratio_nonempty_pe_rows={pe_rows}", flush=True)
+    elif args.command == "verify-twse":
+        with _step_timer("twse_daily_all_endpoint_verify"):
+            daily = fetch_twse_dataset("daily_all", Path(args.cache_dir))
+            print(f"twse_daily_all_rows={len(daily)}", flush=True)
+        with _step_timer("twse_valuation_endpoint_verify"):
+            valuation = fetch_twse_dataset("valuation", Path(args.cache_dir))
+            pe_rows = sum(1 for row in valuation if str(row.get("PEratio", "")).strip())
+            print(f"twse_valuation_rows={len(valuation)}", flush=True)
+            print(f"twse_valuation_nonempty_pe_rows={pe_rows}", flush=True)
     elif args.command == "publish-pages":
         result = publish_report_to_pages(
             Path(args.report_html),

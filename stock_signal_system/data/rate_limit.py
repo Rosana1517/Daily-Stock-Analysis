@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import time
 import urllib.error
 import urllib.parse
@@ -65,6 +66,12 @@ class RateLimitedHttpClient:
                     print(f"http_get_failed={request_key} status={exc.code}", flush=True)
                     raise
                 print(f"http_get_retry={request_key} status={exc.code} attempt={attempt + 1}", flush=True)
+                time.sleep((2**attempt) * 5)
+            except (TimeoutError, socket.timeout, urllib.error.URLError) as exc:
+                if attempt == 2:
+                    print(f"http_get_failed={request_key} error={exc}", flush=True)
+                    raise
+                print(f"http_get_retry={request_key} error={exc} attempt={attempt + 1}", flush=True)
                 time.sleep((2**attempt) * 5)
         raise RuntimeError("unreachable retry state")
 

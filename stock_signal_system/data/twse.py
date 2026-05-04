@@ -18,6 +18,12 @@ ENDPOINTS = {
     "holiday": "/holidaySchedule/holidaySchedule",
 }
 
+TWSE_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+
 FALLBACK_INDUSTRIES = {
     "23": "半導體",
     "24": "半導體",
@@ -78,9 +84,18 @@ INDUSTRY_CODE_NAMES = {
 def fetch_twse_dataset(name: str, cache_dir: Path) -> list[dict]:
     if name not in ENDPOINTS:
         raise ValueError(f"Unknown TWSE dataset: {name}")
-    client = RateLimitedHttpClient(cache_dir=cache_dir / "twse", min_interval_seconds=1.0)
+    client = RateLimitedHttpClient(
+        cache_dir=cache_dir / "twse",
+        min_interval_seconds=1.0,
+        user_agent=TWSE_USER_AGENT,
+    )
     data = client.get_json(
         BASE_URL + ENDPOINTS[name],
+        headers={
+            "Accept": "application/json,text/plain,*/*",
+            "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
+            "Referer": "https://www.twse.com.tw/",
+        },
         cache_key=f"twse_{name}",
         ttl_seconds=1800,
     )

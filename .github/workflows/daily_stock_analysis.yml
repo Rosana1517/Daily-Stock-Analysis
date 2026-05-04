@@ -56,6 +56,10 @@ jobs:
       - name: Install package
         run: python -m pip install -e .
 
+      - name: Verify TWSE endpoints
+        timeout-minutes: 5
+        run: python -m stock_signal_system.cli verify-twse --cache-dir .cache_verify_twse
+
       - name: Verify TPEx endpoints
         timeout-minutes: 4
         run: python -m stock_signal_system.cli verify-tpex --cache-dir .cache_verify_tpex
