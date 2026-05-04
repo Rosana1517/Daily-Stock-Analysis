@@ -969,6 +969,7 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
             strategy_by_symbol.get(row.get("Symbol", ""), ""),
             coverage_by_symbol.get(row.get("Symbol", ""), []),
             chart_data_by_symbol.get(row.get("Symbol", ""), []),
+            industries,
         )
         for row in top_rows
     ]
@@ -1025,7 +1026,7 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
     h1, h2, h3, p {{ margin-top: 0; }}
     h2 {{ font-size: 18px; margin-bottom: 13px; }}
     button {{ font: inherit; cursor: pointer; }}
-    .industry-list, .stock-list, .news-list, .strategy-list, .reason-list, .portfolio-list {{ list-style: none; padding: 0; margin: 0; display: grid; gap: 9px; }}
+    .industry-list, .stock-list, .news-list, .strategy-list, .reason-list, .portfolio-list, .related-list {{ list-style: none; padding: 0; margin: 0; display: grid; gap: 9px; }}
     .industry-list, .stock-list {{ overflow-y: auto; padding-right: 4px; min-height: 0; }}
     #detailRoot {{ min-height: 0; overflow-y: auto; padding-right: 4px; }}
     .industry-btn, .stock-btn {{ width: 100%; text-align: left; border: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.035); color: var(--text); border-radius: 8px; padding: 11px 12px; transition: border-color .15s ease, background .15s ease, transform .15s ease; }}
@@ -1046,6 +1047,9 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
     .summary {{ margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.08); font-weight: 700; font-size: 16px; }}
     .model-grid, .metrics {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }}
     .model-card, .metric, .indicator, .thesis, .reason-list li, .strategy-list li, .news-list li, .portfolio-list li {{ border: 1px solid rgba(255,255,255,.08); border-radius: 8px; background: rgba(255,255,255,.035); padding: 10px 11px; }}
+    .related-list li {{ border: 1px solid rgba(0,209,255,.14); border-radius: 8px; background: rgba(0,209,255,.045); padding: 10px 11px; }}
+    .related-list header {{ display: flex; justify-content: space-between; gap: 10px; color: var(--cyan); font-weight: 900; }}
+    .related-list p {{ margin: 5px 0 0; color: var(--muted); font-size: 13px; }}
     .model-card span, .metric span, .indicator span, .thesis span {{ display: block; color: var(--muted); font-size: 12px; }}
     .model-card b, .metric b, .indicator b {{ color: var(--text); font-size: 16px; }}
     .model-card p {{ color: var(--muted); margin: 5px 0 0; font-size: 13px; }}
@@ -1144,9 +1148,6 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
 
     function industriesFromData() {{
       const names = new Set(report.stocks.map(s => s.industry).filter(isValidIndustryName));
-      report.industries.forEach(item => {{
-        if (isValidIndustryName(item.Industry)) names.add(item.Industry);
-      }});
       return ['全部', ...Array.from(names)];
     }}
 
@@ -1188,8 +1189,8 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
         const group = report.groups.find(item => item.Industry === name);
         const scoreText = name === '全部'
           ? rows.length
-          : (rss?.['RSS Score'] || group?.['Average Hybrid'] || rows.length);
-        const detailText = rss?.['Key Catalyst'] || group?.['Bias'] || `${{rows.length}} 檔推薦/觀察股票`;
+          : (group?.['Average Hybrid'] || rss?.['RSS Score'] || rows.length);
+        const detailText = group?.['Bias'] || rss?.['Key Catalyst'] || `${{rows.length}} 檔推薦/觀察股票`;
         const button = document.createElement('button');
         button.className = 'industry-btn' + (selectedIndustry === name ? ' active' : '');
         button.innerHTML = `
@@ -1307,8 +1308,8 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
         </article>
         <article class="panel section">
           <span class="eyebrow">RSS</span>
-          <h2>產業分析</h2>
-          <ul class="news-list">${{report.news.slice(0, 8).map(item => `<li>${{escapeHtml(item)}}</li>`).join('')}}</ul>
+          <h2>相關新聞產業分析</h2>
+          ${{relatedIndustryHtml(stock)}}
         </article>
         <article class="panel section">
           <span class="eyebrow">Workflow</span>
@@ -1361,7 +1362,23 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
     }}
 
     function heroSummary(stock) {{
-      return `${{stock.symbol}} ${{stock.name}} 屬於 ${{stock.industry}}，爬取當下價格 ${{formatPrice(stock.current)}}，Hybrid 分數 ${{stock.hybrid.toFixed(1)}}。目前策略為「${{stock.action}}」，Kronos 預估 ${{stock.kronos.toFixed(2)}}%，RSS 與技術指標會隨右側股票切換同步更新。`;
+      const related = Array.isArray(stock.relatedIndustries) && stock.relatedIndustries.length
+        ? `；相關新聞題材另追蹤 ${{stock.relatedIndustries.map(item => item.industry).join('、')}}`
+        : '';
+      return `${{stock.symbol}} ${{stock.name}} 主要歸類為 ${{stock.industry}}，爬取當下價格 ${{formatPrice(stock.current)}}，Hybrid 分數 ${{stock.hybrid.toFixed(1)}}。目前策略為「${{stock.action}}」，Kronos 預估 ${{stock.kronos.toFixed(2)}}%，RSS 與技術指標會隨右側股票切換同步更新${{related}}。`;
+    }}
+
+    function relatedIndustryHtml(stock) {{
+      const items = Array.isArray(stock.relatedIndustries) ? stock.relatedIndustries : [];
+      if (!items.length) {{
+        return '<div class="empty">此股票目前沒有額外的相關新聞產業；分類僅採主要產業。</div>';
+      }}
+      return `<ul class="related-list">${{items.map(item => `
+        <li>
+          <header><span>${{escapeHtml(item.industry)}}</span><b>${{escapeHtml(item.score)}}</b></header>
+          <p>${{escapeHtml(item.catalyst || '相關題材仍需追蹤')}}</p>
+        </li>
+      `).join('')}}</ul>`;
     }}
 
     function formatPrice(value) {{
@@ -1731,6 +1748,7 @@ def _interactive_stock_payload(
     note: str,
     coverage: list[dict] | None = None,
     chart_data: list[dict[str, float | str]] | None = None,
+    industry_signals: list[dict[str, str]] | None = None,
 ) -> dict:
     symbol = row.get("Symbol", "")
     hybrid = _float_text(row.get("Hybrid", "50"))
@@ -1742,10 +1760,11 @@ def _interactive_stock_payload(
     if current <= 0 and bars:
         current = _float_text(str(bars[-1].get("close", 0)))
     indicators = _technical_indicators(symbol, hybrid, kronos, news_score, tech_score, bars)
+    primary_industry = _normalize_industry(row.get("Industry", "未分類"))
     return {
         "symbol": symbol,
         "name": row.get("Name", ""),
-        "industry": row.get("Industry", "未分類"),
+        "industry": primary_industry,
         "current": current,
         "hybrid": hybrid,
         "kronos": kronos,
@@ -1754,11 +1773,65 @@ def _interactive_stock_payload(
         "action": row.get("Action", "觀望"),
         "reasons": _recommendation_reasons(row, note),
         "strategies": _strategy_items(row, indicators, note),
+        "relatedIndustries": _related_industries_for_stock(primary_industry, industry_signals or []),
         "indicators": indicators,
         "model": _stock_model_snapshot(row, indicators),
         "coverage": coverage or [],
         "ohlcv": bars,
     }
+
+
+def _related_industries_for_stock(primary_industry: str, industry_signals: list[dict[str, str]]) -> list[dict[str, str]]:
+    related: list[dict[str, str]] = []
+    for row in industry_signals:
+        industry = _normalize_industry(row.get("Industry", ""))
+        if not industry or industry == primary_industry:
+            continue
+        if not _is_related_industry(primary_industry, industry):
+            continue
+        related.append(
+            {
+                "industry": industry,
+                "score": row.get("RSS Score", ""),
+                "catalyst": row.get("Key Catalyst", ""),
+            }
+        )
+    if related:
+        return related[:4]
+    # Keep the detailed RSS context available, but do not use these as stock filter buckets.
+    return [
+        {
+            "industry": _normalize_industry(row.get("Industry", "")),
+            "score": row.get("RSS Score", ""),
+            "catalyst": row.get("Key Catalyst", ""),
+        }
+        for row in industry_signals[:2]
+        if _normalize_industry(row.get("Industry", "")) and _normalize_industry(row.get("Industry", "")) != primary_industry
+    ]
+
+
+def _is_related_industry(primary: str, candidate: str) -> bool:
+    primary_tokens = _industry_tokens(primary)
+    candidate_tokens = _industry_tokens(candidate)
+    return bool(primary_tokens & candidate_tokens) or primary in candidate or candidate in primary
+
+
+def _industry_tokens(industry: str) -> set[str]:
+    text = _normalize_industry(industry)
+    tokens: set[str] = set()
+    rules = {
+        "半導體": {"半導體", "晶圓", "IC", "ASIC", "封測", "材料"},
+        "AI 伺服器": {"AI", "伺服器", "ASIC", "電源", "散熱"},
+        "散熱": {"散熱", "電源", "AI", "伺服器"},
+        "電力設備": {"電力", "電源", "能源", "散熱"},
+        "消費電子": {"消費", "電子", "PC", "終端"},
+    }
+    for label, values in rules.items():
+        if label in text or any(value in text for value in values):
+            tokens.update(values)
+    if not tokens:
+        tokens.add(text)
+    return tokens
 
 
 def _interactive_model_overview(top_rows: list[dict[str, str]], portfolio: list[str], openbb_live: bool = False) -> list[dict[str, str]]:
