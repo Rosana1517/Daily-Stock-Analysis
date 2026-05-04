@@ -49,14 +49,13 @@ class PipelineTest(unittest.TestCase):
             self.assertEqual(result.notification_status, "disabled")
             report = (tmp_path / "stock_signals_2026-04-24.md").read_text(encoding="utf-8")
             html_report = (tmp_path / "stock_signals_2026-04-24.html").read_text(encoding="utf-8")
-            self.assertIn("每日選股觀察報告", report)
-            self.assertIn("今日資料概況", report)
-            self.assertIn("工作台總覽", report)
-            self.assertIn("個股詳細分析", report)
-            self.assertNotIn("本次分析流程", report)
+            self.assertIn("資料更新摘要", report)
+            self.assertIn("今日產業訊號", report)
+            self.assertIn("進場條件", report)
+            self.assertIn("停損", report)
             self.assertIn("<html", html_report)
 
-    def test_report_link_notification_contains_only_report_url(self):
+    def test_report_link_notification_contains_only_public_report_url(self):
         body = _notification_body(
             recommendations=[],
             report_path="reports/stock_signals_2026-04-29.md",
@@ -68,9 +67,9 @@ class PipelineTest(unittest.TestCase):
 
         self.assertEqual(
             body,
+            "今日沒有高優先標的。候選觀察：。\n\n"
             "完整報告連結：https://example.com/reports/stock_signals_2026-04-29.html",
         )
-        self.assertNotIn("今日前 5 名觀察", body)
         self.assertNotIn("reports/stock_signals_2026-04-29.md", body)
 
 

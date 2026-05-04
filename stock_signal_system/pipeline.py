@@ -1,22 +1,20 @@
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
-from pathlib import Path
 from typing import Optional
 
 from stock_signal_system.config import AppConfig
 from stock_signal_system.data.csv_sources import load_intraday_history, load_news, load_price_history, load_stocks
 from stock_signal_system.industry import analyze_industries
-from stock_signal_system.models import ChangeSummary, IndustrySignal, StockRecommendation, StockSnapshot
+from stock_signal_system.models import IndustrySignal, StockRecommendation, StockSnapshot
 from stock_signal_system.notify import send_notification
 from stock_signal_system.report import build_report, public_report_url, save_report, save_report_html
 from stock_signal_system.strategies.candlestick import analyze_candlesticks
 from stock_signal_system.strategies.rule_score import score_stocks
 
 
-DEFAULT_OBSERVATION_INDUSTRIES = ("半導體", "AI伺服器", "電力設備", "儲能", "散熱", "電子零組件")
+DEFAULT_OBSERVATION_INDUSTRIES = ("AI伺服器", "半導體", "電力設備", "儲能", "散熱", "消費電子")
 
 
 @dataclass(frozen=True)
@@ -29,9 +27,11 @@ class PipelineResult:
 
 def run_pipeline(config: AppConfig, report_date: Optional[date] = None) -> PipelineResult:
     current_date = report_date or date.today()
+    if config.quant_config_path:
+        return _run_quant_hybrid_pipeline(config, current_date)
+
     news = load_news(config.news_path)
     stocks = load_stocks(config.stock_path)
-    previous_state = _load_previous_state(config.report_dir)
 
     daily_history = {}
     structure_history = {}
@@ -51,14 +51,13 @@ def run_pipeline(config: AppConfig, report_date: Optional[date] = None) -> Pipel
     required_industry_count = max(config.min_industry_signals, config.min_recommendations)
     industry_signals = _ensure_min_industry_signals(industry_signals, stocks, required_industry_count)
 
-    limit = max(config.min_recommendations, min(config.top_n, config.max_watchlist))
+    limit = min(config.top_n, config.max_watchlist)
     recommendations = score_stocks(
         stocks,
         industry_signals,
         config.min_score,
         technicals,
         trade_direction=config.trade_direction,
-        previous_state=previous_state,
     )
     if len(recommendations) < min(config.min_recommendations, limit):
         recommendations = _fill_recommendations(
@@ -68,23 +67,13 @@ def run_pipeline(config: AppConfig, report_date: Optional[date] = None) -> Pipel
             technicals,
             config.trade_direction,
             limit,
-            previous_state,
         )
-    recommendations = _apply_final_rank_changes(recommendations, previous_state)[:limit]
-    change_summary = _build_change_summary(recommendations, industry_signals, previous_state)
+    recommendations = recommendations[:limit]
 
-    report = build_report(
-        current_date,
-        industry_signals,
-        recommendations,
-        change_summary,
-        stock_universe_count=len(stocks),
-        daily_history=daily_history,
-    )
+    report = build_report(current_date, industry_signals, recommendations)
     report_path = save_report(config.report_dir, current_date, report)
     html_report_path = save_report_html(config.report_dir, current_date, report)
     report_url = public_report_url(config.report_public_base_url, html_report_path)
-    _save_state(config.report_dir, current_date, industry_signals, recommendations)
 
     notification_body = _notification_body(
         recommendations,
@@ -105,6 +94,48 @@ def run_pipeline(config: AppConfig, report_date: Optional[date] = None) -> Pipel
     return PipelineResult(str(report_path), industry_signals, recommendations, notification_status)
 
 
+def _run_quant_hybrid_pipeline(config: AppConfig, current_date: date) -> PipelineResult:
+    from quant_research_platform.config import QuantPlatformConfig
+    from quant_research_platform.hybrid import run_tw_hybrid
+
+    quant_config = QuantPlatformConfig.from_file(config.quant_config_path)
+    quant_config = replace(quant_config, output_dir=config.report_dir)
+    report_path, _csv_path, _qlib_path, _hybrid_status = run_tw_hybrid(
+        quant_config,
+        current_date,
+        realtime_cache=config.quant_realtime_cache_path,
+        news_path=config.news_path,
+        rss_sources_path=config.rss_sources_path,
+        notify=False,
+    )
+    report = report_path.read_text(encoding="utf-8")
+    html_report_path = save_report_html(config.report_dir, current_date, report)
+    report_url = public_report_url(config.report_public_base_url, html_report_path)
+    notification_body = _quant_notification_body(report, str(report_path), config.notification_mode, report_url)
+    notification_status = send_notification(
+        title=f"Hybrid Quant Daily Stock Report - {current_date.isoformat()}",
+        body=notification_body,
+        webhook_env=config.notification_webhook_env,
+        line_channel_access_token_env=config.line_channel_access_token_env,
+        line_to_env=config.line_to_env,
+        line_broadcast=config.line_broadcast,
+    )
+    return PipelineResult(str(report_path), [], [], notification_status)
+
+
+def _quant_notification_body(report: str, report_path: str, notification_mode: str, report_url: str | None) -> str:
+    if notification_mode == "report_link" and report_url:
+        return f"{_first_report_sections(report)}\n\nFull report:\n{report_url}"
+    if notification_mode == "report_link":
+        return f"{_first_report_sections(report)}\n\nFull report path:\n{report_path}"
+    return report
+
+
+def _first_report_sections(report: str, max_lines: int = 26) -> str:
+    lines = [line for line in report.splitlines() if line.strip()]
+    return "\n".join(lines[:max_lines])
+
+
 def _ensure_min_industry_signals(
     industry_signals: list[IndustrySignal],
     stocks: list[StockSnapshot],
@@ -113,7 +144,7 @@ def _ensure_min_industry_signals(
     if len(industry_signals) >= min_count:
         return industry_signals
     existing = {item.industry for item in industry_signals}
-    stock_industries = list(DEFAULT_OBSERVATION_INDUSTRIES)
+    stock_industries = [industry for industry in DEFAULT_OBSERVATION_INDUSTRIES if any(s.industry == industry for s in stocks)]
     supplemented = list(industry_signals)
     for industry in stock_industries:
         if len(supplemented) >= min_count:
@@ -124,7 +155,7 @@ def _ensure_min_industry_signals(
             IndustrySignal(
                 industry=industry,
                 score=42.0,
-                catalysts=("今日有效新聞證據不足，依固定台股追蹤領域列為備選觀察。",),
+                catalysts=("今日有效新聞證據不足，依固定台股追蹤領域列為備選觀察",),
                 evidence_count=0,
             )
         )
@@ -139,17 +170,9 @@ def _fill_recommendations(
     technicals: dict,
     trade_direction: str,
     limit: int,
-    previous_state: dict | None,
 ) -> list[StockRecommendation]:
     existing_symbols = {item.stock.symbol for item in current}
-    expanded = score_stocks(
-        stocks,
-        industry_signals,
-        0,
-        technicals,
-        trade_direction=trade_direction,
-        previous_state=previous_state,
-    )
+    expanded = score_stocks(stocks, industry_signals, 0, technicals, trade_direction=trade_direction)
     combined = list(current)
     for item in expanded:
         if len(combined) >= limit:
@@ -159,114 +182,6 @@ def _fill_recommendations(
         combined.append(item)
         existing_symbols.add(item.stock.symbol)
     return sorted(combined, key=lambda item: item.score, reverse=True)
-
-
-def _apply_final_rank_changes(
-    recommendations: list[StockRecommendation],
-    previous_state: dict | None,
-) -> list[StockRecommendation]:
-    ranked = sorted(recommendations, key=lambda item: item.score, reverse=True)
-    if not previous_state:
-        return ranked
-    previous = previous_state.get("recommendations", {})
-    updated = []
-    for rank, item in enumerate(ranked, start=1):
-        prior = previous.get(item.stock.symbol)
-        if prior:
-            rank_delta = int(prior.get("rank", rank)) - rank
-            status = item.status
-        else:
-            rank_delta = None
-            status = "新進候選"
-        updated.append(
-            StockRecommendation(
-                stock=item.stock,
-                score=item.score,
-                rating=item.rating,
-                reasons=item.reasons,
-                risks=item.risks,
-                entry_plan=item.entry_plan,
-                stop_loss=item.stop_loss,
-                exit_plan=item.exit_plan,
-                freshness_score=item.freshness_score,
-                change_score=item.change_score,
-                score_delta=item.score_delta,
-                rank_delta=rank_delta,
-                status=status,
-            )
-        )
-    return updated
-
-
-def _build_change_summary(
-    recommendations: list[StockRecommendation],
-    industry_signals: list[IndustrySignal],
-    previous_state: dict | None,
-) -> ChangeSummary:
-    current_symbols = {item.stock.symbol: item for item in recommendations}
-    current_industries = {item.industry for item in industry_signals}
-    if not previous_state:
-        return ChangeSummary(
-            new_symbols=tuple(current_symbols.keys()),
-            industry_new=tuple(sorted(current_industries)),
-        )
-    previous_symbols = set(previous_state.get("recommendations", {}).keys())
-    previous_industries = set(previous_state.get("industries", {}).keys())
-    improved = [
-        symbol
-        for symbol, item in current_symbols.items()
-        if item.score_delta is not None and item.score_delta >= 3
-    ]
-    weakened = [
-        symbol
-        for symbol, item in current_symbols.items()
-        if item.score_delta is not None and item.score_delta <= -3
-    ]
-    return ChangeSummary(
-        new_symbols=tuple(symbol for symbol in current_symbols if symbol not in previous_symbols),
-        removed_symbols=tuple(symbol for symbol in previous_symbols if symbol not in current_symbols),
-        improved_symbols=tuple(improved),
-        weakened_symbols=tuple(weakened),
-        industry_new=tuple(sorted(current_industries - previous_industries)),
-        industry_removed=tuple(sorted(previous_industries - current_industries)),
-    )
-
-
-def _load_previous_state(report_dir: Path) -> dict | None:
-    path = report_dir / "latest_state.json"
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return None
-
-
-def _save_state(
-    report_dir: Path,
-    report_date: date,
-    industry_signals: list[IndustrySignal],
-    recommendations: list[StockRecommendation],
-) -> None:
-    report_dir.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "date": report_date.isoformat(),
-        "industries": {item.industry: {"score": item.score, "rank": rank} for rank, item in enumerate(industry_signals, start=1)},
-        "recommendations": {
-            item.stock.symbol: {
-                "name": item.stock.name,
-                "industry": item.stock.industry,
-                "score": item.score,
-                "rank": rank,
-                "rating": item.rating,
-            }
-            for rank, item in enumerate(recommendations, start=1)
-        },
-    }
-    (report_dir / "latest_state.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
 
 
 def _notification_body(
@@ -280,14 +195,35 @@ def _notification_body(
     if notification_mode == "full_report":
         return report
     if notification_mode == "report_link":
-        return _notification_link_only(report_path, report_url)
+        return _notification_link_summary(recommendations, report_path, notification_min_score, report_url)
     return _notification_summary(recommendations, report_path, notification_min_score)
 
 
-def _notification_link_only(report_path: str, report_url: str | None) -> str:
+def _notification_link_summary(
+    recommendations: list[StockRecommendation],
+    report_path: str,
+    notification_min_score: float,
+    report_url: str | None,
+) -> str:
     if report_url:
-        return f"\u5b8c\u6574\u5831\u544a\u9023\u7d50\uff1a{report_url}"
-    return f"\u5b8c\u6574\u5831\u544a\u5df2\u7522\u51fa\uff1a{report_path}"
+        return f"{_notification_pick_summary(recommendations, notification_min_score)}\n\n完整報告連結：{report_url}"
+    summary = _notification_summary(recommendations, report_path, notification_min_score)
+    return f"{summary}\n\n尚未設定公開報告網址，已產生本機報告：{report_path}"
+
+
+def _notification_pick_summary(
+    recommendations: list[StockRecommendation],
+    notification_min_score: float,
+) -> str:
+    high_priority = [item for item in recommendations if item.score >= notification_min_score]
+    if not high_priority:
+        picks = "、".join(f"{item.stock.symbol} {item.stock.name}({item.score:.1f})" for item in recommendations[:5])
+        return f"今日沒有高優先標的。候選觀察：{picks}。"
+    picks = "、".join(
+        f"{item.stock.symbol} {item.stock.name}({item.score:.1f})" for item in high_priority[:5]
+    )
+    return f"高優先標的：{picks}。"
+
 
 def _notification_summary(
     recommendations: list[StockRecommendation],
@@ -297,8 +233,8 @@ def _notification_summary(
     high_priority = [item for item in recommendations if item.score >= notification_min_score]
     if not high_priority:
         picks = "、".join(f"{item.stock.symbol} {item.stock.name}({item.score:.1f})" for item in recommendations[:5])
-        return f"今日沒有達高優先門檻的標的；前 5 名觀察：{picks}。報告：{report_path}"
+        return f"今日沒有高優先標的。候選觀察：{picks}。完整報告：{report_path}"
     picks = "、".join(
         f"{item.stock.symbol} {item.stock.name}({item.score:.1f})" for item in high_priority[:5]
     )
-    return f"今日高優先觀察：{picks}。報告：{report_path}"
+    return f"高優先標的：{picks}。完整報告：{report_path}"

@@ -1,0 +1,18 @@
+{
+  "symbols": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AMD", "AVGO", "NFLX", "PLTR", "COIN", "SMCI", "SPY", "QQQ"],
+  "data_source": "csv",
+  "ohlcv_path": "data/openbb_us_ohlcv.csv",
+  "openbb_provider": "yfinance",
+  "interval": "1d",
+  "lookback": 120,
+  "prediction_length": 5,
+  "top_n": 5,
+  "initial_cash": 1000000,
+  "transaction_cost_bps": 5,
+  "benchmark_symbol": "SPY",
+  "kronos_repo_path": "external/Kronos",
+  "kronos_tokenizer": "NeoQuasar/Kronos-Tokenizer-base",
+  "kronos_model": "NeoQuasar/Kronos-small",
+  "qlib_data_path": null,
+  "output_dir": "reports/quant_platform_us"
+}

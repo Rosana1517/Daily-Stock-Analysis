@@ -1,0 +1,18 @@
+{
+  "symbols": ["2330", "2382", "2454"],
+  "data_source": "csv",
+  "ohlcv_path": "examples/price_history.csv",
+  "openbb_provider": null,
+  "interval": "1d",
+  "lookback": 20,
+  "prediction_length": 5,
+  "top_n": 2,
+  "initial_cash": 1000000,
+  "transaction_cost_bps": 10,
+  "benchmark_symbol": "2330",
+  "kronos_repo_path": "external/Kronos",
+  "kronos_tokenizer": "NeoQuasar/Kronos-Tokenizer-base",
+  "kronos_model": "NeoQuasar/Kronos-small",
+  "qlib_data_path": null,
+  "output_dir": "reports/quant_platform"
+}

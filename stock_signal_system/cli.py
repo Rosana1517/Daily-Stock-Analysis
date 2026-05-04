@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 from pathlib import Path
 
 from stock_signal_system.config import AppConfig
@@ -88,23 +89,32 @@ def main() -> None:
             print(f"rss_news_output={output}")
         else:
             print("rss_news_skipped=no_rss_sources_path")
+        refreshed_paths = []
         if args.skip_twse:
             print("twse_skipped=skip_twse")
         else:
-            stocks_output = build_twse_stock_csv(Path("data/twse_stocks.csv"), Path(args.cache_dir))
-            prices_output = build_twse_daily_price_csv(Path("data/twse_price_daily.csv"), Path(args.cache_dir))
-            news_output = build_twse_material_news_csv(Path("data/twse_material_news.csv"), Path(args.cache_dir))
-            print(f"twse_stocks_output={stocks_output}")
-            print(f"twse_prices_output={prices_output}")
-            print(f"twse_news_output={news_output}")
+            try:
+                stocks_output = build_twse_stock_csv(Path("data/twse_stocks.csv"), Path(args.cache_dir))
+                prices_output = build_twse_daily_price_csv(Path("data/twse_price_daily.csv"), Path(args.cache_dir))
+                news_output = build_twse_material_news_csv(Path("data/twse_material_news.csv"), Path(args.cache_dir))
+                refreshed_paths.extend([stocks_output, prices_output])
+                print(f"twse_stocks_output={stocks_output}")
+                print(f"twse_prices_output={prices_output}")
+                print(f"twse_news_output={news_output}")
+            except Exception as exc:
+                print(f"warning: twse_refresh_failed={exc}")
         if args.skip_tpex:
             print("tpex_skipped=skip_tpex")
         else:
-            tpex_stocks_output = build_tpex_stock_csv(Path("data/tpex_stocks.csv"), Path(args.cache_dir))
-            tpex_prices_output = build_tpex_daily_price_csv(Path("data/tpex_price_daily.csv"), Path(args.cache_dir))
-            print(f"tpex_stocks_output={tpex_stocks_output}")
-            print(f"tpex_prices_output={tpex_prices_output}")
-        if not args.skip_twse or not args.skip_tpex:
+            try:
+                tpex_stocks_output = build_tpex_stock_csv(Path("data/tpex_stocks.csv"), Path(args.cache_dir))
+                tpex_prices_output = build_tpex_daily_price_csv(Path("data/tpex_price_daily.csv"), Path(args.cache_dir))
+                refreshed_paths.extend([tpex_stocks_output, tpex_prices_output])
+                print(f"tpex_stocks_output={tpex_stocks_output}")
+                print(f"tpex_prices_output={tpex_prices_output}")
+            except Exception as exc:
+                print(f"warning: tpex_refresh_failed={exc}")
+        if refreshed_paths:
             combined_stocks = combine_csv_files(
                 [Path("data/twse_stocks.csv"), Path("data/tpex_stocks.csv")],
                 Path("data/tw_listed_otc_stocks.csv"),
@@ -115,6 +125,13 @@ def main() -> None:
             )
             print(f"combined_stocks_output={combined_stocks}")
             print(f"combined_prices_output={combined_prices}")
+        elif Path("examples/stocks.csv").exists() and Path("examples/price_history.csv").exists():
+            Path("data").mkdir(exist_ok=True)
+            shutil.copyfile("examples/stocks.csv", "data/tw_listed_otc_stocks.csv")
+            shutil.copyfile("examples/price_history.csv", "data/tw_listed_otc_price_daily.csv")
+            print("warning: market_refresh_unavailable=using_example_fallback")
+        else:
+            raise SystemExit("ERROR no TWSE/TPEx data could be refreshed and no fallback examples are available.")
     elif args.command == "fetch-news":
         news = fetch_rss_news(Path(args.sources), Path(args.cache_dir))
         output = save_news_csv(news, Path(args.output))

@@ -7,13 +7,15 @@ dependencies = []
 
 [project.optional-dependencies]
 market = ["yfinance>=0.2.66"]
+quant = ["openbb>=4.0.0", "pyqlib>=0.9.6"]
 
 [tool.setuptools.packages.find]
-include = ["stock_signal_system*"]
+include = ["stock_signal_system*", "quant_research_platform*"]
 exclude = ["data*", "configs*", "reports*", "docs*", "tests*"]
 
 [project.scripts]
 stock-signals = "stock_signal_system.cli:main"
+quant-research = "quant_research_platform.cli:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

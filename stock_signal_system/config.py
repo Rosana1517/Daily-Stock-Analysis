@@ -32,6 +32,9 @@ class AppConfig:
     line_channel_access_token_env: Optional[str]
     line_to_env: Optional[str]
     line_broadcast: bool
+    portfolio_path: Optional[Path] = None
+    quant_config_path: Optional[Path] = None
+    quant_realtime_cache_path: Optional[Path] = None
 
     @classmethod
     def from_file(cls, path: Union[str, Path]) -> "AppConfig":
@@ -63,6 +66,9 @@ class AppConfig:
             line_channel_access_token_env=raw.get("line_channel_access_token_env"),
             line_to_env=raw.get("line_to_env"),
             line_broadcast=bool(raw.get("line_broadcast", False)),
+            portfolio_path=_resolve_optional(base, raw.get("portfolio_path")),
+            quant_config_path=_resolve_optional(base, raw.get("quant_config_path")),
+            quant_realtime_cache_path=_resolve_optional(base, raw.get("quant_realtime_cache_path")),
         )
 
 

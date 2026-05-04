@@ -16,23 +16,23 @@ ENDPOINTS = {
 FALLBACK_INDUSTRIES = {
     "31": "半導體",
     "32": "電子零組件",
-    "33": "電腦及週邊",
+    "33": "電腦及週邊設備",
     "34": "光電",
     "35": "通信網路",
     "36": "電子通路",
     "37": "資訊服務",
     "41": "生技醫療",
-    "47": "化學",
-    "49": "文創",
-    "52": "其他電子",
+    "47": "化學工業",
+    "49": "觀光餐旅",
+    "52": "文化創意",
     "53": "電子零組件",
-    "54": "電腦及週邊",
-    "55": "電腦及週邊",
-    "61": "電腦及週邊",
+    "54": "電腦及週邊設備",
+    "55": "電腦及週邊設備",
+    "61": "電腦及週邊設備",
     "62": "半導體",
     "64": "生技醫療",
     "65": "綠能環保",
-    "66": "電腦及週邊",
+    "66": "電腦及週邊設備",
     "67": "半導體",
     "68": "半導體",
     "69": "數位雲端",
@@ -43,13 +43,28 @@ FALLBACK_INDUSTRIES = {
     "84": "綠能環保",
 }
 
+TPEX_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+
 
 def fetch_tpex_dataset(name: str, cache_dir: Path) -> list[dict]:
     if name not in ENDPOINTS:
         raise ValueError(f"Unknown TPEx dataset: {name}")
-    client = RateLimitedHttpClient(cache_dir=cache_dir / "tpex", min_interval_seconds=1.0)
+    client = RateLimitedHttpClient(
+        cache_dir=cache_dir / "tpex",
+        min_interval_seconds=1.0,
+        user_agent=TPEX_USER_AGENT,
+    )
     data = client.get_json(
         BASE_URL + ENDPOINTS[name],
+        headers={
+            "Accept": "application/json,text/plain,*/*",
+            "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
+            "Referer": "https://www.tpex.org.tw/",
+        },
         cache_key=f"tpex_{name}",
         ttl_seconds=1800,
     )
@@ -165,7 +180,7 @@ def _code(row: dict) -> str:
 
 
 def _industry_for(code: str) -> str:
-    return FALLBACK_INDUSTRIES.get(code[:2], "上櫃其他")
+    return FALLBACK_INDUSTRIES.get(code[:2], "其他")
 
 
 def _get(row: dict, *names: str) -> str:
@@ -188,7 +203,7 @@ def _to_float(value) -> float:
     if value is None:
         return 0.0
     text = str(value).replace(",", "").replace("%", "").strip()
-    if not text or text in {"--", "N/A", "NaN", "-", "除權息"}:
+    if not text or text in {"--", "N/A", "NaN", "-", "不適用"}:
         return 0.0
     try:
         return float(text)

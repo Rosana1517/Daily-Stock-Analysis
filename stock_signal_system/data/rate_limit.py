@@ -57,7 +57,7 @@ class RateLimitedHttpClient:
                 cache_path.write_text(text, encoding="utf-8")
                 return text
             except urllib.error.HTTPError as exc:
-                if exc.code not in {402, 429, 500, 502, 503, 504} or attempt == 2:
+                if exc.code not in {402, 429, 500, 502, 503, 504, 520} or attempt == 2:
                     raise
                 time.sleep((2**attempt) * 5)
         raise RuntimeError("unreachable retry state")

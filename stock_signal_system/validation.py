@@ -25,6 +25,7 @@ REQUIRED_STOCK_COLUMNS = {
 }
 REQUIRED_DAILY_COLUMNS = {"symbol", "date", "open", "high", "low", "close", "volume"}
 REQUIRED_INTRADAY_COLUMNS = {"symbol", "datetime", "open", "high", "low", "close", "volume"}
+REQUIRED_PORTFOLIO_COLUMNS = {"symbol", "quantity", "average_cost"}
 
 
 def validate_config(config: AppConfig) -> list[str]:
@@ -60,6 +61,15 @@ def validate_config(config: AppConfig) -> list[str]:
 
     if config.rss_sources_path and not config.rss_sources_path.exists():
         messages.append(f"ERROR rss_sources_path does not exist: {config.rss_sources_path}")
+
+    if config.portfolio_path:
+        _check_csv(config.portfolio_path, REQUIRED_PORTFOLIO_COLUMNS, "portfolio_path", messages)
+
+    if config.quant_config_path:
+        if not config.quant_config_path.exists():
+            messages.append(f"ERROR quant_config_path does not exist: {config.quant_config_path}")
+        if config.quant_realtime_cache_path and not config.quant_realtime_cache_path.exists():
+            messages.append(f"WARN quant_realtime_cache_path does not exist: {config.quant_realtime_cache_path}")
 
     if config.notification_webhook_env and not os.getenv(config.notification_webhook_env):
         messages.append(f"WARN webhook env var is not set: {config.notification_webhook_env}")
