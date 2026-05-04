@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import Iterable
 
 
+TW_OTC_SYMBOLS = {"6488", "5274", "8069", "5347", "3324"}
+
+
 @dataclass(frozen=True)
 class Bar:
     symbol: str
@@ -145,6 +148,8 @@ def _tw_yahoo_symbol(symbol: str) -> str:
     if "." in value:
         return value
     if len(value) == 4 and value.isdigit():
+        if value in TW_OTC_SYMBOLS:
+            return f"{value}.TWO"
         return f"{value}.TW"
     return value
 

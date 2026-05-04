@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import html
 import json
@@ -243,7 +243,7 @@ def _is_separator_cell(cell: str) -> bool:
 def hybrid_markdown_to_html(markdown: str, title: str) -> str:
     data = _parse_hybrid_markdown(markdown)
     top_rows = data.get("Top Ranking", [])
-    industries = data.get("RSS Industry Signals", [])
+    industries = _interactive_valid_industries(data.get("RSS Industry Signals", []), top_rows)
     groups = data.get("Industry Groups", [])
     notes = _section_bullets(markdown, "Investment Notes")
     portfolio = _section_bullets(markdown, "Portfolio Simulation")
@@ -471,7 +471,7 @@ def _float_text(value: str) -> float:
 def hybrid_markdown_to_html_v2(markdown: str, title: str) -> str:
     data = _parse_hybrid_markdown(markdown)
     top_rows = data.get("Top Ranking", [])
-    industries = data.get("RSS Industry Signals", [])
+    industries = _interactive_valid_industries(data.get("RSS Industry Signals", []), top_rows)
     groups = data.get("Industry Groups", [])
     notes = _section_bullets(markdown, "Investment Notes")
     portfolio = _section_bullets(markdown, "Portfolio Simulation")
@@ -610,7 +610,7 @@ def hybrid_markdown_to_html_v2(markdown: str, title: str) -> str:
     </div>
     <div class="grid">
       <aside class="panel panel-pad sticky">
-        <div class="section-title"><span class="eyebrow">RSS</span><h2>新聞產業推薦</h2></div>
+        <div class="section-title"><span class="eyebrow">RSS</span><h2>產業分析</h2></div>
         <div class="rss-list">{rss_summary_cards}</div>
       </aside>
       <section>
@@ -636,7 +636,7 @@ def hybrid_markdown_to_html_v2(markdown: str, title: str) -> str:
           <div class="model-grid">{model_cards}</div>
         </article>
         <article class="panel section">
-          <div class="section-title"><span class="eyebrow">Recommended</span><h2>推薦股票與買賣策略分析</h2></div>
+          <div class="section-title"><span class="eyebrow">Recommended</span><h2>推薦股票</h2></div>
           <div class="stock-stack">{stock_cards}</div>
         </article>
         <article class="panel section">
@@ -955,7 +955,7 @@ def _trim_sentence(value: str, limit: int) -> str:
 def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
     data = _parse_hybrid_markdown(markdown)
     top_rows = data.get("Top Ranking", [])
-    industries = data.get("RSS Industry Signals", [])
+    industries = _interactive_valid_industries(data.get("RSS Industry Signals", []), top_rows)
     groups = data.get("Industry Groups", [])
     notes = _section_bullets(markdown, "Investment Notes")
     portfolio = _section_bullets(markdown, "Portfolio Simulation")
@@ -1006,25 +1006,28 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
     * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
-      min-height: 100vh;
+      height: 100vh;
+      overflow: hidden;
       color: var(--text);
       background: linear-gradient(135deg, #05070c 0%, #0a0f18 55%, #030409 100%);
       font-family: "Microsoft JhengHei UI", "Noto Sans TC", "Segoe UI", sans-serif;
       line-height: 1.55;
     }}
-    main {{ width: min(1280px, calc(100vw - 28px)); margin: 24px auto 44px; }}
+    main {{ width: min(1280px, calc(100vw - 24px)); height: calc(100vh - 24px); margin: 12px auto; display: grid; grid-template-rows: auto minmax(0, 1fr); }}
     .toolbar {{ display: grid; grid-template-columns: 1fr auto; gap: 10px; padding-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,.08); }}
     .search {{ min-height: 44px; display: flex; align-items: center; padding: 0 14px; color: #6d7890; background: #111722; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; }}
     .tool-chip {{ min-height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; background: #0b111b; color: var(--cyan); font-weight: 900; }}
-    .grid {{ display: grid; grid-template-columns: 292px minmax(0, 1fr) 292px; gap: 16px; margin-top: 14px; align-items: start; }}
+    .grid {{ display: grid; grid-template-columns: 292px minmax(0, 1fr) 292px; gap: 16px; margin-top: 12px; align-items: stretch; min-height: 0; }}
     .panel {{ background: linear-gradient(180deg, rgba(16,22,34,.97), rgba(8,12,19,.98)); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 18px 54px rgba(0,0,0,.35); }}
     .pad {{ padding: 15px; }}
-    .sticky {{ position: sticky; top: 14px; }}
+    .sticky {{ min-height: 0; max-height: 100%; overflow: hidden; display: flex; flex-direction: column; }}
     .eyebrow {{ color: var(--cyan); font-size: 12px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }}
     h1, h2, h3, p {{ margin-top: 0; }}
     h2 {{ font-size: 18px; margin-bottom: 13px; }}
     button {{ font: inherit; cursor: pointer; }}
     .industry-list, .stock-list, .news-list, .strategy-list, .reason-list, .portfolio-list {{ list-style: none; padding: 0; margin: 0; display: grid; gap: 9px; }}
+    .industry-list, .stock-list {{ overflow-y: auto; padding-right: 4px; min-height: 0; }}
+    #detailRoot {{ min-height: 0; overflow-y: auto; padding-right: 4px; }}
     .industry-btn, .stock-btn {{ width: 100%; text-align: left; border: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.035); color: var(--text); border-radius: 8px; padding: 11px 12px; transition: border-color .15s ease, background .15s ease, transform .15s ease; }}
     .industry-btn:hover, .stock-btn:hover {{ transform: translateY(-1px); border-color: var(--line-hot); }}
     .industry-btn.active, .stock-btn.active {{ border-color: var(--green); background: rgba(0,245,160,.09); }}
@@ -1064,8 +1067,11 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
     .status-missing {{ color: var(--red); }}
     .empty {{ color: var(--muted); padding: 16px; border: 1px dashed rgba(255,255,255,.18); border-radius: 8px; }}
     @media (max-width: 1080px) {{
+      body {{ height: auto; overflow: auto; }}
+      main {{ height: auto; display: block; margin: 12px auto 28px; }}
       .grid {{ grid-template-columns: 1fr; }}
-      .sticky {{ position: static; }}
+      .sticky {{ max-height: none; overflow: visible; }}
+      .industry-list, .stock-list, #detailRoot {{ overflow: visible; }}
       .indicator-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
     }}
     @media (max-width: 680px) {{
@@ -1080,7 +1086,7 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
 <body>
   <main>
     <div class="toolbar">
-      <div class="search">互動式每日股票分析報告 / 點選左側產業與右側股票切換內容 / {html.escape(payload.get('date') or 'Today')}</div>
+      <div class="search">互動式每日股票分析報告 / 點選左側產業與右側股票切換內容 / {html.escape(payload.get('date') or '今日')}</div>
       <button class="tool-chip" id="showAllBtn">全部</button>
     </div>
     <div class="grid">
@@ -1107,9 +1113,16 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
     const detailRoot = document.getElementById('detailRoot');
     document.getElementById('showAllBtn').addEventListener('click', () => selectIndustry('全部'));
 
+    function isValidIndustryName(value) {{
+      const text = String(value || '').trim();
+      return Boolean(text) && text !== '未知' && text !== '市場觀察' && !text.includes('芰');
+    }}
+
     function industriesFromData() {{
-      const names = new Set(report.stocks.map(s => s.industry).filter(Boolean));
-      report.industries.forEach(item => names.add(item.Industry));
+      const names = new Set(report.stocks.map(s => s.industry).filter(isValidIndustryName));
+      report.industries.forEach(item => {{
+        if (isValidIndustryName(item.Industry)) names.add(item.Industry);
+      }});
       return ['全部', ...Array.from(names)];
     }}
 
@@ -1137,11 +1150,16 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
       industriesFromData().forEach(name => {{
         const rows = name === '全部' ? report.stocks : report.stocks.filter(s => s.industry === name);
         const rss = report.industries.find(item => item.Industry === name);
+        const group = report.groups.find(item => item.Industry === name);
+        const scoreText = name === '全部'
+          ? rows.length
+          : (rss?.['RSS Score'] || group?.['Average Hybrid'] || rows.length);
+        const detailText = rss?.['Key Catalyst'] || group?.['Bias'] || `${{rows.length}} 檔推薦/觀察股票`;
         const button = document.createElement('button');
         button.className = 'industry-btn' + (selectedIndustry === name ? ' active' : '');
         button.innerHTML = `
-          <header><span>${{escapeHtml(name)}}</span><b>${{name === '全部' ? rows.length : escapeHtml(rss?.['RSS Score'] || String(rows.length))}}</b></header>
-          <p>${{escapeHtml(rss?.['Key Catalyst'] || `${{rows.length}} 檔推薦/觀察股票`)}}</p>
+          <header><span>${{escapeHtml(name)}}</span><b>${{escapeHtml(scoreText)}}</b></header>
+          <p>${{escapeHtml(detailText)}}</p>
         `;
         button.addEventListener('click', () => selectIndustry(name));
         industryList.appendChild(button);
@@ -1152,7 +1170,7 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
       const visible = stocksForIndustry();
       stockList.innerHTML = '';
       if (!visible.length) {{
-        stockList.innerHTML = '<div class="empty">此產業目前沒有推薦股票。</div>';
+        stockList.innerHTML = '<div class="empty">此產業目前沒有推薦/觀察股票</div>';
         return;
       }}
       const grouped = visible.reduce((acc, stock) => {{
@@ -1242,7 +1260,7 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
         </article>
         <article class="panel section">
           <span class="eyebrow">RSS</span>
-          <h2>RSS 新聞摘要</h2>
+          <h2>產業分析</h2>
           <ul class="news-list">${{report.news.slice(0, 8).map(item => `<li>${{escapeHtml(item)}}</li>`).join('')}}</ul>
         </article>
         <article class="panel section">
@@ -1460,7 +1478,7 @@ def _interactive_stock_payload(row: dict[str, str], note: str, coverage: list[di
     return {
         "symbol": symbol,
         "name": row.get("Name", ""),
-        "industry": row.get("Industry", "未分類"),
+        "industry": _normalize_industry(row.get("Industry", "未分類")),
         "hybrid": hybrid,
         "kronos": kronos,
         "news": news_score,
@@ -1502,6 +1520,58 @@ def _interactive_model_overview(top_rows: list[dict[str, str]], portfolio: list[
             "body": f"時間序列預測已納入排序；最高分股票為 {top_pick}。",
         },
     ]
+
+
+def _interactive_valid_industries(
+    industries: list[dict[str, str]],
+    top_rows: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    cleaned: dict[str, dict[str, str]] = {}
+    for row in industries:
+        industry = _normalize_industry(row.get("Industry", ""))
+        score = row.get("RSS Score", "").strip()
+        if not industry or industry == "市場觀察" or not _is_numeric_text(score):
+            continue
+        existing = cleaned.get(industry)
+        if existing is None or float(score) > float(existing.get("RSS Score", "0") or 0):
+            new_row = dict(row)
+            new_row["Industry"] = industry
+            cleaned[industry] = new_row
+    return sorted(
+        cleaned.values(),
+        key=lambda row: (
+            0 if _is_numeric_text(row.get("RSS Score", "")) else 1,
+            -float(row.get("RSS Score", "0") or 0) if _is_numeric_text(row.get("RSS Score", "")) else 0,
+            row.get("Industry", ""),
+        ),
+    )
+
+
+def _normalize_industry(value: str) -> str:
+    text = (value or "").strip()
+    aliases = {
+        "Unknown": "市場觀察",
+        "未知": "市場觀察",
+        "AI伺服器": "AI 伺服器",
+        "AI隡箸???": "AI 伺服器",
+        "AI 隡箸???": "AI 伺服器",
+        "??擃?": "半導體",
+        "?餃?閮剖?": "電力設備",
+        "??": "散熱",
+        "瘨祥?餃?": "消費電子",
+        "?餅????": "電源與散熱",
+    }
+    if not text or "芰" in text:
+        return "市場觀察"
+    return aliases.get(text, text)
+
+
+def _is_numeric_text(value: str) -> bool:
+    try:
+        float(str(value).strip())
+        return True
+    except (TypeError, ValueError):
+        return False
 
 
 def _technical_indicators(
@@ -1663,3 +1733,4 @@ def _interactive_model_overview(top_rows: list[dict[str, str]], portfolio: list[
             "body": f"時間序列預測已納入排序；目前最高分股票為 {top_pick}。",
         },
     ]
+

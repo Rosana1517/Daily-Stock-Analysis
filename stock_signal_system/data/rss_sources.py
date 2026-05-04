@@ -262,3 +262,51 @@ def _dedupe_news(news: list[NewsItem]) -> list[NewsItem]:
         seen.add(key)
         deduped.append(item)
     return deduped
+
+
+INDUSTRY_RULES_ZH = {
+    "AI 伺服器": {
+        "required": ("ai", "人工智慧", "伺服器", "server", "gpu", "nvidia", "gb200", "gb300", "asic", "資料中心", "data center"),
+        "context": ("雲端", "散熱", "半導體", "記憶體", "高速傳輸", "電源", "運算", "供應鏈", "機櫃"),
+        "exclude": ("警察", "法院", "餐廳", "航空", "電影", "學生"),
+    },
+    "半導體": {
+        "required": ("半導體", "晶片", "晶圓", "台積電", "聯發科", "矽", "封測", "先進製程", "foundry", "chip", "wafer", "tsmc"),
+        "context": ("ai", "電子", "供應鏈", "製程", "產能", "設備", "封裝", "asic", "gpu"),
+        "exclude": ("potato chip", "chocolate chip"),
+    },
+    "散熱": {
+        "required": ("散熱", "水冷", "液冷", "thermal", "cooling", "heat sink", "奇鋐", "雙鴻", "健策"),
+        "context": ("ai", "伺服器", "資料中心", "gpu", "電子", "機櫃"),
+        "exclude": ("通膨降溫", "天氣轉涼"),
+    },
+    "電力設備": {
+        "required": ("電力", "電網", "重電", "變壓器", "電纜", "電源", "power grid", "transformer", "中興電", "士電", "華城"),
+        "context": ("ai", "資料中心", "基建", "台電", "能源", "供電", "訂單"),
+        "exclude": ("政治權力", "powerpoint"),
+    },
+    "消費電子": {
+        "required": ("消費電子", "iphone", "手機", "pc", "筆電", "realtek", "聯詠", "大立光", "shipment"),
+        "context": ("出貨", "庫存", "鏡頭", "面板", "3c", "device", "pc"),
+        "exclude": ("航空", "餐廳"),
+    },
+}
+
+
+def _classify_industries(title: str, body: str) -> list[str]:
+    text = f"{title} {title} {body}".lower()
+    if _is_noise_story(text):
+        return []
+    industries: list[str] = []
+    for industry, rule in INDUSTRY_RULES_ZH.items():
+        if _matches_clean_rule(text, rule):
+            industries.append(industry)
+    return industries
+
+
+def _matches_clean_rule(text: str, rule: dict[str, tuple[str, ...]]) -> bool:
+    if any(_contains_term(text, term) for term in rule.get("exclude", ())):
+        return False
+    required = any(_contains_term(text, term) for term in rule.get("required", ()))
+    context = any(_contains_term(text, term) for term in rule.get("context", ()))
+    return required and context

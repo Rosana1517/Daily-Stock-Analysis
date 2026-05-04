@@ -213,3 +213,55 @@ def _float(value) -> float:
     if value in (None, ""):
         return 0.0
     return float(str(value).replace(",", "").strip())
+
+
+TW_STOCK_PROFILE.update(
+    {
+        "1513": ("中興電", "電力設備"),
+        "1513.TW": ("中興電", "電力設備"),
+        "3017": ("奇鋐", "散熱"),
+        "3017.TW": ("奇鋐", "散熱"),
+        "3324": ("雙鴻", "散熱"),
+        "3324.TWO": ("雙鴻", "散熱"),
+        "3653": ("健策", "散熱"),
+        "3653.TW": ("健策", "散熱"),
+        "6669": ("緯穎", "AI 伺服器"),
+        "6669.TW": ("緯穎", "AI 伺服器"),
+        "2324": ("仁寶", "AI 伺服器"),
+        "2324.TW": ("仁寶", "AI 伺服器"),
+        "2356": ("英業達", "AI 伺服器"),
+        "2356.TW": ("英業達", "AI 伺服器"),
+        "3231": ("緯創", "AI 伺服器"),
+        "3231.TW": ("緯創", "AI 伺服器"),
+        "6239": ("力成", "半導體"),
+        "6239.TW": ("力成", "半導體"),
+        "3008": ("大立光", "消費電子"),
+        "3008.TW": ("大立光", "消費電子"),
+    }
+)
+
+
+def stock_name(symbol: str) -> str:
+    return TW_STOCK_PROFILE.get(symbol, (symbol, symbol))[0]
+
+
+def stock_industry(symbol: str) -> str:
+    return _clean_industry(TW_STOCK_PROFILE.get(symbol, (symbol, "市場觀察"))[1])
+
+
+def _clean_industry(industry: str) -> str:
+    value = (industry or "").strip()
+    aliases = {
+        "未知": "市場觀察",
+        "AI伺服器": "AI 伺服器",
+        "AI隡箸???": "AI 伺服器",
+        "AI 隡箸???": "AI 伺服器",
+        "??擃?": "半導體",
+        "?餃?閮剖?": "電力設備",
+        "??": "散熱",
+        "瘨祥?餃?": "消費電子",
+        "?餅????": "電源與散熱",
+    }
+    if not value or "芰" in value or "未知" in value:
+        return "市場觀察"
+    return aliases.get(value, value)

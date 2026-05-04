@@ -7,6 +7,9 @@ from stock_signal_system.data.csv_sources import load_intraday_history
 from stock_signal_system.models import PriceBar
 
 
+TW_OTC_SYMBOLS = {"6488", "5274", "8069", "5347", "3324"}
+
+
 def load_or_fetch_intraday_history(
     path: Path | None,
     symbols: tuple[str, ...],
@@ -72,5 +75,7 @@ def _tw_yahoo_symbol(symbol: str) -> str:
     if "." in value:
         return value
     if len(value) == 4 and value.isdigit():
+        if value in TW_OTC_SYMBOLS:
+            return f"{value}.TWO"
         return f"{value}.TW"
     return value

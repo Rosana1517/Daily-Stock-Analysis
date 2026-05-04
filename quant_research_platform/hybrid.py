@@ -193,7 +193,18 @@ def _load_bars(config: QuantPlatformConfig):
         return fetch_openbb_ohlcv(config.symbols, config.openbb_provider)
     if not config.ohlcv_path:
         return {}
-    return load_csv_ohlcv(config.ohlcv_path, config.symbols)
+    bars_by_symbol = load_csv_ohlcv(config.ohlcv_path, config.symbols)
+    min_required = max(30, min(config.lookback, 120))
+    missing = [symbol for symbol in config.symbols if len(bars_by_symbol.get(symbol.upper(), [])) < min_required]
+    if missing:
+        try:
+            live_bars = fetch_openbb_ohlcv(missing, config.openbb_provider)
+        except Exception:
+            live_bars = {}
+        for symbol, bars in live_bars.items():
+            if len(bars) >= min_required:
+                bars_by_symbol[symbol.upper()] = bars
+    return bars_by_symbol
 
 
 def _kronos_score(expected_return: float) -> float:
