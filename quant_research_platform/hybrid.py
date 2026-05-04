@@ -270,12 +270,12 @@ def _save_report(
         "",
         "## Top Ranking",
         "",
-        "| Rank | Symbol | Name | Industry | Hybrid | Kronos | News | Tech | Realtime | Action |",
-        "|---:|---|---|---|---:|---:|---:|---:|---|---|",
+        "| Rank | Symbol | Name | Industry | Current | Hybrid | Kronos | News | Tech | Realtime | Action |",
+        "|---:|---|---|---|---:|---:|---:|---:|---:|---|---|",
     ]
     for rank, row in enumerate(rows, start=1):
         lines.append(
-            f"| {rank} | {row.symbol} | {row.name} | {row.industry} | {row.hybrid_score:.1f} | "
+            f"| {rank} | {row.symbol} | {row.name} | {row.industry} | {row.current_close:.2f} | {row.hybrid_score:.1f} | "
             f"{row.kronos_return:.2%} | {row.news_score:.1f} | {row.technical_score:.1f} | "
             f"{row.realtime_status} | {row.action} |"
         )

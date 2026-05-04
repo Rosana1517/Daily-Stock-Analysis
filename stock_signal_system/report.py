@@ -1038,6 +1038,8 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
     .hero {{ padding: 20px; }}
     .hero-head {{ display: flex; justify-content: space-between; gap: 16px; align-items: start; }}
     .hero h1 {{ font-size: 30px; margin-bottom: 4px; letter-spacing: 0; }}
+    .title-line {{ display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }}
+    .price-badge {{ display: inline-flex; align-items: center; min-height: 28px; padding: 0 10px; border-radius: 999px; background: rgba(0,245,160,.12); border: 1px solid rgba(0,245,160,.26); color: var(--green); font-size: 13px; font-weight: 900; }}
     .score {{ color: var(--green); font-size: 34px; font-weight: 950; line-height: 1; }}
     .meta {{ color: var(--muted); }}
     .pill {{ display: inline-flex; min-height: 28px; align-items: center; padding: 0 10px; border-radius: 999px; color: var(--cyan); background: rgba(0,209,255,.12); font-size: 12px; font-weight: 900; }}
@@ -1096,7 +1098,9 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
       .chart-box {{ padding: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; }}
       .chart-box svg {{ width: 680px; max-width: none; min-height: 360px; }}
       .hero-head {{ display: block; }}
+      .title-line {{ display: block; }}
       .hero h1 {{ font-size: 24px; line-height: 1.2; }}
+      .price-badge {{ margin-top: 6px; }}
       .score {{ margin-top: 10px; }}
       .summary {{ font-size: 15px; }}
       .model-card, .metric, .indicator, .thesis, .reason-list li, .strategy-list li, .news-list li, .portfolio-list li {{ padding: 10px; }}
@@ -1219,6 +1223,7 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
           button.className = 'stock-btn' + (selectedSymbol === stock.symbol ? ' active' : '');
           button.innerHTML = `
             <header><span>${{escapeHtml(stock.symbol)}} ${{escapeHtml(stock.name)}}</span><b>${{stock.hybrid.toFixed(1)}}</b></header>
+            <small>${{escapeHtml(priceLabel(stock))}}</small>
             <small>${{escapeHtml(stock.action)}} / Kronos ${{stock.kronos.toFixed(2)}}%</small>
           `;
           button.addEventListener('click', () => selectStock(stock.symbol));
@@ -1245,7 +1250,10 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
           <div class="hero-head">
             <div>
               <span class="eyebrow">${{escapeHtml(stock.industry)}}</span>
-              <h1>${{escapeHtml(stock.symbol)}} ${{escapeHtml(stock.name)}}</h1>
+              <div class="title-line">
+                <h1>${{escapeHtml(stock.symbol)}} ${{escapeHtml(stock.name)}}</h1>
+                <span class="price-badge">${{escapeHtml(priceLabel(stock))}}</span>
+              </div>
               <div class="meta">預設載入 Hybrid 分數最高股票；點選右側股票即更新此區。</div>
             </div>
             <div>
@@ -1353,7 +1361,17 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
     }}
 
     function heroSummary(stock) {{
-      return `${{stock.symbol}} ${{stock.name}} 屬於 ${{stock.industry}}，Hybrid 分數 ${{stock.hybrid.toFixed(1)}}。目前策略為「${{stock.action}}」，Kronos 預估 ${{stock.kronos.toFixed(2)}}%，RSS 與技術指標會隨右側股票切換同步更新。`;
+      return `${{stock.symbol}} ${{stock.name}} 屬於 ${{stock.industry}}，爬取當下價格 ${{formatPrice(stock.current)}}，Hybrid 分數 ${{stock.hybrid.toFixed(1)}}。目前策略為「${{stock.action}}」，Kronos 預估 ${{stock.kronos.toFixed(2)}}%，RSS 與技術指標會隨右側股票切換同步更新。`;
+    }}
+
+    function formatPrice(value) {{
+      const number = Number(value);
+      if (!Number.isFinite(number) || number <= 0) return '資料不足';
+      return number.toLocaleString('zh-TW', {{ minimumFractionDigits: 2, maximumFractionDigits: 2 }});
+    }}
+
+    function priceLabel(stock) {{
+      return `現價 ${{formatPrice(stock.current)}}`;
     }}
 
     function candlestickSvg(stock) {{
@@ -1719,12 +1737,16 @@ def _interactive_stock_payload(
     kronos = _float_text(row.get("Kronos", "0"))
     news_score = _float_text(row.get("News", "50"))
     tech_score = _float_text(row.get("Tech", "50"))
+    current = _float_text(row.get("Current", "0"))
     bars = chart_data or []
+    if current <= 0 and bars:
+        current = _float_text(str(bars[-1].get("close", 0)))
     indicators = _technical_indicators(symbol, hybrid, kronos, news_score, tech_score, bars)
     return {
         "symbol": symbol,
         "name": row.get("Name", ""),
         "industry": row.get("Industry", "未分類"),
+        "current": current,
         "hybrid": hybrid,
         "kronos": kronos,
         "news": news_score,
