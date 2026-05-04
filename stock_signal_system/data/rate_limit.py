@@ -41,8 +41,10 @@ class RateLimitedHttpClient:
         ttl_seconds: int = 3600,
     ) -> str:
         final_url = _with_params(url, params)
-        cache_path = self.cache_dir / f"{cache_key or _safe_key(final_url)}.cache"
+        request_key = cache_key or _safe_key(final_url)
+        cache_path = self.cache_dir / f"{request_key}.cache"
         if cache_path.exists() and time.time() - cache_path.stat().st_mtime < ttl_seconds:
+            print(f"http_cache_hit={request_key}", flush=True)
             return cache_path.read_text(encoding="utf-8")
 
         self._sleep_if_needed()
@@ -52,13 +54,17 @@ class RateLimitedHttpClient:
         request = urllib.request.Request(final_url, headers=request_headers)
         for attempt in range(3):
             try:
+                print(f"http_get_start={request_key} attempt={attempt + 1} url={final_url}", flush=True)
                 with urllib.request.urlopen(request, timeout=20) as response:
                     text = _decode_response(response.read())
                 cache_path.write_text(text, encoding="utf-8")
+                print(f"http_get_done={request_key} bytes={len(text.encode('utf-8'))}", flush=True)
                 return text
             except urllib.error.HTTPError as exc:
                 if exc.code not in {402, 429, 500, 502, 503, 504, 520} or attempt == 2:
+                    print(f"http_get_failed={request_key} status={exc.code}", flush=True)
                     raise
+                print(f"http_get_retry={request_key} status={exc.code} attempt={attempt + 1}", flush=True)
                 time.sleep((2**attempt) * 5)
         raise RuntimeError("unreachable retry state")
 

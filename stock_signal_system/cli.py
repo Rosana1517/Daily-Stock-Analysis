@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import time
 from pathlib import Path
 
 from stock_signal_system.config import AppConfig
 from stock_signal_system.data.rss_sources import fetch_rss_news, save_news_csv
-from stock_signal_system.data.tpex import build_tpex_daily_price_csv, build_tpex_stock_csv, combine_csv_files
+from stock_signal_system.data.tpex import (
+    build_tpex_daily_price_csv,
+    build_tpex_stock_csv,
+    combine_csv_files,
+    fetch_tpex_dataset,
+)
 from stock_signal_system.data.twse import build_twse_daily_price_csv, build_twse_material_news_csv, build_twse_stock_csv
 from stock_signal_system.data.yfinance_source import download_yfinance_history
 from stock_signal_system.pages_publish import publish_report_to_pages
@@ -51,6 +57,9 @@ def main() -> None:
     tpex_parser.add_argument("--prices-output", default="data/tpex_price_daily.csv", help="Output OTC daily OHLC CSV.")
     tpex_parser.add_argument("--cache-dir", default=".cache", help="Cache directory.")
 
+    tpex_verify_parser = subparsers.add_parser("verify-tpex", help="Verify TPEx quotes and peratio endpoints.")
+    tpex_verify_parser.add_argument("--cache-dir", default=".cache", help="Cache directory.")
+
     pages_parser = subparsers.add_parser("publish-pages", help="Publish a generated HTML report to GitHub Pages repo.")
     pages_parser.add_argument("--report-html", required=True, help="Path to generated report HTML.")
     pages_parser.add_argument("--repo-dir", default="../Daily-Stock-Analysis", help="Local GitHub Pages repo directory.")
@@ -83,53 +92,62 @@ def main() -> None:
     elif args.command == "refresh-data":
         config = AppConfig.from_file(args.config)
         if config.rss_sources_path:
-            news = fetch_rss_news(config.rss_sources_path, Path(args.cache_dir))
-            output = save_news_csv(news, config.news_path)
-            print(f"rss_news_rows={len(news)}")
-            print(f"rss_news_output={output}")
+            with _step_timer("rss_news_refresh"):
+                news = fetch_rss_news(config.rss_sources_path, Path(args.cache_dir))
+                output = save_news_csv(news, config.news_path)
+                print(f"rss_news_rows={len(news)}", flush=True)
+                print(f"rss_news_output={output}", flush=True)
         else:
-            print("rss_news_skipped=no_rss_sources_path")
+            print("rss_news_skipped=no_rss_sources_path", flush=True)
         refreshed_paths = []
         if args.skip_twse:
-            print("twse_skipped=skip_twse")
+            print("twse_skipped=skip_twse", flush=True)
         else:
             try:
-                stocks_output = build_twse_stock_csv(Path("data/twse_stocks.csv"), Path(args.cache_dir))
-                prices_output = build_twse_daily_price_csv(Path("data/twse_price_daily.csv"), Path(args.cache_dir))
-                news_output = build_twse_material_news_csv(Path("data/twse_material_news.csv"), Path(args.cache_dir))
-                refreshed_paths.extend([stocks_output, prices_output])
-                print(f"twse_stocks_output={stocks_output}")
-                print(f"twse_prices_output={prices_output}")
-                print(f"twse_news_output={news_output}")
+                with _step_timer("twse_stock_snapshot_refresh"):
+                    stocks_output = build_twse_stock_csv(Path("data/twse_stocks.csv"), Path(args.cache_dir))
+                    refreshed_paths.append(stocks_output)
+                    print(f"twse_stocks_output={stocks_output}", flush=True)
+                with _step_timer("twse_daily_price_refresh"):
+                    prices_output = build_twse_daily_price_csv(Path("data/twse_price_daily.csv"), Path(args.cache_dir))
+                    refreshed_paths.append(prices_output)
+                    print(f"twse_prices_output={prices_output}", flush=True)
+                with _step_timer("twse_material_news_refresh"):
+                    news_output = build_twse_material_news_csv(Path("data/twse_material_news.csv"), Path(args.cache_dir))
+                    print(f"twse_news_output={news_output}", flush=True)
             except Exception as exc:
-                print(f"warning: twse_refresh_failed={exc}")
+                print(f"warning: twse_refresh_failed={exc}", flush=True)
         if args.skip_tpex:
-            print("tpex_skipped=skip_tpex")
+            print("tpex_skipped=skip_tpex", flush=True)
         else:
             try:
-                tpex_stocks_output = build_tpex_stock_csv(Path("data/tpex_stocks.csv"), Path(args.cache_dir))
-                tpex_prices_output = build_tpex_daily_price_csv(Path("data/tpex_price_daily.csv"), Path(args.cache_dir))
-                refreshed_paths.extend([tpex_stocks_output, tpex_prices_output])
-                print(f"tpex_stocks_output={tpex_stocks_output}")
-                print(f"tpex_prices_output={tpex_prices_output}")
+                with _step_timer("tpex_stock_snapshot_refresh"):
+                    tpex_stocks_output = build_tpex_stock_csv(Path("data/tpex_stocks.csv"), Path(args.cache_dir))
+                    refreshed_paths.append(tpex_stocks_output)
+                    print(f"tpex_stocks_output={tpex_stocks_output}", flush=True)
+                with _step_timer("tpex_daily_price_refresh"):
+                    tpex_prices_output = build_tpex_daily_price_csv(Path("data/tpex_price_daily.csv"), Path(args.cache_dir))
+                    refreshed_paths.append(tpex_prices_output)
+                    print(f"tpex_prices_output={tpex_prices_output}", flush=True)
             except Exception as exc:
-                print(f"warning: tpex_refresh_failed={exc}")
+                print(f"warning: tpex_refresh_failed={exc}", flush=True)
         if refreshed_paths:
-            combined_stocks = combine_csv_files(
-                [Path("data/twse_stocks.csv"), Path("data/tpex_stocks.csv")],
-                Path("data/tw_listed_otc_stocks.csv"),
-            )
-            combined_prices = combine_csv_files(
-                [Path("data/twse_price_daily.csv"), Path("data/tpex_price_daily.csv")],
-                Path("data/tw_listed_otc_price_daily.csv"),
-            )
-            print(f"combined_stocks_output={combined_stocks}")
-            print(f"combined_prices_output={combined_prices}")
+            with _step_timer("combine_tw_market_data"):
+                combined_stocks = combine_csv_files(
+                    [Path("data/twse_stocks.csv"), Path("data/tpex_stocks.csv")],
+                    Path("data/tw_listed_otc_stocks.csv"),
+                )
+                combined_prices = combine_csv_files(
+                    [Path("data/twse_price_daily.csv"), Path("data/tpex_price_daily.csv")],
+                    Path("data/tw_listed_otc_price_daily.csv"),
+                )
+                print(f"combined_stocks_output={combined_stocks}", flush=True)
+                print(f"combined_prices_output={combined_prices}", flush=True)
         elif Path("examples/stocks.csv").exists() and Path("examples/price_history.csv").exists():
             Path("data").mkdir(exist_ok=True)
             shutil.copyfile("examples/stocks.csv", "data/tw_listed_otc_stocks.csv")
             shutil.copyfile("examples/price_history.csv", "data/tw_listed_otc_price_daily.csv")
-            print("warning: market_refresh_unavailable=using_example_fallback")
+            print("warning: market_refresh_unavailable=using_example_fallback", flush=True)
         else:
             raise SystemExit("ERROR no TWSE/TPEx data could be refreshed and no fallback examples are available.")
     elif args.command == "fetch-news":
@@ -152,6 +170,15 @@ def main() -> None:
         prices_output = build_tpex_daily_price_csv(Path(args.prices_output), Path(args.cache_dir))
         print(f"stocks_output={stocks_output}")
         print(f"prices_output={prices_output}")
+    elif args.command == "verify-tpex":
+        with _step_timer("tpex_quotes_endpoint_verify"):
+            quotes = fetch_tpex_dataset("quotes", Path(args.cache_dir))
+            print(f"tpex_quotes_rows={len(quotes)}", flush=True)
+        with _step_timer("tpex_peratio_endpoint_verify"):
+            peratio = fetch_tpex_dataset("peratio", Path(args.cache_dir))
+            pe_rows = sum(1 for row in peratio if str(row.get("PriceEarningRatio", "")).strip())
+            print(f"tpex_peratio_rows={len(peratio)}", flush=True)
+            print(f"tpex_peratio_nonempty_pe_rows={pe_rows}", flush=True)
     elif args.command == "publish-pages":
         result = publish_report_to_pages(
             Path(args.report_html),
@@ -165,6 +192,25 @@ def main() -> None:
         print(f"pushed={result.pushed}")
         if result.url:
             print(f"url={result.url}")
+
+
+class _step_timer:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.started_at = 0.0
+
+    def __enter__(self):
+        self.started_at = time.monotonic()
+        print(f"step_start={self.name}", flush=True)
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> bool:
+        elapsed = time.monotonic() - self.started_at
+        if exc_type:
+            print(f"step_failed={self.name} elapsed_seconds={elapsed:.1f} error={exc}", flush=True)
+            return False
+        print(f"step_done={self.name} elapsed_seconds={elapsed:.1f}", flush=True)
+        return False
 
 
 if __name__ == "__main__":

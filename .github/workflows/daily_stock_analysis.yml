@@ -43,6 +43,7 @@ jobs:
     env:
       CONFIG: configs/rss.example.json
       REPORT_BASE_URL: https://rosana1517.github.io/Daily-Stock-Analysis/reports
+      PYTHONUNBUFFERED: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,7 +56,12 @@ jobs:
       - name: Install package
         run: python -m pip install -e .
 
+      - name: Verify TPEx endpoints
+        timeout-minutes: 4
+        run: python -m stock_signal_system.cli verify-tpex --cache-dir .cache_verify_tpex
+
       - name: Refresh RSS, TWSE, and TPEx data
+        timeout-minutes: 12
         run: python -m stock_signal_system.cli refresh-data --config "$CONFIG"
 
       - name: Validate config
