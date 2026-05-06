@@ -42,6 +42,8 @@ class HybridRow:
     technical_score: float
     realtime_score: float
     hybrid_score: float
+    recommendation_score: float
+    price_bucket: str
     current_close: float
     predicted_close: float
     realtime_status: str
@@ -99,6 +101,7 @@ def run_tw_hybrid(
             + realtime_score * 0.10
             + signal.confidence * 100 * 0.10
         )
+        recommendation_score = _recommendation_score(hybrid_score, signal.current_close)
         rows.append(
             HybridRow(
                 symbol=symbol,
@@ -110,6 +113,8 @@ def run_tw_hybrid(
                 technical_score=technical_score,
                 realtime_score=realtime_score,
                 hybrid_score=hybrid_score,
+                recommendation_score=recommendation_score,
+                price_bucket=_price_bucket(signal.current_close),
                 current_close=signal.current_close,
                 predicted_close=signal.predicted_close,
                 realtime_status=realtime.status if realtime else "未接即時價",
@@ -117,7 +122,7 @@ def run_tw_hybrid(
                 risk_note=_risk_note(signal.expected_return, tech.bias if tech else "neutral", realtime.intraday_return if realtime else 0),
             )
         )
-    rows = sorted(rows, key=lambda item: item.hybrid_score, reverse=True)
+    rows = _rank_rows_with_price_bias(rows, config.top_n)
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
     report_path = config.output_dir / f"tw_hybrid_{report_date.isoformat()}.md"
@@ -270,12 +275,13 @@ def _save_report(
         "",
         "## Top Ranking",
         "",
-        "| Rank | Symbol | Name | Industry | Current | Hybrid | Kronos | News | Tech | Realtime | Action |",
-        "|---:|---|---|---|---:|---:|---:|---:|---:|---|---|",
+        "| Rank | Symbol | Name | Industry | Current | Price Band | Recommend | Hybrid | Kronos | News | Tech | Realtime | Action |",
+        "|---:|---|---|---|---:|---|---:|---:|---:|---:|---:|---|---|",
     ]
     for rank, row in enumerate(rows, start=1):
         lines.append(
-            f"| {rank} | {row.symbol} | {row.name} | {row.industry} | {row.current_close:.2f} | {row.hybrid_score:.1f} | "
+            f"| {rank} | {row.symbol} | {row.name} | {row.industry} | {row.current_close:.2f} | "
+            f"{row.price_bucket} | {row.recommendation_score:.1f} | {row.hybrid_score:.1f} | "
             f"{row.kronos_return:.2%} | {row.news_score:.1f} | {row.technical_score:.1f} | "
             f"{row.realtime_status} | {row.action} |"
         )
@@ -413,13 +419,72 @@ def _group_rows_by_industry(rows: list[HybridRow]) -> dict[str, list[HybridRow]]
     for row in rows:
         groups.setdefault(row.industry, []).append(row)
     return {
-        industry: sorted(group, key=lambda item: item.hybrid_score, reverse=True)
+        industry: sorted(group, key=lambda item: item.recommendation_score, reverse=True)
         for industry, group in sorted(
             groups.items(),
-            key=lambda item: sum(row.hybrid_score for row in item[1]) / len(item[1]),
+            key=lambda item: sum(row.recommendation_score for row in item[1]) / len(item[1]),
             reverse=True,
         )
     }
+
+
+def _rank_rows_with_price_bias(rows: list[HybridRow], top_n: int) -> list[HybridRow]:
+    ranked = sorted(
+        rows,
+        key=lambda item: (item.recommendation_score, item.hybrid_score, item.kronos_return),
+        reverse=True,
+    )
+    if top_n <= 0:
+        return ranked
+    high_cap = max(1, top_n // 3)
+    selected: list[HybridRow] = []
+    deferred_high: list[HybridRow] = []
+    for row in ranked:
+        if len(selected) >= top_n:
+            break
+        if _is_high_price(row.current_close) and sum(_is_high_price(item.current_close) for item in selected) >= high_cap:
+            deferred_high.append(row)
+            continue
+        selected.append(row)
+    for row in ranked:
+        if len(selected) >= top_n:
+            break
+        if row not in selected:
+            selected.append(row)
+    tail = [row for row in ranked if row not in selected]
+    return selected + tail
+
+
+def _recommendation_score(hybrid_score: float, current_close: float) -> float:
+    return max(0.0, min(100.0, hybrid_score + _price_bucket_bonus(current_close)))
+
+
+def _price_bucket_bonus(current_close: float) -> float:
+    if current_close <= 0:
+        return 0.0
+    if current_close < 30:
+        return 9.0
+    if current_close <= 100:
+        return 6.0
+    if current_close <= 200:
+        return 1.5
+    if current_close <= 500:
+        return -2.0
+    return -5.0
+
+
+def _price_bucket(current_close: float) -> str:
+    if current_close <= 0:
+        return "價格不足"
+    if current_close < 30:
+        return "低價股"
+    if current_close <= 100:
+        return "中價股"
+    return "高價股"
+
+
+def _is_high_price(current_close: float) -> bool:
+    return current_close > 100
 
 
 def _industry_bias(score: float) -> str:

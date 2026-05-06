@@ -1224,7 +1224,7 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
           button.className = 'stock-btn' + (selectedSymbol === stock.symbol ? ' active' : '');
           button.innerHTML = `
             <header><span>${{escapeHtml(stock.symbol)}} ${{escapeHtml(stock.name)}}</span><b>${{stock.hybrid.toFixed(1)}}</b></header>
-            <small>${{escapeHtml(priceLabel(stock))}}</small>
+            <small>${{escapeHtml(priceLabel(stock))}} / ${{escapeHtml(stock.priceBucket)}} / 推薦排序 ${{stock.recommendation.toFixed(1)}}</small>
             <small>${{escapeHtml(stock.action)}} / Kronos ${{stock.kronos.toFixed(2)}}%</small>
           `;
           button.addEventListener('click', () => selectStock(stock.symbol));
@@ -1296,6 +1296,7 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
             <div class="metric"><span>Kronos 預估</span><b>${{stock.kronos.toFixed(2)}}%</b></div>
             <div class="metric"><span>RSS 新聞分數</span><b>${{stock.news.toFixed(1)}}</b></div>
             <div class="metric"><span>技術分數</span><b>${{stock.tech.toFixed(1)}}</b></div>
+            <div class="metric"><span>價格權重排序</span><b>${{stock.recommendation.toFixed(1)}} / ${{escapeHtml(stock.priceBucket)}}</b></div>
           </div>
         </article>
         <article class="panel section">
@@ -1648,6 +1649,16 @@ def _is_numeric_text(value: str) -> bool:
         return False
 
 
+def _price_bucket_from_current(current: float) -> str:
+    if current <= 0:
+        return "價格不足"
+    if current < 30:
+        return "低價股"
+    if current <= 100:
+        return "中價股"
+    return "高價股"
+
+
 def _technical_indicators(
     symbol: str,
     hybrid: float,
@@ -1755,6 +1766,7 @@ def _interactive_stock_payload(
     kronos = _float_text(row.get("Kronos", "0"))
     news_score = _float_text(row.get("News", "50"))
     tech_score = _float_text(row.get("Tech", "50"))
+    recommendation_score = _float_text(row.get("Recommend", row.get("Hybrid", "50")))
     current = _float_text(row.get("Current", "0"))
     bars = chart_data or []
     if current <= 0 and bars:
@@ -1767,6 +1779,8 @@ def _interactive_stock_payload(
         "industry": primary_industry,
         "current": current,
         "hybrid": hybrid,
+        "recommendation": recommendation_score,
+        "priceBucket": row.get("Price Band", _price_bucket_from_current(current)),
         "kronos": kronos,
         "news": news_score,
         "tech": tech_score,
