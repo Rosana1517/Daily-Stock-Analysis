@@ -14,6 +14,7 @@ from typing import Iterable
 
 
 TW_OTC_SYMBOLS = {"6488", "5274", "8069", "5347", "3324"}
+_OTC_SYMBOLS_LOADED = False
 
 
 @dataclass(frozen=True)
@@ -148,10 +149,29 @@ def _tw_yahoo_symbol(symbol: str) -> str:
     if "." in value:
         return value
     if len(value) == 4 and value.isdigit():
+        _load_otc_symbols_from_cache()
         if value in TW_OTC_SYMBOLS:
             return f"{value}.TWO"
         return f"{value}.TW"
     return value
+
+
+def _load_otc_symbols_from_cache() -> None:
+    global _OTC_SYMBOLS_LOADED
+    if _OTC_SYMBOLS_LOADED:
+        return
+    _OTC_SYMBOLS_LOADED = True
+    for path in (Path("data/tpex_stocks.csv"), Path("data/tpex_price_daily.csv")):
+        if not path.exists():
+            continue
+        try:
+            with path.open("r", encoding="utf-8-sig", newline="") as handle:
+                for row in csv.DictReader(handle):
+                    symbol = str(row.get("symbol", "")).strip()
+                    if len(symbol) == 4 and symbol.isdigit():
+                        TW_OTC_SYMBOLS.add(symbol)
+        except OSError:
+            continue
 
 
 def save_ohlcv_csv(path: Path, bars_by_symbol: dict[str, list[Bar]]) -> Path:

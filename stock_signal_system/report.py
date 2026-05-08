@@ -952,9 +952,41 @@ def _trim_sentence(value: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+def _market_coverage_cards(rows: list[dict[str, str]]) -> str:
+    if not rows:
+        rows = [
+            {
+                "Metric": "全市場掃描數",
+                "Count": "待更新",
+                "Description": "等待每日排程完成 TWSE/TPEx 股票池掃描",
+            },
+            {
+                "Metric": "初篩通過數",
+                "Count": "待更新",
+                "Description": "等待價格、成交量與流動性初篩",
+            },
+            {
+                "Metric": "深度分析數",
+                "Count": "待更新",
+                "Description": "等待 Hybrid / Qlib / Kronos 深度分析",
+            },
+        ]
+    cards = []
+    for row in rows[:3]:
+        cards.append(
+            "<article class=\"market-card\">"
+            f"<span>{html.escape(row.get('Metric', '覆蓋項目'))}</span>"
+            f"<b>{html.escape(row.get('Count', '-'))}</b>"
+            f"<p title=\"{html.escape(row.get('Description', ''))}\">{html.escape(row.get('Description', ''))}</p>"
+            "</article>"
+        )
+    return "".join(cards)
+
+
 def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
     data = _parse_hybrid_markdown(markdown)
     top_rows = data.get("Top Ranking", [])
+    market_coverage = data.get("Market Universe Coverage", [])
     industries = _interactive_valid_industries(data.get("RSS Industry Signals", []), top_rows)
     groups = data.get("Industry Groups", [])
     notes = _section_bullets(markdown, "Investment Notes")
@@ -977,6 +1009,7 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
         "title": title,
         "date": title.split(" - ")[-1] if " - " in title else "",
         "industries": industries,
+        "marketCoverage": market_coverage,
         "groups": groups,
         "stocks": stocks,
         "portfolio": portfolio,
@@ -984,6 +1017,7 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
         "modelOverview": _interactive_model_overview(top_rows, portfolio, _has_openbb_live(coverage_by_symbol)),
     }
     payload_json = _safe_json_script(payload)
+    market_cards = _market_coverage_cards(market_coverage)
     return f"""<!doctype html>
 <html lang="zh-Hant">
 <head>
@@ -1014,10 +1048,15 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
       font-family: "Microsoft JhengHei UI", "Noto Sans TC", "Segoe UI", sans-serif;
       line-height: 1.55;
     }}
-    main {{ width: min(1280px, calc(100vw - 24px)); height: calc(100vh - 24px); margin: 12px auto; display: grid; grid-template-rows: auto minmax(0, 1fr); }}
+    main {{ width: min(1280px, calc(100vw - 24px)); height: calc(100vh - 24px); margin: 12px auto; display: grid; grid-template-rows: auto auto minmax(0, 1fr); }}
     .toolbar {{ display: grid; grid-template-columns: 1fr auto; gap: 10px; padding-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,.08); }}
     .search {{ min-height: 44px; display: flex; align-items: center; padding: 0 14px; color: #6d7890; background: #111722; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; }}
     .tool-chip {{ min-height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; background: #0b111b; color: var(--cyan); font-weight: 900; }}
+    .market-coverage {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 10px 0 0; }}
+    .market-card {{ min-width: 0; border: 1px solid rgba(0,209,255,.20); border-radius: 8px; background: rgba(255,255,255,.035); padding: 10px 12px; }}
+    .market-card span {{ display: block; color: var(--muted); font-size: 12px; }}
+    .market-card b {{ display: block; margin-top: 2px; color: var(--green); font-size: 22px; line-height: 1.15; }}
+    .market-card p {{ margin: 4px 0 0; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
     .grid {{ display: grid; grid-template-columns: 292px minmax(0, 1fr) 292px; gap: 16px; margin-top: 12px; align-items: stretch; min-height: 0; }}
     .panel {{ background: linear-gradient(180deg, rgba(16,22,34,.97), rgba(8,12,19,.98)); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 18px 54px rgba(0,0,0,.35); }}
     .pad {{ padding: 15px; }}
@@ -1084,6 +1123,9 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
       body {{ background: #05070c; }}
       main {{ width: min(100vw - 12px, 1280px); margin: 6px auto 18px; }}
       .toolbar {{ position: sticky; top: 0; z-index: 10; grid-template-columns: minmax(0, 1fr) 64px; gap: 8px; padding: 6px 0 10px; background: #05070c; }}
+      .market-coverage {{ grid-template-columns: 1fr; gap: 8px; }}
+      .market-card {{ padding: 9px 10px; }}
+      .market-card b {{ font-size: 20px; }}
       .search {{ min-height: 40px; padding: 8px 10px; font-size: 13px; line-height: 1.35; }}
       .tool-chip {{ min-height: 40px; padding: 0 10px; }}
       .grid {{ display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }}
@@ -1117,6 +1159,9 @@ def hybrid_markdown_to_html_interactive(markdown: str, title: str) -> str:
       <div class="search">互動式每日股票分析報告 / 點選左側產業與右側股票切換內容 / {html.escape(payload.get('date') or '今日')}</div>
       <button class="tool-chip" id="showAllBtn">全部</button>
     </div>
+    <section class="market-coverage" aria-label="市場掃描覆蓋摘要">
+      {market_cards}
+    </section>
     <div class="grid">
       <aside class="panel pad sticky industry-panel">
         <span class="eyebrow">RSS</span>

@@ -9,6 +9,8 @@ from typing import Optional, Union
 @dataclass(frozen=True)
 class QuantPlatformConfig:
     symbols: tuple[str, ...]
+    universe_path: Optional[Path]
+    universe_candidate_limit: int
     data_source: str
     ohlcv_path: Optional[Path]
     openbb_provider: Optional[str]
@@ -32,6 +34,8 @@ class QuantPlatformConfig:
         base = config_path.parent.parent
         return cls(
             symbols=tuple(raw.get("symbols", [])),
+            universe_path=_resolve_optional(base, raw.get("universe_path")),
+            universe_candidate_limit=int(raw.get("universe_candidate_limit", 150)),
             data_source=raw.get("data_source", "csv"),
             ohlcv_path=_resolve_optional(base, raw.get("ohlcv_path")),
             openbb_provider=raw.get("openbb_provider"),

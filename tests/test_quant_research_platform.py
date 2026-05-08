@@ -14,6 +14,8 @@ class QuantResearchPlatformTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             config = QuantPlatformConfig(
                 symbols=("2330", "2382", "2454"),
+                universe_path=None,
+                universe_candidate_limit=150,
                 data_source="csv",
                 ohlcv_path=Path("examples/price_history.csv"),
                 openbb_provider=None,

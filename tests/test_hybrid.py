@@ -57,6 +57,8 @@ class HybridTest(unittest.TestCase):
                     )
             config = QuantPlatformConfig(
                 symbols=("2330.TW",),
+                universe_path=None,
+                universe_candidate_limit=150,
                 data_source="csv",
                 ohlcv_path=price_path,
                 openbb_provider=None,

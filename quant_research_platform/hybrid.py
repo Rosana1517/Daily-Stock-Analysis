@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import csv
+import math
 from dataclasses import dataclass
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -31,6 +33,9 @@ from quant_research_platform.signals import build_signals
 from stock_signal_system.data.csv_sources import load_news
 
 
+MAX_RECOMMENDATION_ROWS = 15
+
+
 @dataclass(frozen=True)
 class HybridRow:
     symbol: str
@@ -51,6 +56,14 @@ class HybridRow:
     risk_note: str
 
 
+@dataclass(frozen=True)
+class UniverseCoverage:
+    total_symbols: int
+    screened_symbols: int
+    deep_analysis_symbols: int
+    source_path: str
+
+
 def run_tw_hybrid(
     config: QuantPlatformConfig,
     report_date: date,
@@ -66,6 +79,9 @@ def run_tw_hybrid(
     price_1h_path: Path | None = None,
     price_5m_path: Path | None = None,
 ) -> tuple[Path, Path, Path, str]:
+    selected_symbols, universe_coverage = _resolve_candidate_universe(config, stock_snapshot_path)
+    config = replace(config, symbols=selected_symbols)
+    report_top_n = _effective_report_top_n(config.top_n)
     bars_by_symbol = _load_bars(config)
     kronos_signals = build_signals(
         bars_by_symbol,
@@ -122,7 +138,7 @@ def run_tw_hybrid(
                 risk_note=_risk_note(signal.expected_return, tech.bias if tech else "neutral", realtime.intraday_return if realtime else 0),
             )
         )
-    rows = _rank_rows_with_price_bias(rows, config.top_n)
+    rows = _rank_rows_with_price_bias(rows, report_top_n)
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
     report_path = config.output_dir / f"tw_hybrid_{report_date.isoformat()}.md"
@@ -131,21 +147,21 @@ def run_tw_hybrid(
     backtest = run_top_n_backtest(
         kronos_signals,
         bars_by_symbol,
-        top_n=config.top_n,
+        top_n=report_top_n,
         initial_cash=config.initial_cash,
         transaction_cost_bps=config.transaction_cost_bps,
         benchmark_symbol=config.benchmark_symbol,
     )
     _save_csv(csv_path, rows)
-    build_qlib_signal_backtest_config(csv_path, "custom_tw", config.benchmark_symbol or "2330.TW", qlib_path, config.top_n, 1)
-    qlib_metrics = run_inline_signal_diagnostics(rows, bars_by_symbol, config.top_n)
+    build_qlib_signal_backtest_config(csv_path, "custom_tw", config.benchmark_symbol or "2330.TW", qlib_path, report_top_n, 1)
+    qlib_metrics = run_inline_signal_diagnostics(rows, bars_by_symbol, report_top_n)
     qlib_engine = run_qlib_engine_portfolio_backtest(
         rows=rows,
         bars_by_symbol=bars_by_symbol,
         provider_dir=config.qlib_data_path or (config.output_dir / "qlib_data_custom_tw"),
         output_path=config.output_dir / f"qlib_engine_portfolio_{report_date.isoformat()}.csv",
         benchmark_symbol=config.benchmark_symbol,
-        top_n=config.top_n,
+        top_n=report_top_n,
         initial_cash=config.initial_cash,
         transaction_cost_bps=config.transaction_cost_bps,
     )
@@ -179,6 +195,7 @@ def run_tw_hybrid(
         qlib_metrics,
         qlib_engine,
         bars_by_symbol,
+        universe_coverage,
     )
 
     status = "disabled"
@@ -210,6 +227,108 @@ def _load_bars(config: QuantPlatformConfig):
             if len(bars) >= min_required:
                 bars_by_symbol[symbol.upper()] = bars
     return bars_by_symbol
+
+
+def _resolve_candidate_symbols(config: QuantPlatformConfig, stock_snapshot_path: Path | None = None) -> tuple[str, ...]:
+    return _resolve_candidate_universe(config, stock_snapshot_path)[0]
+
+
+def _resolve_candidate_universe(
+    config: QuantPlatformConfig,
+    stock_snapshot_path: Path | None = None,
+) -> tuple[tuple[str, ...], UniverseCoverage]:
+    universe_path = config.universe_path or stock_snapshot_path
+    if not universe_path or not universe_path.exists():
+        return config.symbols, UniverseCoverage(
+            total_symbols=len(config.symbols),
+            screened_symbols=len(config.symbols),
+            deep_analysis_symbols=len(config.symbols),
+            source_path=str(universe_path or "config.symbols"),
+        )
+    total_symbols = _count_universe_symbols(universe_path)
+    universe = _load_universe_candidates(universe_path)
+    if not universe:
+        return config.symbols, UniverseCoverage(
+            total_symbols=total_symbols,
+            screened_symbols=0,
+            deep_analysis_symbols=len(config.symbols),
+            source_path=str(universe_path),
+        )
+    base_symbols = {symbol.upper() for symbol in config.symbols}
+    ranked = sorted(universe, key=lambda item: item["score"], reverse=True)
+    selected: list[str] = []
+
+    # Keep a few familiar anchors, then fill from the whole API universe by price/liquidity.
+    for symbol in config.symbols:
+        symbol = symbol.upper()
+        if symbol in {item["symbol"] for item in universe} and symbol not in selected:
+            selected.append(symbol)
+        if len(selected) >= min(12, config.universe_candidate_limit):
+            break
+    for item in ranked:
+        symbol = item["symbol"]
+        if symbol not in selected:
+            selected.append(symbol)
+        if len(selected) >= max(len(base_symbols), config.universe_candidate_limit):
+            break
+    selected_symbols = tuple(selected)
+    return selected_symbols, UniverseCoverage(
+        total_symbols=total_symbols,
+        screened_symbols=len(universe),
+        deep_analysis_symbols=len(selected_symbols),
+        source_path=str(universe_path),
+    )
+
+
+def _count_universe_symbols(path: Path) -> int:
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            return sum(1 for row in csv.DictReader(handle) if str(row.get("symbol", "")).strip())
+    except OSError:
+        return 0
+
+
+def _load_universe_candidates(path: Path) -> list[dict[str, float | str]]:
+    candidates: list[dict[str, float | str]] = []
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            for row in csv.DictReader(handle):
+                symbol = str(row.get("symbol", "")).strip().upper()
+                price = _safe_float(row.get("price"))
+                volume = _safe_float(row.get("volume"))
+                avg_volume = _safe_float(row.get("avg_volume_20d"))
+                if not symbol or price <= 0 or max(volume, avg_volume) <= 0:
+                    continue
+                candidates.append(
+                    {
+                        "symbol": symbol,
+                        "price": price,
+                        "score": _universe_candidate_score(price, max(volume, avg_volume)),
+                    }
+                )
+    except OSError:
+        return []
+    return candidates
+
+
+def _universe_candidate_score(price: float, volume: float) -> float:
+    liquidity = math.log10(max(volume, 1.0))
+    if price < 30:
+        bucket = 12.0
+    elif price <= 100:
+        bucket = 10.0
+    elif price <= 200:
+        bucket = 4.0
+    else:
+        bucket = 0.0
+    return bucket + liquidity
+
+
+def _safe_float(value) -> float:
+    try:
+        return float(str(value or "0").replace(",", "").strip())
+    except ValueError:
+        return 0.0
 
 
 def _kronos_score(expected_return: float) -> float:
@@ -262,9 +381,18 @@ def _save_report(
     qlib_metrics,
     qlib_engine,
     bars_by_symbol: dict[str, list],
+    universe_coverage: UniverseCoverage,
 ) -> None:
     lines = [
         f"# Hybrid Quant 每日股票分析報告 - {report_date.isoformat()}",
+        "",
+        "## Market Universe Coverage",
+        "",
+        "| Metric | Count | Description |",
+        "|---|---:|---|",
+        f"| 全市場掃描數 | {universe_coverage.total_symbols} | 來自 `{_md_cell(universe_coverage.source_path)}` 的 TWSE/TPEx 股票池 |",
+        f"| 初篩通過數 | {universe_coverage.screened_symbols} | 已完成價格、成交量與流動性輕量初篩，可進入候選排序 |",
+        f"| 深度分析數 | {universe_coverage.deep_analysis_symbols} | 送入 Hybrid / OpenBB / Qlib / Kronos / K線策略的股票數 |",
         "",
         "## Workflow Coverage",
         "",
@@ -435,7 +563,7 @@ def _rank_rows_with_price_bias(rows: list[HybridRow], top_n: int) -> list[Hybrid
         reverse=True,
     )
     if top_n <= 0:
-        return ranked
+        return ranked[:MAX_RECOMMENDATION_ROWS]
     high_cap = max(1, top_n // 3)
     selected: list[HybridRow] = []
     deferred_high: list[HybridRow] = []
@@ -451,8 +579,13 @@ def _rank_rows_with_price_bias(rows: list[HybridRow], top_n: int) -> list[Hybrid
             break
         if row not in selected:
             selected.append(row)
-    tail = [row for row in ranked if row not in selected]
-    return selected + tail
+    return selected[:top_n]
+
+
+def _effective_report_top_n(top_n: int) -> int:
+    if top_n <= 0:
+        return MAX_RECOMMENDATION_ROWS
+    return min(top_n, MAX_RECOMMENDATION_ROWS)
 
 
 def _recommendation_score(hybrid_score: float, current_close: float) -> float:
