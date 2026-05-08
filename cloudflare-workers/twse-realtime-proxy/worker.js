@@ -1,4 +1,6 @@
 const TWSE_MIS_URL = "https://mis.twse.com.tw/stock/api/getStockInfo.jsp";
+const TWSTOCK_SESSION_URL = "http://mis.twse.com.tw/stock/index.jsp";
+const TWSTOCK_STOCKINFO_URL = "http://mis.twse.com.tw/stock/api/getStockInfo.jsp";
 const MAX_BATCH_SIZE = 80;
 
 const corsHeaders = {
@@ -52,6 +54,26 @@ export default {
 };
 
 async function fetchTwseBatch(channels) {
+  let primaryQuotes = [];
+  try {
+    primaryQuotes = await fetchMisBatch(channels);
+  } catch (_error) {
+    return fetchTwstockCompatBatch(channels);
+  }
+
+  const missingChannels = missingChannelsForQuotes(channels, primaryQuotes);
+  if (!primaryQuotes.length || missingChannels.length) {
+    try {
+      const fallbackQuotes = await fetchTwstockCompatBatch(missingChannels.length ? missingChannels : channels);
+      return mergeQuotes(primaryQuotes, fallbackQuotes);
+    } catch (_error) {
+      return primaryQuotes;
+    }
+  }
+  return primaryQuotes;
+}
+
+async function fetchMisBatch(channels) {
   const url = new URL(TWSE_MIS_URL);
   url.searchParams.set("ex_ch", channels.join("|"));
   url.searchParams.set("json", "1");
@@ -67,6 +89,39 @@ async function fetchTwseBatch(channels) {
       "x-requested-with": "XMLHttpRequest",
     },
     cf: { cacheTtl: 3, cacheEverything: false },
+  });
+
+  const text = await response.text();
+  const jsonText = text.slice(text.indexOf("{"));
+  const data = JSON.parse(jsonText);
+  return (data.msgArray || []).map(parseQuote).filter(Boolean);
+}
+
+async function fetchTwstockCompatBatch(channels) {
+  const sessionResponse = await fetch(TWSTOCK_SESSION_URL, {
+    headers: {
+      "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "accept-language": "zh-TW,zh;q=0.9,en-US;q=0.8",
+      "user-agent": "Mozilla/5.0 Cloudflare-Worker twstock-compatible realtime fallback",
+    },
+    cf: { cacheTtl: 0, cacheEverything: false },
+  });
+  const cookie = extractCookie(sessionResponse.headers.get("set-cookie"));
+
+  const url = new URL(TWSTOCK_STOCKINFO_URL);
+  url.searchParams.set("ex_ch", channels.join("|"));
+  url.searchParams.set("_", String(Date.now()));
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      "accept": "application/json, text/javascript, */*; q=0.01",
+      "accept-language": "zh-TW,zh;q=0.9,en-US;q=0.8",
+      "cookie": cookie,
+      "referer": "http://mis.twse.com.tw/stock/index.jsp",
+      "user-agent": "Mozilla/5.0 Cloudflare-Worker twstock-compatible realtime fallback",
+      "x-requested-with": "XMLHttpRequest",
+    },
+    cf: { cacheTtl: 0, cacheEverything: false },
   });
 
   const text = await response.text();
@@ -160,6 +215,37 @@ function chunks(items, size) {
     output.push(items.slice(index, index + capped));
   }
   return output;
+}
+
+function missingChannelsForQuotes(channels, quotes) {
+  const seen = new Set(quotes.map((quote) => `${quote.market}:${quote.symbol}`));
+  return channels.filter((channel) => !seen.has(channelKey(channel)));
+}
+
+function mergeQuotes(primaryQuotes, fallbackQuotes) {
+  const merged = new Map();
+  for (const quote of primaryQuotes) {
+    merged.set(`${quote.market}:${quote.symbol}`, quote);
+  }
+  for (const quote of fallbackQuotes) {
+    const key = `${quote.market}:${quote.symbol}`;
+    if (!merged.has(key)) merged.set(key, quote);
+  }
+  return [...merged.values()];
+}
+
+function channelKey(channel) {
+  const normalized = normalizeChannel(channel);
+  const [market, symbolPart] = normalized.slice(0, -3).split("_", 2);
+  return `${market}:${symbolPart}`;
+}
+
+function extractCookie(setCookie) {
+  return String(setCookie || "")
+    .split(",")
+    .map((part) => part.split(";", 1)[0].trim())
+    .filter(Boolean)
+    .join("; ");
 }
 
 function json(payload, status = 200) {
