@@ -11,6 +11,7 @@ from quant_research_platform.analysis_workflow import StockWorkflowAudit, build_
 from quant_research_platform.backtest import run_top_n_backtest
 from quant_research_platform.config import QuantPlatformConfig
 from quant_research_platform.daily_stock_bridge import (
+    RealtimeState,
     build_technical_signals,
     industry_news_score,
     load_latest_realtime_states,
@@ -139,6 +140,13 @@ def run_tw_hybrid(
             )
         )
     rows = _rank_rows_with_price_bias(rows, report_top_n)
+    fallback_realtime = _load_twstock_realtime_fallback_states(
+        [row.symbol for row in rows if row.symbol not in realtime_states],
+        report_top_n,
+    )
+    if fallback_realtime:
+        realtime_states.update(fallback_realtime)
+        rows = _rank_rows_with_price_bias(_apply_realtime_fallback(rows, fallback_realtime), report_top_n)
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
     report_path = config.output_dir / f"tw_hybrid_{report_date.isoformat()}.md"
@@ -337,6 +345,75 @@ def _kronos_score(expected_return: float) -> float:
 
 def _realtime_score(intraday_return: float) -> float:
     return max(0.0, min(100.0, 50 + intraday_return * 700))
+
+
+def _load_twstock_realtime_fallback_states(symbols: list[str], limit: int) -> dict[str, RealtimeState]:
+    if limit <= 0 or not symbols:
+        return {}
+    try:
+        from quant_research_platform.twstock_fallback import fetch_twstock_realtime_quotes
+    except Exception:
+        return {}
+    quotes = fetch_twstock_realtime_quotes(symbols, max_symbols=limit)
+    states = {}
+    for quote in quotes:
+        state = _realtime_state_from_quote(quote)
+        states[state.symbol] = state
+    return states
+
+
+def _realtime_state_from_quote(quote) -> RealtimeState:
+    suffix = "TWO" if str(quote.market).lower() == "otc" else "TW"
+    symbol = f"{quote.symbol}.{suffix}"
+    price = float(quote.price or 0)
+    previous = float(quote.previous_close or 0)
+    intraday_return = price / previous - 1 if previous else 0.0
+    return RealtimeState(
+        symbol=symbol,
+        price=price,
+        previous_close=previous,
+        intraday_return=intraday_return,
+        status=_fallback_intraday_status(intraday_return),
+        timestamp=quote.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+    )
+
+
+def _apply_realtime_fallback(rows: list[HybridRow], realtime_states: dict[str, RealtimeState]) -> list[HybridRow]:
+    updated = []
+    for row in rows:
+        realtime = realtime_states.get(row.symbol)
+        if not realtime:
+            updated.append(row)
+            continue
+        realtime_score = _realtime_score(realtime.intraday_return)
+        hybrid_score = row.hybrid_score - row.realtime_score * 0.10 + realtime_score * 0.10
+        current_close = realtime.price or row.current_close
+        updated.append(
+            replace(
+                row,
+                realtime_score=realtime_score,
+                hybrid_score=hybrid_score,
+                recommendation_score=_recommendation_score(hybrid_score, current_close),
+                price_bucket=_price_bucket(current_close),
+                current_close=current_close,
+                realtime_status=f"{realtime.status} / twstock備援",
+                action=_action(hybrid_score, row.kronos_return, realtime.intraday_return),
+                risk_note=_risk_note(row.kronos_return, "neutral", realtime.intraday_return),
+            )
+        )
+    return updated
+
+
+def _fallback_intraday_status(value: float) -> str:
+    if value >= 0.015:
+        return "盤中偏多"
+    if value >= 0.003:
+        return "小漲"
+    if value <= -0.015:
+        return "盤中偏弱"
+    if value <= -0.003:
+        return "小跌"
+    return "持平"
 
 
 def _action(score: float, expected_return: float, intraday_return: float) -> str:

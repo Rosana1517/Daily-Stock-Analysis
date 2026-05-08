@@ -38,6 +38,7 @@ def main() -> None:
     twse_parser.add_argument("--default-market", default="tse", choices=["tse", "otc"], help="Market for bare symbols.")
     twse_parser.add_argument("--sleep-min", type=float, default=0.2, help="Minimum random sleep between batches.")
     twse_parser.add_argument("--sleep-max", type=float, default=1.2, help="Maximum random sleep between batches.")
+    twse_parser.add_argument("--twstock-fallback-limit", type=int, default=15, help="Max missing symbols per batch to refill through twstock fallback. Set 0 to disable.")
 
     universe_parser = subparsers.add_parser("fetch-twse-universe", help="Fetch full TWSE listed and TPEx OTC universe.")
     universe_parser.add_argument("--output", default="data/twse_realtime_universe.csv", help="Universe CSV output path.")
@@ -107,6 +108,7 @@ def main() -> None:
             default_market=args.default_market,
             random_sleep_min=args.sleep_min,
             random_sleep_max=args.sleep_max,
+            twstock_fallback_limit=args.twstock_fallback_limit,
         )
         print(f"cache_path={args.cache}")
     elif args.command == "fetch-twse-universe":

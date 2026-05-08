@@ -6,7 +6,7 @@ requires-python = ">=3.9"
 dependencies = []
 
 [project.optional-dependencies]
-market = ["yfinance>=0.2.66"]
+market = ["yfinance>=0.2.66", "twstock>=1.4.0"]
 quant = ["openbb>=4.0.0", "pyqlib>=0.9.6"]
 
 [tool.setuptools.packages.find]

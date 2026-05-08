@@ -62,6 +62,7 @@ def poll_realtime_quotes(
     default_market: str = "tse",
     random_sleep_min: float = 0.2,
     random_sleep_max: float = 1.2,
+    twstock_fallback_limit: int = 15,
 ) -> None:
     channels = [normalize_channel(symbol, default_market) for symbol in symbols]
     if not 1 <= batch_size <= 100:
@@ -70,7 +71,7 @@ def poll_realtime_quotes(
     while iterations is None or iteration < iterations:
         started_at = time.monotonic()
         for batch in _chunks(channels, batch_size):
-            quotes = fetch_realtime_quotes(batch)
+            quotes = fetch_realtime_quotes(batch, twstock_fallback_limit=twstock_fallback_limit)
             append_quote_cache(cache_path, quotes)
             time.sleep(random.uniform(random_sleep_min, random_sleep_max))
         iteration += 1
@@ -119,7 +120,10 @@ def load_universe_channels(path: Path) -> list[str]:
         return [row["channel"].strip() for row in reader if row.get("channel")]
 
 
-def fetch_realtime_quotes(channels: Iterable[str]) -> list[TwseRealtimeQuote]:
+def fetch_realtime_quotes(
+    channels: Iterable[str],
+    twstock_fallback_limit: int = 15,
+) -> list[TwseRealtimeQuote]:
     channel_list = list(channels)
     if not channel_list:
         return []
@@ -131,11 +135,18 @@ def fetch_realtime_quotes(channels: Iterable[str]) -> list[TwseRealtimeQuote]:
     }
     url = f"{MIS_STOCK_INFO_URL}?{urllib.parse.urlencode(params)}"
     request = urllib.request.Request(url, headers=BROWSER_HEADERS)
-    with urllib.request.urlopen(request, timeout=20) as response:
-        payload = response.read().decode("utf-8-sig")
-    raw = json.loads(payload)
-    rows = raw.get("msgArray", [])
-    return [quote for row in rows if (quote := _parse_quote(row)) is not None]
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = response.read().decode("utf-8-sig")
+        raw = json.loads(payload)
+        rows = raw.get("msgArray", [])
+        quotes = [quote for row in rows if (quote := _parse_quote(row)) is not None]
+    except Exception:
+        return _fetch_twstock_realtime_fallback(channel_list, twstock_fallback_limit)
+    missing = _missing_channels(channel_list, quotes)
+    if missing:
+        quotes.extend(_fetch_twstock_realtime_fallback(missing, twstock_fallback_limit))
+    return quotes
 
 
 def append_quote_cache(cache_path: Path, quotes: list[TwseRealtimeQuote]) -> Path:
@@ -247,6 +258,22 @@ def _to_float(value) -> float:
 def _chunks(items: list[str], size: int):
     for index in range(0, len(items), size):
         yield items[index : index + size]
+
+
+def _missing_channels(channels: list[str], quotes: list[TwseRealtimeQuote]) -> list[str]:
+    found = {quote.raw_channel.lower() for quote in quotes if quote.raw_channel}
+    found.update(normalize_channel(f"{quote.market}:{quote.symbol}").lower() for quote in quotes)
+    return [channel for channel in channels if normalize_channel(channel).lower() not in found]
+
+
+def _fetch_twstock_realtime_fallback(channels: list[str], limit: int) -> list[TwseRealtimeQuote]:
+    if limit <= 0 or not channels:
+        return []
+    try:
+        from quant_research_platform.twstock_fallback import fetch_twstock_realtime_quotes
+    except Exception:
+        return []
+    return fetch_twstock_realtime_quotes(channels, max_symbols=limit)
 
 
 def _fetch_json(url: str) -> list[dict]:
