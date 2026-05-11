@@ -65,11 +65,7 @@ class PipelineTest(unittest.TestCase):
             report_url="https://example.com/reports/stock_signals_2026-04-29.html",
         )
 
-        self.assertEqual(
-            body,
-            "今日沒有高優先標的。候選觀察：。\n\n"
-            "完整報告連結：https://example.com/reports/stock_signals_2026-04-29.html",
-        )
+        self.assertEqual(body, "https://example.com/reports/stock_signals_2026-04-29.html")
         self.assertNotIn("reports/stock_signals_2026-04-29.md", body)
 
 

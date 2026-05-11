@@ -265,9 +265,9 @@ def _dedupe_news(news: list[NewsItem]) -> list[NewsItem]:
 
 
 INDUSTRY_RULES_ZH = {
-    "AI 伺服器": {
+    "AI伺服器": {
         "required": ("ai", "人工智慧", "伺服器", "server", "gpu", "nvidia", "gb200", "gb300", "asic", "資料中心", "data center"),
-        "context": ("雲端", "散熱", "半導體", "記憶體", "高速傳輸", "電源", "運算", "供應鏈", "機櫃"),
+        "context": ("雲端", "散熱", "半導體", "記憶體", "高速傳輸", "電源", "運算", "供應鏈", "機櫃", "cloud", "compute", "data center", "datacenter", "infrastructure"),
         "exclude": ("警察", "法院", "餐廳", "航空", "電影", "學生"),
     },
     "半導體": {
@@ -284,6 +284,11 @@ INDUSTRY_RULES_ZH = {
         "required": ("電力", "電網", "重電", "變壓器", "電纜", "電源", "power grid", "transformer", "中興電", "士電", "華城"),
         "context": ("ai", "資料中心", "基建", "台電", "能源", "供電", "訂單"),
         "exclude": ("政治權力", "powerpoint"),
+    },
+    "儲能": {
+        "required": ("儲能", "電池", "battery", "ev", "electric vehicle", "electric car", "battery-powered"),
+        "context": ("電網", "再生能源", "太陽能", "充電", "鋰", "lease", "leases", "leased", "utility", "car", "truck"),
+        "exclude": ("data storage", "cloud storage", "警察", "學生", "餐廳", "法院"),
     },
     "消費電子": {
         "required": ("消費電子", "iphone", "手機", "pc", "筆電", "realtek", "聯詠", "大立光", "shipment"),
