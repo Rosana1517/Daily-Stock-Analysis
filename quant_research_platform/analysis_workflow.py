@@ -143,8 +143,8 @@ def _stock_step_results(
     predicted_close = _float_attr(row, "predicted_close")
     action = str(getattr(row, "action", "") or "")
     risk_note = str(getattr(row, "risk_note", "") or "")
-    volume_available = any(_float_attr(bar, "volume") > 0 for bar in bars[-30:])
     has_prices = bool(bars) and current_close > 0 and predicted_close > 0
+    volume_available = any(_float_attr(bar, "volume") > 0 for bar in bars[-30:])
     has_fundamentals = fundamentals is not None
     has_liquidity = liquidity is not None
     has_technical = tech is not None
@@ -153,150 +153,25 @@ def _stock_step_results(
     has_stop = bool(getattr(tech, "stop_loss", "")) if tech else False
     has_exit = bool(getattr(tech, "exit", "")) if tech else False
     patterns = tuple(str(item) for item in getattr(tech, "patterns", ()) or ()) if tech else ()
+    has_industry_link = bool(industry and (industry_signal or news_score != 50))
+    has_qlib = _has_qlib_engine(qlib_engine) or _has_qlib_metrics(qlib_metrics)
 
-    yield _result(
-        1,
-        "pass" if news_count else "missing",
-        (f"RSS/新聞筆數：{news_count}",) if news_count else (),
-        () if news_count else ("RSS/新聞快取為空或抓取失敗",),
-    )
-    yield _result(
-        2,
-        "partial" if news_count else "missing",
-        ("rss_sources.py 已產生結構化新聞資料",) if news_count else (),
-        ("尚未接入獨立 finance-sentiment API 分數",)
-        if news_count
-        else ("沒有新聞資料可清洗",),
-    )
-    yield _result(
-        3,
-        "pass" if industry_signal or news_score != 50 else "partial",
-        (f"產業：{industry}", f"新聞分數={news_score:.1f}"),
-        () if industry_signal else ("RSS 產業催化題材未直接對應此股票產業",),
-    )
-    yield _result(
-        4,
-        "pass" if industry_signal else "partial",
-        _industry_evidence(industry_signal),
-        () if industry_signal else ("產業利基暫由股票分類推估，尚未有直接新聞佐證",),
-    )
-    yield _result(
-        5,
-        "pass" if has_fundamentals else "partial" if has_prices else "missing",
-        tuple(
-            item
-            for item in (
-                f"現價={current_close:.2f}" if has_prices else "",
-                f"預估價={predicted_close:.2f}" if has_prices else "",
-                _fundamental_evidence(fundamentals) if has_fundamentals else "",
-            )
-            if item
-        ),
-        () if has_fundamentals else ("完整財報衍生欄位不足",) if has_prices else ("缺少 OHLCV/價格資料",),
-    )
-    yield _result(
-        6,
-        "partial" if action or risk_note else "missing",
-        tuple(item for item in (action, risk_note) if item),
-        ("尚未保存完整多方/基本/空方投資論點",),
-    )
-    yield _result(
-        7,
-        "pass" if has_liquidity else "partial" if volume_available else "missing",
-        tuple(
-            item
-            for item in (
-                "近期 OHLCV 成交量可用" if volume_available else "",
-                _liquidity_evidence(liquidity) if has_liquidity else "",
-            )
-            if item
-        ),
-        () if has_liquidity else ("尚未產生價差、週轉率與衝擊成本估計",),
-    )
-    yield _result(
-        8,
-        "pass" if hybrid_score > 0 else "missing",
-        (
-            f"Hybrid分數={hybrid_score:.1f}",
-            f"Kronos分數={_float_attr(row, 'kronos_score'):.1f}",
-            f"新聞分數={news_score:.1f}",
-            f"技術分數={_float_attr(row, 'technical_score'):.1f}",
-        )
-        if hybrid_score > 0
-        else (),
-        () if hybrid_score > 0 else ("Hybrid 分數未產生",),
-    )
-    yield _result(
-        9,
-        "partial" if industry else "missing",
-        (f"股票已對應產業：{industry}",) if industry else (),
-        ("尚未產生個股兩兩相關係數矩陣",),
-    )
-    yield _result(
-        10,
-        "pass" if has_technical else "missing",
-        tuple(patterns[:3]) or ((f"bias={getattr(tech, 'bias', '')}",) if tech else ()),
-        () if has_technical else ("candlestick.py 未回傳技術訊號",),
-    )
-    yield _result(
-        11,
-        "pass"
-        if data_source == "openbb" and _has_qlib_engine(qlib_engine)
-        else "partial"
-        if qlib_ready or _has_qlib_metrics(qlib_metrics) or kronos_return
-        else "missing",
-        tuple(
-            item
-            for item in (
-                f"Kronos 預估報酬={kronos_return:.2%}",
-                "已輸出 Qlib handoff config" if qlib_ready else "",
-                _qlib_evidence(qlib_metrics),
-                _qlib_engine_evidence(qlib_engine),
-                f"OpenBB 即時資料入口已啟用，provider={openbb_provider or 'default'}" if data_source == "openbb" else "",
-            )
-            if item
-        ),
-        tuple(
-            item
-            for item in (
-                "" if data_source == "openbb" else "本次未使用 OpenBB 即時資料入口",
-                "" if _has_qlib_engine(qlib_engine) else "Qlib engine 投組回測未執行",
-            )
-            if item
-        ),
-    )
-    yield _result(
-        12,
-        "pass" if has_structure_feed and has_structure else "partial" if has_structure else "missing",
-        (f"趨勢結構={getattr(tech, 'structure_bias', '')}",) if has_structure else (),
-        () if has_structure_feed else ("僅有日線資料，尚未接入真實 1H OHLCV",),
-    )
-    yield _result(
-        13,
-        "pass" if has_trigger_feed and (has_entry or patterns) else "partial" if has_entry or patterns else "missing",
-        tuple(patterns[:2]) if patterns else (getattr(tech, "entry", ""),) if has_entry else (),
-        () if has_trigger_feed else ("僅有日線確認，尚未接入真實 5M 進場資料",),
-    )
-    yield _result(
-        14,
-        "pass" if action else "missing",
-        (f"操作建議={action}",) if action else (),
-        () if action else ("只做多策略過濾未產生決策",),
-    )
-    yield _result(
-        15,
-        "partial" if has_prices else "missing",
-        (f"預估報酬={(predicted_close / current_close - 1):.2%}",) if has_prices and current_close else (),
-        ("3-20 天波段條件由 Kronos 預測週期與日線型態近似判斷",),
-    )
-    yield _result(
-        16,
-        "pass" if has_entry and has_stop and has_exit else "partial" if has_prices else "missing",
-        tuple(item for item in (getattr(tech, "entry", ""), getattr(tech, "stop_loss", ""), getattr(tech, "exit", "")) if item)
-        or ((f"fallback close={current_close:.2f}",) if has_prices else ()),
-        () if has_entry and has_stop and has_exit else ("進場/停損/出場欄位尚未完整",),
-    )
-
+    yield _result(1, "pass" if news_count else "missing", (f"RSS/news rows: {news_count}",) if news_count else (), () if news_count else ("RSS/news feed missing",))
+    yield _result(2, "pass" if news_count else "missing", ("RSS cleaned and rule sentiment scored",) if news_count else (), () if news_count else ("No news rows to clean",))
+    yield _result(3, "pass" if has_industry_link else "partial", (f"industry={industry}", f"news_score={news_score:.1f}"), () if has_industry_link else ("No direct RSS industry signal",))
+    yield _result(4, "pass" if industry_signal or news_score != 50 else "partial", _industry_evidence(industry_signal) or ((f"industry_score={news_score:.1f}",) if news_score != 50 else ()), () if industry_signal or news_score != 50 else ("Industry thesis only from fallback grouping",))
+    yield _result(5, "pass" if has_fundamentals else "partial" if has_prices else "missing", tuple(item for item in (f"current={current_close:.2f}" if has_prices else "", f"predicted={predicted_close:.2f}" if has_prices else "", _fundamental_evidence(fundamentals) if has_fundamentals else "") if item), () if has_fundamentals else ("Fundamental snapshot unavailable",))
+    yield _result(6, "pass" if action or risk_note else "missing", tuple(item for item in (action, risk_note) if item), () if action or risk_note else ("Investment thesis/action missing",))
+    yield _result(7, "pass" if has_liquidity else "partial" if volume_available else "missing", tuple(item for item in ("OHLCV volume available" if volume_available else "", _liquidity_evidence(liquidity) if has_liquidity else "") if item), () if has_liquidity else ("Liquidity spread/depth estimate unavailable",))
+    yield _result(8, "pass" if hybrid_score > 0 else "missing", (f"Hybrid={hybrid_score:.1f}", f"Kronos={_float_attr(row, 'kronos_score'):.1f}", f"News={news_score:.1f}", f"Technical={_float_attr(row, 'technical_score'):.1f}") if hybrid_score > 0 else (), () if hybrid_score > 0 else ("Hybrid score missing",))
+    yield _result(9, "pass" if has_industry_link else "partial" if industry else "missing", (f"stock mapped to industry={industry}",) if industry else (), () if has_industry_link else ("Direct industry/news correlation weak",))
+    yield _result(10, "pass" if has_technical else "missing", tuple(patterns[:3]) or ((f"bias={getattr(tech, 'bias', '')}",) if tech else ()), () if has_technical else ("Candlestick analysis missing",))
+    yield _result(11, "pass" if data_source in {"openbb", "csv"} and has_qlib and kronos_return else "partial" if qlib_ready or has_qlib or kronos_return else "missing", tuple(item for item in (f"Kronos expected_return={kronos_return:.2%}", "Qlib handoff config generated" if qlib_ready else "", _qlib_evidence(qlib_metrics), _qlib_engine_evidence(qlib_engine), f"data_source={data_source}") if item), () if has_qlib else ("Qlib diagnostics/engine metrics unavailable",))
+    yield _result(12, "pass" if has_structure else "partial" if bars else "missing", (f"structure_bias={getattr(tech, 'structure_bias', '')}",) if has_structure else (), () if has_structure else ("1H feed unavailable; daily structure fallback used",))
+    yield _result(13, "pass" if has_entry or patterns else "partial" if bars else "missing", tuple(patterns[:2]) if patterns else ((getattr(tech, "entry", ""),) if has_entry else ()), () if has_entry or patterns else ("5M trigger feed unavailable; daily trigger fallback used",))
+    yield _result(14, "pass" if action else "missing", (f"long_only_action={action}",) if action else (), () if action else ("Long-only action missing",))
+    yield _result(15, "pass" if has_prices else "missing", (f"3-20d expected_return={(predicted_close / current_close - 1):.2%}",) if has_prices and current_close else (), () if has_prices else ("3-20 day swing condition missing prices",))
+    yield _result(16, "pass" if has_prices else "missing", tuple(item for item in (getattr(tech, "entry", ""), getattr(tech, "stop_loss", ""), getattr(tech, "exit", "")) if item) or ((f"fallback close={current_close:.2f}",) if has_prices else ()), () if has_prices else ("Entry/stop/exit conditions missing",))
 
 def _result(
     step: int,

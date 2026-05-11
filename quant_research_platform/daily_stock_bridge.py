@@ -57,6 +57,32 @@ TW_STOCK_PROFILE = {
     "5347.TWO": ("世界", "晶圓代工"),
 }
 
+_PROFILE_LOADED_PATHS: set[str] = set()
+
+
+def load_stock_profiles(*paths: Path | None) -> None:
+    for path in paths:
+        if not path or not path.exists():
+            continue
+        key = str(path.resolve())
+        if key in _PROFILE_LOADED_PATHS:
+            continue
+        _PROFILE_LOADED_PATHS.add(key)
+        try:
+            with path.open("r", encoding="utf-8-sig", newline="") as handle:
+                for row in csv.DictReader(handle):
+                    symbol = str(row.get("symbol", "")).strip()
+                    name = str(row.get("name", "")).strip()
+                    industry = _clean_industry(str(row.get("industry", "")).strip())
+                    if not symbol:
+                        continue
+                    profile = (name or symbol, industry or "市場觀察")
+                    TW_STOCK_PROFILE[symbol] = profile
+                    TW_STOCK_PROFILE[f"{symbol}.TW"] = profile
+                    TW_STOCK_PROFILE[f"{symbol}.TWO"] = profile
+        except OSError:
+            continue
+
 
 @dataclass(frozen=True)
 class RealtimeState:

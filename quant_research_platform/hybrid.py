@@ -16,6 +16,7 @@ from quant_research_platform.daily_stock_bridge import (
     industry_news_score,
     load_latest_realtime_states,
     load_or_fetch_industry_signals,
+    load_stock_profiles,
     notification_summary,
     send_hybrid_notification,
     stock_industry,
@@ -32,6 +33,7 @@ from quant_research_platform.qlib_adapter import (
 )
 from quant_research_platform.signals import build_signals
 from stock_signal_system.data.csv_sources import load_news
+from stock_signal_system.models import IndustrySignal
 
 
 MAX_RECOMMENDATION_ROWS = 15
@@ -82,6 +84,7 @@ def run_tw_hybrid(
 ) -> tuple[Path, Path, Path, str]:
     selected_symbols, universe_coverage = _resolve_candidate_universe(config, stock_snapshot_path)
     config = replace(config, symbols=selected_symbols)
+    load_stock_profiles(config.universe_path, stock_snapshot_path)
     report_top_n = _effective_report_top_n(config.top_n)
     bars_by_symbol = _load_bars(config)
     kronos_signals = build_signals(
@@ -98,7 +101,7 @@ def run_tw_hybrid(
     industry_signals = load_or_fetch_industry_signals(news_path, rss_sources_path)
     news_items = load_news(news_path) if news_path and news_path.exists() else []
     realtime_states = load_latest_realtime_states(realtime_cache)
-    fundamental_snapshots = load_fundamental_snapshots(stock_snapshot_path)
+    fundamental_snapshots = load_fundamental_snapshots(stock_snapshot_path or config.universe_path)
     liquidity_snapshots = build_liquidity_snapshots(bars_by_symbol, fundamental_snapshots)
 
     rows = []
@@ -147,6 +150,7 @@ def run_tw_hybrid(
     if fallback_realtime:
         realtime_states.update(fallback_realtime)
         rows = _rank_rows_with_price_bias(_apply_realtime_fallback(rows, fallback_realtime), report_top_n)
+    industry_signals = _ensure_industry_signal_coverage(industry_signals, rows, min_count=min(8, report_top_n))
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
     report_path = config.output_dir / f"tw_hybrid_{report_date.isoformat()}.md"
@@ -663,6 +667,38 @@ def _effective_report_top_n(top_n: int) -> int:
     if top_n <= 0:
         return MAX_RECOMMENDATION_ROWS
     return min(top_n, MAX_RECOMMENDATION_ROWS)
+
+
+def _ensure_industry_signal_coverage(
+    industry_signals: list[IndustrySignal],
+    rows: list[HybridRow],
+    min_count: int,
+) -> list[IndustrySignal]:
+    cleaned = [item for item in industry_signals if _valid_industry_name(item.industry)]
+    existing = {item.industry for item in cleaned}
+    grouped = _group_rows_by_industry(rows)
+    for industry, group in grouped.items():
+        if len(cleaned) >= min_count:
+            break
+        if not _valid_industry_name(industry) or industry in existing:
+            continue
+        average = sum(row.hybrid_score for row in group) / len(group)
+        best = group[0]
+        cleaned.append(
+            IndustrySignal(
+                industry=industry,
+                score=round(average, 1),
+                catalysts=(f"{best.name} 等 {len(group)} 檔入選深度分析候選，作為今日產業觀察補充。",),
+                evidence_count=len(group),
+            )
+        )
+        existing.add(industry)
+    return sorted(cleaned, key=lambda item: (item.score, item.evidence_count), reverse=True)
+
+
+def _valid_industry_name(value: str) -> bool:
+    text = str(value or "").strip()
+    return bool(text) and text not in {"未知", "市場觀察"} and "?" not in text
 
 
 def _recommendation_score(hybrid_score: float, current_close: float) -> float:
