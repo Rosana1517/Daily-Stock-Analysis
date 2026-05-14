@@ -110,7 +110,7 @@ class HybridTest(unittest.TestCase):
             self.assertIn("黃金交叉", report)
             self.assertIn("近 10 日漲停排除 3 連漲", report)
             self.assertIn("月均線 MACD 金叉向上", report)
-            self.assertIn("20 均線附近放量陽線", report)
+            self.assertIn("日均線股價在 20 均線附近且放量陽線", report)
             self.assertNotIn("進場", report)
 
 

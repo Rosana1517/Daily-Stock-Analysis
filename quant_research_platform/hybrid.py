@@ -310,7 +310,7 @@ def _save_report(
             "| 三線突破 | 主 K 線訊號標記 | Quant、Devil | 作為可重算突破因子，低量或未站穩需降權 |",
             "| 近 10 日漲停排除 3 連漲 | 策略摘要與標記區 | Quant、Devil | 找短線強勢但排除過熱連續鎖漲停 |",
             "| 月均線 MACD 金叉向上 | 策略摘要 | Technical、Quant | 以月線級別確認中期動能，樣本不足時只列觀察 |",
-            "| 20 均線附近放量陽線 | 主 K 線與成交量副圖 | Technical、Devil | 檢查均線附近是否有量價確認，低量不成立 |",
+            "| 日均線股價在 20 均線附近且放量陽線 | 日 K 線與成交量副圖 | Technical、Devil | 僅檢查日線收盤價是否靠近日 MA20，且當日為放量陽線；低量或非陽線不成立 |",
         ]
     )
     lines.extend(["", "## RSS 產業訊號", "", "| 產業 | RSS 分數 | 證據數 | 主要催化 |", "|---|---:|---:|---|"])
@@ -587,10 +587,10 @@ def _technical_strategy_summary(row: HybridRow, bars: list[Bar]) -> list[dict[st
             "use": "以月線級別確認中期動能；資料不足時不得升級為主訊號。",
         },
         {
-            "strategy": "20 均線附近放量陽線",
+            "strategy": "日均線股價在 20 均線附近且放量陽線",
             "status": _ma20_volume_bull_status(bars),
             "agent": "Technical_Analyst_Agent",
-            "use": "檢查股價靠近 MA20 時是否有量價同步確認。",
+            "use": "檢查日線收盤價靠近日 MA20 時，當日是否為放量陽線。",
         },
         {
             "strategy": "支撐壓力",
@@ -719,12 +719,12 @@ def _ma20_volume_bull_status(bars: list[Bar]) -> str:
     bullish = latest.close > latest.open
     high_volume = volume_ratio >= 1.5
     if near_ma20 and bullish and high_volume:
-        return f"靠近 MA20 且放量陽線，量比 {volume_ratio:.2f}"
+        return f"日線收盤靠近日 MA20 且放量陽線，量比 {volume_ratio:.2f}"
     missing = []
     if not near_ma20:
-        missing.append("未貼近 MA20")
+        missing.append("日線收盤未貼近日 MA20")
     if not bullish:
-        missing.append("非陽線")
+        missing.append("日 K 非陽線")
     if not high_volume:
         missing.append(f"量比 {volume_ratio:.2f} 未放大")
     return "，".join(missing)

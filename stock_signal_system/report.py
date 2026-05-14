@@ -364,7 +364,7 @@ def _interactive_chart_section() -> str:
             <label><input type="checkbox" data-layer="markers" checked> 精簡 K 線/三線標記</label>
             <label><input type="checkbox" data-layer="limitUp" checked> 近 10 日漲停</label>
             <label><input type="checkbox" data-layer="monthlyMacd" checked> 月均線 MACD 金叉</label>
-            <label><input type="checkbox" data-layer="ma20Volume" checked> 20 均線放量陽線</label>
+            <label><input type="checkbox" data-layer="ma20Volume" checked> 日均線 20 均線放量陽線</label>
           </fieldset>
         </aside>
         <div class="chart-wrap">
@@ -445,7 +445,7 @@ INTERACTIVE_CHART_JS = r"""
     const map = [
       ["近 10 日漲停排除 3 連漲", "limitUp"],
       ["月均線 MACD 金叉向上", "monthlyMacd"],
-      ["20 均線附近放量陽線", "ma20Volume"],
+      ["日均線股價在 20 均線附近且放量陽線", "ma20Volume"],
       ["黃金交叉 / 死亡交叉", "ma"],
       ["MA20 風險線", "ma"],
       ["布林通道", "bollinger"],
@@ -602,7 +602,7 @@ INTERACTIVE_CHART_JS = r"""
       const nearMa20 = Number.isFinite(average20) && Math.abs(bar.close - average20) / average20 <= 0.02;
       const bullish = bar.close > bar.open;
       if (state.layers.ma20Volume && nearMa20 && bullish && volumeRatio >= 1.5) {
-        signals.push({index: i, price: bar.close, text: "MA20量陽", color: "#ea580c", priority: 2, offset: -22});
+        signals.push({index: i, price: bar.close, text: "日MA20量陽", color: "#ea580c", priority: 2, offset: -22});
       }
     }
     signals

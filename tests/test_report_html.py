@@ -47,7 +47,7 @@ class ReportHtmlTest(unittest.TestCase):
         self.assertIn("精簡 K 線/三線標記", html)
         self.assertIn("近 10 日漲停", html)
         self.assertIn("月均線 MACD 金叉", html)
-        self.assertIn("20 均線放量陽線", html)
+        self.assertIn("日均線 20 均線放量陽線", html)
         self.assertIn("strategyVisible", html)
         self.assertIn("flex-wrap: wrap", html)
         self.assertIn("策略條件摘要", html)
