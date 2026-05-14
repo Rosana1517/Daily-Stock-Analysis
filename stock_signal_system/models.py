@@ -81,6 +81,32 @@ class StockRecommendation:
     rank_delta: Optional[int] = None
     status: str = "續抱/續觀察"
 
+@dataclass(frozen=True)
+class PortfolioPosition:
+    symbol: str
+    name: str
+    industry: str
+    quantity: float
+    average_cost: float
+    current_price: float = 0
+    stop_loss: float = 0
+    target_price: float = 0
+    thesis: str = ""
+    risk_level: str = "medium"
+
+
+@dataclass(frozen=True)
+class PortfolioAssessment:
+    position: PortfolioPosition
+    score: float
+    action: str
+    next_day_bias: str
+    unrealized_return_pct: float
+    market_value: float
+    reasons: tuple[str, ...]
+    risks: tuple[str, ...] = field(default_factory=tuple)
+    watch_levels: tuple[str, ...] = field(default_factory=tuple)
+
 
 @dataclass(frozen=True)
 class ChangeSummary:

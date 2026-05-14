@@ -4,7 +4,7 @@ import csv
 from datetime import date, datetime
 from pathlib import Path
 
-from stock_signal_system.models import NewsItem, PriceBar, StockSnapshot
+from stock_signal_system.models import NewsItem, PortfolioPosition, PriceBar, StockSnapshot
 
 
 def load_news(path: Path) -> list[NewsItem]:
@@ -40,6 +40,25 @@ def load_stocks(path: Path) -> list[StockSnapshot]:
                 debt_to_equity=float(row["debt_to_equity"]),
                 pe_ratio=float(row["pe_ratio"]),
                 notes=row.get("notes", "").strip(),
+            )
+            for row in csv.DictReader(f)
+        ]
+
+
+def load_portfolio(path: Path) -> list[PortfolioPosition]:
+    with path.open("r", encoding="utf-8-sig", newline="") as f:
+        return [
+            PortfolioPosition(
+                symbol=row["symbol"].strip(),
+                name=row.get("name", "").strip(),
+                industry=row.get("industry", "").strip(),
+                quantity=_float(row.get("quantity")),
+                average_cost=_float(row.get("average_cost")),
+                current_price=_float(row.get("current_price")),
+                stop_loss=_float(row.get("stop_loss")),
+                target_price=_float(row.get("target_price")),
+                thesis=row.get("thesis", "").strip(),
+                risk_level=row.get("risk_level", "medium").strip() or "medium",
             )
             for row in csv.DictReader(f)
         ]
@@ -88,6 +107,12 @@ def load_intraday_history(path: Path) -> dict[str, list[PriceBar]]:
 
 def _split_industries(value: str) -> list[str]:
     return [part.strip() for part in value.split(";") if part.strip()]
+
+
+def _float(value: object) -> float:
+    if value in (None, ""):
+        return 0.0
+    return float(str(value).replace(",", "").strip())
 
 
 def _parse_date_or_datetime(value: str):
