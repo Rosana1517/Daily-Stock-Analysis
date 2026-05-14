@@ -11,19 +11,17 @@ on:
         options:
           - "true"
           - "false"
+      force_send_line:
+        description: "Force LINE broadcast even if today's marker exists"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
   schedule:
-    # 00:30 UTC = 08:30 Asia/Taipei.
+    # 08:30 Asia/Taipei, Monday-Friday.
     - cron: "30 0 * * 1-5"
-    # Backup triggers in case the primary scheduled run is delayed or dropped.
-    # The LINE step is guarded by a per-day marker, so these do not duplicate sends.
-    # 00:45 UTC = 08:45 Asia/Taipei.
-    - cron: "45 0 * * 1-5"
-    # 01:00 UTC = 09:00 Asia/Taipei.
-    - cron: "0 1 * * 1-5"
-    # 01:15 UTC = 09:15 Asia/Taipei.
-    - cron: "15 1 * * 1-5"
-    # 01:30 UTC = 09:30 Asia/Taipei.
-    - cron: "30 1 * * 1-5"
 
 permissions:
   contents: write
@@ -41,7 +39,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     env:
-      CONFIG: configs/rss.example.json
+      CONFIG: configs/daily_quant_hybrid.example.json
+      QUANT_CONFIG: configs/quant_platform.tw.example.json
       REPORT_BASE_URL: https://rosana1517.github.io/Daily-Stock-Analysis/reports
       PYTHONUNBUFFERED: "1"
     steps:
@@ -54,26 +53,24 @@ jobs:
           python-version: "3.11"
 
       - name: Install package
-        run: |
-          python -m pip install -e ".[market]"
-          python -m pip install "greenlet==3.1.1" "pyqlib>=0.9.6" || echo "pyqlib install failed; Qlib engine will report missing runtime and the daily report will continue"
+        run: python -m pip install -e ".[market]"
 
-      - name: Verify TWSE endpoints
-        timeout-minutes: 5
-        run: python -m stock_signal_system.cli verify-twse --cache-dir .cache_verify_twse
-
-      - name: Verify TPEx endpoints
-        timeout-minutes: 4
-        run: python -m stock_signal_system.cli verify-tpex --cache-dir .cache_verify_tpex
-
-      - name: Refresh RSS, TWSE, and TPEx data
+      - name: Refresh market and news data
         timeout-minutes: 12
         run: python -m stock_signal_system.cli refresh-data --config "$CONFIG"
+
+      - name: Select dynamic candidates and refresh quant OHLCV history
+        timeout-minutes: 15
+        run: python -m stock_signal_system.cli refresh-quant-ohlcv --config "$QUANT_CONFIG" --period 1y
+
+      - name: Refresh TWSE realtime quotes
+        timeout-minutes: 4
+        run: python -m stock_signal_system.cli refresh-quant-realtime --config "$QUANT_CONFIG" --cache data/twse_common_stock_realtime_cache.csv
 
       - name: Validate config
         run: python -m stock_signal_system.cli validate-config --config "$CONFIG"
 
-      - name: Generate report without LINE
+      - name: Generate interactive report without LINE
         run: python -m stock_signal_system.cli run --config "$CONFIG"
 
       - name: Configure git
@@ -107,7 +104,8 @@ jobs:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
         run: |
           marker="reports/line_sent_$(TZ=Asia/Taipei date +%F).txt"
-          if [ -f "$marker" ]; then
+          force_send_line="${{ github.event.inputs.force_send_line }}"
+          if [ -f "$marker" ] && [ "$force_send_line" != "true" ]; then
             echo "line_skipped=already_sent_today"
             exit 0
           fi
@@ -115,11 +113,15 @@ jobs:
             echo "line_failed=missing_LINE_CHANNEL_ACCESS_TOKEN"
             exit 1
           fi
-          python -m stock_signal_system.cli run --config "$CONFIG"
+          today="$(TZ=Asia/Taipei date +%F)"
+          report_url="${REPORT_BASE_URL}/stock_signals_${today}.html"
+          LINE_BODY="${today}
+
+${report_url}" python -c "import os; from stock_signal_system.notify import send_notification; body=os.environ['LINE_BODY']; print(send_notification('', body, None, 'LINE_CHANNEL_ACCESS_TOKEN', None, True))"
           {
             echo "sent_at_utc=$(date -u +%FT%TZ)"
             echo "workflow_run=${GITHUB_RUN_ID}"
           } > "$marker"
           git add "$marker"
-          git commit -m "Mark LINE sent $(TZ=Asia/Taipei date +%F)" || true
+          git commit -m "Mark LINE sent ${today}" || true
           git push || true
