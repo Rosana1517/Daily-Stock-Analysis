@@ -1,24 +1,16 @@
 name: Daily Stock Analysis
 
-on:
+"on":
   workflow_dispatch:
     inputs:
       send_line:
         description: "Send LINE broadcast after publishing"
         required: true
         default: "true"
-        type: choice
-        options:
-          - "true"
-          - "false"
       force_send_line:
         description: "Force LINE broadcast even if today's marker exists"
         required: false
         default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
   schedule:
     # 08:30 Asia/Taipei, Monday-Friday.
     - cron: "30 0 * * 1-5"
