@@ -107,16 +107,13 @@ def _run_quant_hybrid_pipeline(config: AppConfig, current_date: date) -> Pipelin
         news_path=config.news_path,
         rss_sources_path=config.rss_sources_path,
         notify=False,
-        stock_snapshot_path=config.stock_path,
-        price_1h_path=config.price_1h_path,
-        price_5m_path=config.price_5m_path,
     )
     report = report_path.read_text(encoding="utf-8")
     html_report_path = save_report_html(config.report_dir, current_date, report)
     report_url = public_report_url(config.report_public_base_url, html_report_path)
-    notification_body = _quant_notification_body(report, str(report_path), config.notification_mode, report_url)
+    notification_body = _quant_notification_body(current_date, str(report_path), config.notification_mode, report_url)
     notification_status = send_notification(
-        title=current_date.isoformat() if config.notification_mode == "report_link" and report_url else f"Hybrid Quant 每日股票報告 - {current_date.isoformat()}",
+        title="",
         body=notification_body,
         webhook_env=config.notification_webhook_env,
         line_channel_access_token_env=config.line_channel_access_token_env,
@@ -126,12 +123,12 @@ def _run_quant_hybrid_pipeline(config: AppConfig, current_date: date) -> Pipelin
     return PipelineResult(str(report_path), [], [], notification_status)
 
 
-def _quant_notification_body(report: str, report_path: str, notification_mode: str, report_url: str | None) -> str:
+def _quant_notification_body(current_date: date, report_path: str, notification_mode: str, report_url: str | None) -> str:
     if notification_mode == "report_link" and report_url:
-        return report_url
+        return f"{current_date.isoformat()}\n\n{report_url}"
     if notification_mode == "report_link":
-        return report_path
-    return report
+        return f"{current_date.isoformat()}\n\n{report_path}"
+    return f"{current_date.isoformat()}\n\n{report_url or report_path}"
 
 
 def _first_report_sections(report: str, max_lines: int = 26) -> str:
@@ -198,7 +195,7 @@ def _notification_body(
     if notification_mode == "full_report":
         return report
     if notification_mode == "report_link":
-        return report_url or report_path
+        return _notification_link_summary(recommendations, report_path, notification_min_score, report_url)
     return _notification_summary(recommendations, report_path, notification_min_score)
 
 
@@ -209,23 +206,12 @@ def _notification_link_summary(
     report_url: str | None,
 ) -> str:
     if report_url:
-        return f"{_notification_pick_summary(recommendations, notification_min_score)}\n\n完整報告連結：{report_url}"
+        return report_url
     summary = _notification_summary(recommendations, report_path, notification_min_score)
+    if report_url:
+        summary = summary.split("完整報告：", 1)[0].rstrip()
+        return f"{summary}\n\n完整報告連結：{report_url}"
     return f"{summary}\n\n尚未設定公開報告網址，已產生本機報告：{report_path}"
-
-
-def _notification_pick_summary(
-    recommendations: list[StockRecommendation],
-    notification_min_score: float,
-) -> str:
-    high_priority = [item for item in recommendations if item.score >= notification_min_score]
-    if not high_priority:
-        picks = "、".join(f"{item.stock.symbol} {item.stock.name}({item.score:.1f})" for item in recommendations[:5])
-        return f"今日沒有高優先標的。候選觀察：{picks}。"
-    picks = "、".join(
-        f"{item.stock.symbol} {item.stock.name}({item.score:.1f})" for item in high_priority[:5]
-    )
-    return f"高優先標的：{picks}。"
 
 
 def _notification_summary(

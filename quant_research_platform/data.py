@@ -13,10 +13,6 @@ from pathlib import Path
 from typing import Iterable
 
 
-TW_OTC_SYMBOLS = {"6488", "5274", "8069", "5347", "3324"}
-_OTC_SYMBOLS_LOADED = False
-
-
 @dataclass(frozen=True)
 class Bar:
     symbol: str
@@ -57,18 +53,25 @@ def fetch_openbb_ohlcv(symbols: Iterable[str], provider: str | None = None, peri
     os.environ["USERPROFILE"] = str(openbb_home)
     try:
         from openbb import obb
-    except ImportError:
-        return {symbol.upper(): _fetch_yfinance_bars(_tw_yahoo_symbol(symbol), period) for symbol in symbols}
+    except ImportError as exc:
+        raise RuntimeError("OpenBB is not installed. Install it with `pip install openbb`.") from exc
 
     grouped: dict[str, list[Bar]] = {}
     for symbol in symbols:
         kwargs = {"provider": provider} if provider else {}
         try:
-            output = obb.equity.price.historical(_tw_yahoo_symbol(symbol), **kwargs)
+            output = obb.equity.price.historical(symbol, **kwargs)
             frame = output.to_dataframe().reset_index()
             grouped[symbol.upper()] = _bars_from_frame(symbol, frame)
         except Exception:
-            grouped[symbol.upper()] = _fetch_yfinance_bars(_tw_yahoo_symbol(symbol), period)
+            grouped[symbol.upper()] = _fetch_yfinance_bars(symbol, period)
+    return grouped
+
+
+def fetch_yahoo_ohlcv(symbols: Iterable[str], period: str = "1y") -> dict[str, list[Bar]]:
+    grouped: dict[str, list[Bar]] = {}
+    for symbol in symbols:
+        grouped[symbol.upper()] = _fetch_yfinance_bars(symbol, period)
     return grouped
 
 
@@ -142,36 +145,6 @@ def _bars_from_frame(symbol: str, frame) -> list[Bar]:
             )
         )
     return bars
-
-
-def _tw_yahoo_symbol(symbol: str) -> str:
-    value = symbol.upper().strip()
-    if "." in value:
-        return value
-    if len(value) == 4 and value.isdigit():
-        _load_otc_symbols_from_cache()
-        if value in TW_OTC_SYMBOLS:
-            return f"{value}.TWO"
-        return f"{value}.TW"
-    return value
-
-
-def _load_otc_symbols_from_cache() -> None:
-    global _OTC_SYMBOLS_LOADED
-    if _OTC_SYMBOLS_LOADED:
-        return
-    _OTC_SYMBOLS_LOADED = True
-    for path in (Path("data/tpex_stocks.csv"), Path("data/tpex_price_daily.csv")):
-        if not path.exists():
-            continue
-        try:
-            with path.open("r", encoding="utf-8-sig", newline="") as handle:
-                for row in csv.DictReader(handle):
-                    symbol = str(row.get("symbol", "")).strip()
-                    if len(symbol) == 4 and symbol.isdigit():
-                        TW_OTC_SYMBOLS.add(symbol)
-        except OSError:
-            continue
 
 
 def save_ohlcv_csv(path: Path, bars_by_symbol: dict[str, list[Bar]]) -> Path:

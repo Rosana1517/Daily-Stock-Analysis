@@ -9,8 +9,6 @@ from typing import Optional, Union
 @dataclass(frozen=True)
 class QuantPlatformConfig:
     symbols: tuple[str, ...]
-    universe_path: Optional[Path]
-    universe_candidate_limit: int
     data_source: str
     ohlcv_path: Optional[Path]
     openbb_provider: Optional[str]
@@ -26,6 +24,8 @@ class QuantPlatformConfig:
     kronos_model: str
     qlib_data_path: Optional[Path]
     output_dir: Path
+    universe_path: Optional[Path] = None
+    universe_candidate_limit: int = 0
 
     @classmethod
     def from_file(cls, path: Union[str, Path]) -> "QuantPlatformConfig":
@@ -35,7 +35,7 @@ class QuantPlatformConfig:
         return cls(
             symbols=tuple(raw.get("symbols", [])),
             universe_path=_resolve_optional(base, raw.get("universe_path")),
-            universe_candidate_limit=int(raw.get("universe_candidate_limit", 150)),
+            universe_candidate_limit=int(raw.get("universe_candidate_limit", len(raw.get("symbols", [])) or 20)),
             data_source=raw.get("data_source", "csv"),
             ohlcv_path=_resolve_optional(base, raw.get("ohlcv_path")),
             openbb_provider=raw.get("openbb_provider"),

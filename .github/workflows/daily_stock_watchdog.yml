@@ -3,14 +3,8 @@ name: Daily Stock Analysis Watchdog
 on:
   workflow_dispatch:
   schedule:
-    # Cloud-side backup checks for the main daily workflow.
-    # 00:35 UTC = 08:35 Asia/Taipei.
-    - cron: "35 0 * * 1-5"
-    # 00:50 UTC = 08:50 Asia/Taipei.
+    # Backup checks after the main 08:30 Asia/Taipei run.
     - cron: "50 0 * * 1-5"
-    # 01:05 UTC = 09:05 Asia/Taipei.
-    - cron: "5 1 * * 1-5"
-    # 01:20 UTC = 09:20 Asia/Taipei.
     - cron: "20 1 * * 1-5"
 
 permissions:

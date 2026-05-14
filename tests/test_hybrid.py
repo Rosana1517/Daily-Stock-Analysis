@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import tempfile
 import unittest
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 from quant_research_platform.config import QuantPlatformConfig
@@ -57,8 +57,6 @@ class HybridTest(unittest.TestCase):
                     )
             config = QuantPlatformConfig(
                 symbols=("2330.TW",),
-                universe_path=None,
-                universe_candidate_limit=150,
                 data_source="csv",
                 ohlcv_path=price_path,
                 openbb_provider=None,
@@ -86,6 +84,16 @@ class HybridTest(unittest.TestCase):
             self.assertTrue(csv_path.exists())
             self.assertTrue(qlib_path.exists())
             self.assertEqual(notification, "disabled")
+            report = report_path.read_text(encoding="utf-8")
+            self.assertIn("每日研究名單", report)
+            self.assertIn("風險區間", report)
+            self.assertIn("互動技術分析策略", report)
+            self.assertIn("technical-chart-data", report)
+            self.assertIn("黃金交叉", report)
+            self.assertIn("近 10 日漲停排除 3 連漲", report)
+            self.assertIn("月均線 MACD 金叉向上", report)
+            self.assertIn("20 均線附近放量陽線", report)
+            self.assertNotIn("進場", report)
 
 
 if __name__ == "__main__":

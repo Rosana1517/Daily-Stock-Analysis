@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import csv
-import math
+import json
 from dataclasses import dataclass
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
-from quant_research_platform.analysis_workflow import StockWorkflowAudit, build_workflow_audits
+from quant_research_platform.agent_workflow import (
+    agent_workflow_markdown,
+    portfolio_decision_bucket,
+    portfolio_decision_label,
+    portfolio_decision_map,
+    run_five_agent_workflow,
+)
 from quant_research_platform.backtest import run_top_n_backtest
 from quant_research_platform.config import QuantPlatformConfig
 from quant_research_platform.daily_stock_bridge import (
@@ -16,27 +22,16 @@ from quant_research_platform.daily_stock_bridge import (
     industry_news_score,
     load_latest_realtime_states,
     load_or_fetch_industry_signals,
-    load_stock_profiles,
     notification_summary,
     send_hybrid_notification,
     stock_industry,
     stock_name,
 )
-from quant_research_platform.data import fetch_openbb_ohlcv, load_csv_ohlcv
-from quant_research_platform.fundamentals import load_fundamental_snapshots
-from quant_research_platform.intraday import load_or_fetch_intraday_history
-from quant_research_platform.liquidity import build_liquidity_snapshots
-from quant_research_platform.qlib_adapter import (
-    build_qlib_signal_backtest_config,
-    run_inline_signal_diagnostics,
-    run_qlib_engine_portfolio_backtest,
-)
+from quant_research_platform.data import Bar, fetch_openbb_ohlcv, load_csv_ohlcv
+from quant_research_platform.qlib_adapter import build_qlib_signal_backtest_config
 from quant_research_platform.signals import build_signals
+from quant_research_platform.universe import select_candidate_symbols
 from stock_signal_system.data.csv_sources import load_news
-from stock_signal_system.models import IndustrySignal
-
-
-MAX_RECOMMENDATION_ROWS = 15
 
 
 @dataclass(frozen=True)
@@ -50,21 +45,12 @@ class HybridRow:
     technical_score: float
     realtime_score: float
     hybrid_score: float
-    recommendation_score: float
-    price_bucket: str
     current_close: float
     predicted_close: float
     realtime_status: str
     action: str
     risk_note: str
-
-
-@dataclass(frozen=True)
-class UniverseCoverage:
-    total_symbols: int
-    screened_symbols: int
-    deep_analysis_symbols: int
-    source_path: str
+    technical_evidence: tuple[str, ...]
 
 
 def run_tw_hybrid(
@@ -78,14 +64,14 @@ def run_tw_hybrid(
     line_channel_access_token_env: str | None = None,
     line_to_env: str | None = None,
     line_broadcast: bool = False,
-    stock_snapshot_path: Path | None = None,
-    price_1h_path: Path | None = None,
-    price_5m_path: Path | None = None,
 ) -> tuple[Path, Path, Path, str]:
-    selected_symbols, universe_coverage = _resolve_candidate_universe(config, stock_snapshot_path)
+    selected_symbols = select_candidate_symbols(
+        config.universe_path,
+        config.symbols,
+        config.universe_candidate_limit,
+        news_path,
+    )
     config = replace(config, symbols=selected_symbols)
-    load_stock_profiles(config.universe_path, stock_snapshot_path)
-    report_top_n = _effective_report_top_n(config.top_n)
     bars_by_symbol = _load_bars(config)
     kronos_signals = build_signals(
         bars_by_symbol,
@@ -95,14 +81,10 @@ def run_tw_hybrid(
         kronos_tokenizer=config.kronos_tokenizer,
         kronos_model=config.kronos_model,
     )
-    structure_history = load_or_fetch_intraday_history(price_1h_path, config.symbols, "1h", "5d")
-    trigger_history = load_or_fetch_intraday_history(price_5m_path, config.symbols, "5m", "5d")
-    technicals = build_technical_signals(bars_by_symbol, structure_history, trigger_history)
+    technicals = build_technical_signals(bars_by_symbol)
     industry_signals = load_or_fetch_industry_signals(news_path, rss_sources_path)
     news_items = load_news(news_path) if news_path and news_path.exists() else []
     realtime_states = load_latest_realtime_states(realtime_cache)
-    fundamental_snapshots = load_fundamental_snapshots(stock_snapshot_path or config.universe_path)
-    liquidity_snapshots = build_liquidity_snapshots(bars_by_symbol, fundamental_snapshots)
 
     rows = []
     for signal in kronos_signals:
@@ -110,10 +92,11 @@ def run_tw_hybrid(
         industry = stock_industry(symbol)
         tech = technicals.get(symbol)
         realtime = realtime_states.get(symbol)
+        intraday_return = realtime.intraday_return if realtime else 0.0
         kronos_score = _kronos_score(signal.expected_return)
         news_score = industry_news_score(industry, industry_signals)
         technical_score = 50 + (tech.score_adjustment if tech else 0)
-        realtime_score = _realtime_score(realtime.intraday_return if realtime else 0)
+        realtime_score = _realtime_score(intraday_return)
         hybrid_score = (
             kronos_score * 0.40
             + news_score * 0.20
@@ -121,7 +104,6 @@ def run_tw_hybrid(
             + realtime_score * 0.10
             + signal.confidence * 100 * 0.10
         )
-        recommendation_score = _recommendation_score(hybrid_score, signal.current_close)
         rows.append(
             HybridRow(
                 symbol=symbol,
@@ -133,24 +115,18 @@ def run_tw_hybrid(
                 technical_score=technical_score,
                 realtime_score=realtime_score,
                 hybrid_score=hybrid_score,
-                recommendation_score=recommendation_score,
-                price_bucket=_price_bucket(signal.current_close),
                 current_close=signal.current_close,
                 predicted_close=signal.predicted_close,
-                realtime_status=realtime.status if realtime else "未接即時價",
-                action=_action(hybrid_score, signal.expected_return, realtime.intraday_return if realtime else 0),
-                risk_note=_risk_note(signal.expected_return, tech.bias if tech else "neutral", realtime.intraday_return if realtime else 0),
+                realtime_status=realtime.status if realtime else "無即時資料",
+                action=_action(hybrid_score, signal.expected_return, intraday_return),
+                risk_note=_risk_note(signal.expected_return, tech.bias if tech else "neutral", intraday_return),
+                technical_evidence=_technical_evidence(symbol, tech, bars_by_symbol.get(symbol, [])),
             )
         )
-    rows = _rank_rows_with_price_bias(rows, report_top_n)
-    fallback_realtime = _load_twstock_realtime_fallback_states(
-        [row.symbol for row in rows if row.symbol not in realtime_states],
-        report_top_n,
-    )
-    if fallback_realtime:
-        realtime_states.update(fallback_realtime)
-        rows = _rank_rows_with_price_bias(_apply_realtime_fallback(rows, fallback_realtime), report_top_n)
-    industry_signals = _ensure_industry_signal_coverage(industry_signals, rows, min_count=min(8, report_top_n))
+    rows = sorted(rows, key=lambda item: item.hybrid_score, reverse=True)
+    agent_workflow = run_five_agent_workflow(rows)
+    portfolio_decisions = portfolio_decision_map(agent_workflow)
+    report_rows = _portfolio_rows(rows, portfolio_decisions, "include")
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
     report_path = config.output_dir / f"tw_hybrid_{report_date.isoformat()}.md"
@@ -159,41 +135,12 @@ def run_tw_hybrid(
     backtest = run_top_n_backtest(
         kronos_signals,
         bars_by_symbol,
-        top_n=report_top_n,
+        top_n=config.top_n,
         initial_cash=config.initial_cash,
         transaction_cost_bps=config.transaction_cost_bps,
         benchmark_symbol=config.benchmark_symbol,
     )
-    _save_csv(csv_path, rows)
-    build_qlib_signal_backtest_config(csv_path, "custom_tw", config.benchmark_symbol or "2330.TW", qlib_path, report_top_n, 1)
-    qlib_metrics = run_inline_signal_diagnostics(rows, bars_by_symbol, report_top_n)
-    qlib_engine = run_qlib_engine_portfolio_backtest(
-        rows=rows,
-        bars_by_symbol=bars_by_symbol,
-        provider_dir=config.qlib_data_path or (config.output_dir / "qlib_data_custom_tw"),
-        output_path=config.output_dir / f"qlib_engine_portfolio_{report_date.isoformat()}.csv",
-        benchmark_symbol=config.benchmark_symbol,
-        top_n=report_top_n,
-        initial_cash=config.initial_cash,
-        transaction_cost_bps=config.transaction_cost_bps,
-    )
-    workflow_audits = build_workflow_audits(
-        rows=rows,
-        bars_by_symbol=bars_by_symbol,
-        technicals=technicals,
-        realtime_states=realtime_states,
-        industry_signals=industry_signals,
-        news_items=news_items,
-        qlib_path=qlib_path,
-        data_source=config.data_source,
-        openbb_provider=config.openbb_provider,
-        fundamental_snapshots=fundamental_snapshots,
-        liquidity_snapshots=liquidity_snapshots,
-        qlib_metrics=qlib_metrics,
-        qlib_engine=qlib_engine,
-        structure_symbols=set(structure_history),
-        trigger_symbols=set(trigger_history),
-    )
+    _save_csv(csv_path, report_rows)
     _save_report(
         report_path,
         rows,
@@ -203,17 +150,15 @@ def run_tw_hybrid(
         backtest,
         industry_signals,
         news_items,
-        workflow_audits,
-        qlib_metrics,
-        qlib_engine,
+        agent_workflow,
         bars_by_symbol,
-        universe_coverage,
     )
+    build_qlib_signal_backtest_config(csv_path, "custom_tw", config.benchmark_symbol or "2330.TW", qlib_path, config.top_n, 1)
 
     status = "disabled"
     if notify:
         status = send_hybrid_notification(
-            notification_summary(rows, report_path),
+            notification_summary(report_rows, report_path),
             webhook_env,
             line_channel_access_token_env,
             line_to_env,
@@ -227,120 +172,7 @@ def _load_bars(config: QuantPlatformConfig):
         return fetch_openbb_ohlcv(config.symbols, config.openbb_provider)
     if not config.ohlcv_path:
         return {}
-    bars_by_symbol = load_csv_ohlcv(config.ohlcv_path, config.symbols)
-    min_required = max(30, min(config.lookback, 120))
-    missing = [symbol for symbol in config.symbols if len(bars_by_symbol.get(symbol.upper(), [])) < min_required]
-    if missing:
-        try:
-            live_bars = fetch_openbb_ohlcv(missing, config.openbb_provider)
-        except Exception:
-            live_bars = {}
-        for symbol, bars in live_bars.items():
-            if len(bars) >= min_required:
-                bars_by_symbol[symbol.upper()] = bars
-    return bars_by_symbol
-
-
-def _resolve_candidate_symbols(config: QuantPlatformConfig, stock_snapshot_path: Path | None = None) -> tuple[str, ...]:
-    return _resolve_candidate_universe(config, stock_snapshot_path)[0]
-
-
-def _resolve_candidate_universe(
-    config: QuantPlatformConfig,
-    stock_snapshot_path: Path | None = None,
-) -> tuple[tuple[str, ...], UniverseCoverage]:
-    universe_path = config.universe_path or stock_snapshot_path
-    if not universe_path or not universe_path.exists():
-        return config.symbols, UniverseCoverage(
-            total_symbols=len(config.symbols),
-            screened_symbols=len(config.symbols),
-            deep_analysis_symbols=len(config.symbols),
-            source_path=str(universe_path or "config.symbols"),
-        )
-    total_symbols = _count_universe_symbols(universe_path)
-    universe = _load_universe_candidates(universe_path)
-    if not universe:
-        return config.symbols, UniverseCoverage(
-            total_symbols=total_symbols,
-            screened_symbols=0,
-            deep_analysis_symbols=len(config.symbols),
-            source_path=str(universe_path),
-        )
-    base_symbols = {symbol.upper() for symbol in config.symbols}
-    ranked = sorted(universe, key=lambda item: item["score"], reverse=True)
-    selected: list[str] = []
-
-    # Keep a few familiar anchors, then fill from the whole API universe by price/liquidity.
-    for symbol in config.symbols:
-        symbol = symbol.upper()
-        if symbol in {item["symbol"] for item in universe} and symbol not in selected:
-            selected.append(symbol)
-        if len(selected) >= min(12, config.universe_candidate_limit):
-            break
-    for item in ranked:
-        symbol = item["symbol"]
-        if symbol not in selected:
-            selected.append(symbol)
-        if len(selected) >= max(len(base_symbols), config.universe_candidate_limit):
-            break
-    selected_symbols = tuple(selected)
-    return selected_symbols, UniverseCoverage(
-        total_symbols=total_symbols,
-        screened_symbols=len(universe),
-        deep_analysis_symbols=len(selected_symbols),
-        source_path=str(universe_path),
-    )
-
-
-def _count_universe_symbols(path: Path) -> int:
-    try:
-        with path.open("r", encoding="utf-8-sig", newline="") as handle:
-            return sum(1 for row in csv.DictReader(handle) if str(row.get("symbol", "")).strip())
-    except OSError:
-        return 0
-
-
-def _load_universe_candidates(path: Path) -> list[dict[str, float | str]]:
-    candidates: list[dict[str, float | str]] = []
-    try:
-        with path.open("r", encoding="utf-8-sig", newline="") as handle:
-            for row in csv.DictReader(handle):
-                symbol = str(row.get("symbol", "")).strip().upper()
-                price = _safe_float(row.get("price"))
-                volume = _safe_float(row.get("volume"))
-                avg_volume = _safe_float(row.get("avg_volume_20d"))
-                if not symbol or price <= 0 or max(volume, avg_volume) <= 0:
-                    continue
-                candidates.append(
-                    {
-                        "symbol": symbol,
-                        "price": price,
-                        "score": _universe_candidate_score(price, max(volume, avg_volume)),
-                    }
-                )
-    except OSError:
-        return []
-    return candidates
-
-
-def _universe_candidate_score(price: float, volume: float) -> float:
-    liquidity = math.log10(max(volume, 1.0))
-    if price < 30:
-        bucket = 12.0
-    elif price <= 100:
-        bucket = 10.0
-    elif price <= 200:
-        bucket = 4.0
-    else:
-        bucket = 0.0
-    return bucket + liquidity
-
-
-def _safe_float(value) -> float:
-    try:
-        return float(str(value or "0").replace(",", "").strip())
-    except ValueError:
-        return 0.0
+    return load_csv_ohlcv(config.ohlcv_path, config.symbols)
 
 
 def _kronos_score(expected_return: float) -> float:
@@ -351,102 +183,62 @@ def _realtime_score(intraday_return: float) -> float:
     return max(0.0, min(100.0, 50 + intraday_return * 700))
 
 
-def _load_twstock_realtime_fallback_states(symbols: list[str], limit: int) -> dict[str, RealtimeState]:
-    if limit <= 0 or not symbols:
-        return {}
-    try:
-        from quant_research_platform.twstock_fallback import fetch_twstock_realtime_quotes
-    except Exception:
-        return {}
-    quotes = fetch_twstock_realtime_quotes(symbols, max_symbols=limit)
-    states = {}
-    for quote in quotes:
-        state = _realtime_state_from_quote(quote)
-        states[state.symbol] = state
-    return states
-
-
 def _realtime_state_from_quote(quote) -> RealtimeState:
     suffix = "TWO" if str(quote.market).lower() == "otc" else "TW"
-    symbol = f"{quote.symbol}.{suffix}"
     price = float(quote.price or 0)
     previous = float(quote.previous_close or 0)
     intraday_return = price / previous - 1 if previous else 0.0
     return RealtimeState(
-        symbol=symbol,
+        symbol=f"{quote.symbol}.{suffix}",
         price=price,
         previous_close=previous,
         intraday_return=intraday_return,
-        status=_fallback_intraday_status(intraday_return),
+        status=_quote_intraday_status(intraday_return),
         timestamp=quote.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
     )
 
 
-def _apply_realtime_fallback(rows: list[HybridRow], realtime_states: dict[str, RealtimeState]) -> list[HybridRow]:
-    updated = []
-    for row in rows:
-        realtime = realtime_states.get(row.symbol)
-        if not realtime:
-            updated.append(row)
-            continue
-        realtime_score = _realtime_score(realtime.intraday_return)
-        hybrid_score = row.hybrid_score - row.realtime_score * 0.10 + realtime_score * 0.10
-        current_close = realtime.price or row.current_close
-        updated.append(
-            replace(
-                row,
-                realtime_score=realtime_score,
-                hybrid_score=hybrid_score,
-                recommendation_score=_recommendation_score(hybrid_score, current_close),
-                price_bucket=_price_bucket(current_close),
-                current_close=current_close,
-                realtime_status=f"{realtime.status} / twstock備援",
-                action=_action(hybrid_score, row.kronos_return, realtime.intraday_return),
-                risk_note=_risk_note(row.kronos_return, "neutral", realtime.intraday_return),
-            )
-        )
-    return updated
-
-
-def _fallback_intraday_status(value: float) -> str:
+def _quote_intraday_status(value: float) -> str:
     if value >= 0.015:
         return "盤中偏多"
     if value >= 0.003:
-        return "小漲"
+        return "盤中偏強"
     if value <= -0.015:
         return "盤中偏弱"
     if value <= -0.003:
-        return "小跌"
-    return "持平"
+        return "盤中走弱"
+    return "盤中持平"
 
 
 def _action(score: float, expected_return: float, intraday_return: float) -> str:
     if score >= 70 and expected_return > 0 and intraday_return >= -0.01:
-        return "可列入買進觀察"
+        return "研究重點"
     if score >= 62 and expected_return > 0:
-        return "等待盤中確認"
+        return "等待確認"
     if expected_return < -0.03 or score < 50:
-        return "暫避或減碼"
+        return "排除"
     return "觀察"
 
 
 def _risk_note(expected_return: float, tech_bias: str, intraday_return: float) -> str:
     risks = []
     if expected_return < 0:
-        risks.append("Kronos 預測偏空")
+        risks.append("Kronos 預期報酬為負")
     if tech_bias == "bearish":
-        risks.append("技術策略偏空")
+        risks.append("技術結構偏空")
     if intraday_return < -0.01:
-        risks.append("即時價轉弱")
-    return "；".join(risks) if risks else "控制單檔部位與停損"
+        risks.append("盤中走弱")
+    return "；".join(risks) if risks else "風險穩定"
 
 
 def _save_csv(path: Path, rows: list[HybridRow]) -> None:
+    fieldnames = [name for name in HybridRow.__dataclass_fields__.keys() if name != "technical_evidence"]
     with path.open("w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(HybridRow.__dataclass_fields__.keys()))
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for row in rows:
-            writer.writerow(row.__dict__)
+            payload = {name: getattr(row, name) for name in fieldnames}
+            writer.writerow(payload)
 
 
 def _save_report(
@@ -458,166 +250,132 @@ def _save_report(
     backtest,
     industry_signals: list,
     news_items: list,
-    workflow_audits: dict[str, StockWorkflowAudit],
-    qlib_metrics,
-    qlib_engine,
-    bars_by_symbol: dict[str, list],
-    universe_coverage: UniverseCoverage,
+    agent_workflow,
+    bars_by_symbol: dict[str, list[Bar]],
 ) -> None:
+    portfolio_decisions = portfolio_decision_map(agent_workflow)
+    focus_rows = _portfolio_rows(rows, portfolio_decisions, "include")
+    watch_rows = _portfolio_rows(rows, portfolio_decisions, "watch")
+    excluded_rows = _portfolio_rows(rows, portfolio_decisions, "exclude")
+
     lines = [
-        f"# Hybrid Quant 每日股票分析報告 - {report_date.isoformat()}",
+        f"# Hybrid 量化每日選股報告 - {report_date.isoformat()}",
         "",
-        "## Market Universe Coverage",
+        "## 工作流程覆蓋",
         "",
-        "| Metric | Count | Description |",
-        "|---|---:|---|",
-        f"| 全市場掃描數 | {universe_coverage.total_symbols} | 來自 `{_md_cell(universe_coverage.source_path)}` 的 TWSE/TPEx 股票池 |",
-        f"| 初篩通過數 | {universe_coverage.screened_symbols} | 已完成價格、成交量與流動性輕量初篩，可進入候選排序 |",
-        f"| 深度分析數 | {universe_coverage.deep_analysis_symbols} | 送入 Hybrid / OpenBB / Qlib / Kronos / K線策略的股票數 |",
+        "- Kronos：預測各股票的預期報酬與信心度；若本機模型不可用，報告會標記為模型回退風險。",
+        "- Qlib：輸出訊號 CSV 與 TopK-Dropout 交接設定，後續可做更完整的 IC、Rank IC 與回撤檢查。",
+        "- 五代理：Portfolio_Manager_Agent 的決策會控制每日研究名單；Devil_Advocate_Agent 否決標的不會進入重點 CSV。",
         "",
-        "## Workflow Coverage",
+        "## 每日研究名單",
         "",
-        "- Kronos：產生每檔股票的預估報酬與信心分數；若本機模型未載入，會以動能模型作為保守備援。",
-        "- OpenBB/CSV：作為每日行情資料入口；雲端排程先刷新 TWSE/TPEx 資料，再提供給本報告使用。",
-        "- Qlib：由每日 OHLCV 建立本地資料庫，並執行 TopK-Dropout 投組回測，納入週轉率、成本、基準與最大回撤。",
-        "- Daily Stock Analysis：沿用 RSS 新聞產業分數、蠟燭圖策略、報告產生與 LINE/webhook 推播流程。",
-        "",
-        "## Top Ranking",
-        "",
-        "| Rank | Symbol | Name | Industry | Current | Price Band | Recommend | Hybrid | Kronos | News | Tech | Realtime | Action |",
-        "|---:|---|---|---|---:|---|---:|---:|---:|---:|---:|---|---|",
+        "| 排名 | 股票 | 名稱 | 產業 | Hybrid | Kronos | 新聞 | 技術 | 即時盤 | 組合決策 |",
+        "|---:|---|---|---|---:|---:|---:|---:|---|---|",
     ]
-    for rank, row in enumerate(rows, start=1):
+    if focus_rows:
+        for rank, row in enumerate(focus_rows, start=1):
+            decision = portfolio_decisions.get(row.symbol)
+            lines.append(
+                f"| {rank} | {row.symbol} | {row.name} | {row.industry} | {row.hybrid_score:.1f} | "
+                f"{row.kronos_return:.2%} | {row.news_score:.1f} | {row.technical_score:.1f} | "
+                f"{row.realtime_status} | {portfolio_decision_label(decision)} |"
+            )
+    else:
+        lines.append("| - | - | - | - | - | - | - | - | - | 本次無符合條件標的 |")
+
+    lines.extend(["", "## 候選全覽", "", "| 股票 | 名稱 | 產業 | Hybrid | 組合決策 | 風險註記 |", "|---|---|---|---:|---|---|"])
+    for row in rows:
+        decision = portfolio_decisions.get(row.symbol)
         lines.append(
-            f"| {rank} | {row.symbol} | {row.name} | {row.industry} | {row.current_close:.2f} | "
-            f"{row.price_bucket} | {row.recommendation_score:.1f} | {row.hybrid_score:.1f} | "
-            f"{row.kronos_return:.2%} | {row.news_score:.1f} | {row.technical_score:.1f} | "
-            f"{row.realtime_status} | {row.action} |"
+            f"| {row.symbol} | {row.name} | {row.industry} | {row.hybrid_score:.1f} | "
+            f"{portfolio_decision_label(decision)} | {row.risk_note} |"
         )
+
+    lines.extend(["", *agent_workflow_markdown(agent_workflow)])
     lines.extend(
         [
             "",
-            "## RSS Industry Signals",
+            "## 互動技術分析策略",
             "",
-            "| Industry | RSS Score | Evidence | Key Catalyst |",
-            "|---|---:|---:|---|",
+            "| 策略 | 圖上位置 | 採用角色 | 用途邊界 |",
+            "|---|---|---|---|",
+            "| 黃金交叉 / 死亡交叉 | 主 K 線區，MA5/MA20/MA60 可調 | Technical、Quant、Devil | 研究條件與假突破檢查，不直接產生推薦 |",
+            "| 週期均線與支撐壓力 | 主 K 線區，預設近 60 根高低點 | Technical、Portfolio | 決定觀察條件是否清楚；Portfolio 只彙整 |",
+            "| MACD | 副圖動能區，12/26/9 可調 | Technical、Quant | 量化交叉與柱狀體翻轉，需樣本驗證 |",
+            "| RSI | 副圖相對強弱區，14 日與 20/80 可調 | Technical、Devil | 標示過熱或低檔鈍化風險，避免單一指標決策 |",
+            "| 布林通道 | 主 K 線區，20 日/2 倍標準差可調 | Technical、Devil | 檢查突破、回落與波動擴張 |",
+            "| K 線型態與量價 | 主 K 線標記與成交量副圖 | Technical、Devil | 只在趨勢與量能確認後作為證據 |",
+            "| 三線突破 | 主 K 線訊號標記 | Quant、Devil | 作為可重算突破因子，低量或未站穩需降權 |",
+            "| 近 10 日漲停排除 3 連漲 | 策略摘要與標記區 | Quant、Devil | 找短線強勢但排除過熱連續鎖漲停 |",
+            "| 月均線 MACD 金叉向上 | 策略摘要 | Technical、Quant | 以月線級別確認中期動能，樣本不足時只列觀察 |",
+            "| 20 均線附近放量陽線 | 主 K 線與成交量副圖 | Technical、Devil | 檢查均線附近是否有量價確認，低量不成立 |",
         ]
     )
+    lines.extend(["", "## RSS 產業訊號", "", "| 產業 | RSS 分數 | 證據數 | 主要催化 |", "|---|---:|---:|---|"])
     for signal in industry_signals[:8]:
-        catalyst = signal.catalysts[0] if signal.catalysts else "暫無新的明確催化題材"
+        catalyst = signal.catalysts[0] if signal.catalysts else "無新的催化訊號"
         lines.append(f"| {signal.industry} | {signal.score:.1f} | {signal.evidence_count} | {catalyst} |")
     if not industry_signals:
-        lines.append("| 市場觀察 | 50.0 | 0 | RSS 暫時無法取得，新聞分數採中性值。 |")
+        lines.append("| 市場觀察 | 50.0 | 0 | RSS 暫時不可用，使用中性新聞分數。 |")
 
-    lines.extend(["", "## Industry Groups", "", "| Industry | Symbols | Average Hybrid | Bias |", "|---|---|---:|---|"])
+    lines.extend(["", "## 產業分組", "", "| 產業 | 股票 | 平均 Hybrid | 偏向 |", "|---|---|---:|---|"])
     for industry, group in _group_rows_by_industry(rows).items():
         symbols = ", ".join(f"{row.symbol} {row.name}" for row in group[:4])
         average = sum(row.hybrid_score for row in group) / len(group)
         lines.append(f"| {industry} | {symbols} | {average:.1f} | {_industry_bias(average)} |")
 
-    lines.extend(["", "## Investment Notes", ""])
-    for row in rows[:5]:
-        entry, stop, target, take_profit = _strategy_points(row)
-        lines.append(
-            f"- {row.symbol} {row.name}：現價 {row.current_close:.2f}，"
-            f"預估價 {row.predicted_close:.2f}，Hybrid 分數 {row.hybrid_score:.1f}。"
-            f"{row.action}。進場 {entry:.2f}，加碼 {target:.2f}，停損 {stop:.2f}，停利 {take_profit:.2f}。"
-            f"風險：{row.risk_note}。"
-        )
+    lines.extend(["", "## 研究觀察", ""])
+    if focus_rows:
+        lines.extend(_research_observation(row, "研究重點") for row in focus_rows[:5])
+    else:
+        lines.append("- 本次沒有 Portfolio_Manager_Agent 核准進入每日研究名單的標的。")
+
+    lines.extend(["", "## 觀察名單", ""])
+    if watch_rows:
+        lines.extend(_research_observation(row, "觀察") for row in watch_rows[:5])
+    else:
+        lines.append("- 本次沒有 watch_only 標的。")
+
+    if excluded_rows:
+        lines.extend(["", "## 排除原因", ""])
+        for row in excluded_rows[:8]:
+            decision = portfolio_decisions.get(row.symbol)
+            lines.append(f"- {row.symbol} {row.name}: {portfolio_decision_label(decision)}；原因：{row.risk_note}。")
+
     lines.extend(
         [
             "",
-            "## Portfolio Simulation",
+            "## 投組模擬",
             "",
-            f"- 投組預估毛報酬：{backtest.gross_expected_return:.2%}",
-            f"- 扣除交易成本後預估報酬：{backtest.net_expected_return:.2%}",
+            f"- 毛預期報酬：{backtest.gross_expected_return:.2%}",
+            f"- 扣除成本後預期報酬：{backtest.net_expected_return:.2%}",
             f"- 預估損益：{backtest.estimated_pnl:,.2f}",
-            f"- Qlib 即時 IC：{_optional_pct(qlib_metrics.ic)}",
-            f"- Qlib 即時 Rank IC：{_optional_pct(qlib_metrics.rank_ic)}",
-            f"- Qlib TopK 報酬：{_optional_pct(qlib_metrics.topk_return)}",
-            f"- Qlib 樣本數：{qlib_metrics.observations}",
-            f"- Qlib engine 是否執行：{'是' if getattr(qlib_engine, 'executed', False) else '否'}",
-            f"- Qlib engine 回測期間：{getattr(qlib_engine, 'start_time', None) or '無'} 至 {getattr(qlib_engine, 'end_time', None) or '無'}",
-            f"- Qlib engine 投組報酬：{_optional_pct(getattr(qlib_engine, 'portfolio_return', None))}",
-            f"- Qlib engine 年化報酬：{_optional_pct(getattr(qlib_engine, 'annualized_return', None))}",
-            f"- Qlib engine 基準報酬：{_optional_pct(getattr(qlib_engine, 'benchmark_return', None))}",
-            f"- Qlib engine 超額報酬：{_optional_pct(getattr(qlib_engine, 'excess_return', None))}",
-            f"- Qlib engine 最大回撤：{_optional_pct(getattr(qlib_engine, 'max_drawdown', None))}",
-            f"- Qlib engine 資訊比率：{_optional_number(getattr(qlib_engine, 'information_ratio', None))}",
-            f"- Qlib engine 平均週轉率：{_optional_pct(getattr(qlib_engine, 'average_turnover', None))}",
+            "",
+            "## 可重算驗證指標",
+            "",
+            "- 說明：此區是以現有樣本做保守、可重算的觀察驗證，尚不等同完整樣本外回測。",
+            f"- 樣本數：{getattr(getattr(backtest, 'validation', None), 'sample_count', 0)}",
+            f"- 勝率：{_format_rate(getattr(getattr(backtest, 'validation', None), 'win_rate', None))}",
+            f"- False positive rate：{_format_rate(getattr(getattr(backtest, 'validation', None), 'false_positive_rate', None))}",
+            f"- 平均觀察報酬：{_format_rate(getattr(getattr(backtest, 'validation', None), 'average_realized_return', None))}",
         ]
     )
-    if getattr(qlib_engine, "report_path", None):
-        lines.append(f"- Qlib engine 明細 CSV：`{qlib_engine.report_path}`")
-    if getattr(qlib_engine, "error", None):
-        lines.append(f"- Qlib engine 錯誤：{qlib_engine.error}")
     if backtest.benchmark_return is not None:
-        lines.append(f"- 基準期間報酬：{backtest.benchmark_return:.2%}")
-    lines.extend(
-        [
-            "",
-            "## News Feed",
-            "",
-        ]
-    )
+        lines.append(f"- 基準回看報酬：{backtest.benchmark_return:.2%}")
+
+    lines.extend(["", "## 新聞快訊", ""])
     for item in news_items[:6]:
         industries = ", ".join(item.industries) if item.industries else "市場"
-        lines.append(f"- [{industries}] {item.title} ({item.source}, {item.date.isoformat()})")
+        lines.append(f"- [{industries}] {item.title}（{item.source}, {item.date.isoformat()}）")
     if not news_items:
-        lines.append("- 本次未取得 RSS 新聞，報告改用快取行情與中性新聞分數。")
-
+        lines.append("- 本次 RSS 不可用；報告使用快取市場資料與中性 RSS 分數。")
+    lines.extend(["", "## 產出檔案", "", f"- Hybrid 研究名單 CSV：`{csv_path}`", f"- Qlib 交接設定：`{qlib_path}`"])
     lines.extend(
         [
             "",
-            "## OHLCV Chart Data",
-            "",
-            "| Symbol | Date | Open | High | Low | Close | Volume |",
-            "|---|---|---:|---:|---:|---:|---:|",
-        ]
-    )
-    for row in rows:
-        for bar in bars_by_symbol.get(row.symbol, [])[-90:]:
-            lines.append(
-                f"| {_md_cell(row.symbol)} | {bar.timestamp.date().isoformat()} | "
-                f"{bar.open:.4f} | {bar.high:.4f} | {bar.low:.4f} | {bar.close:.4f} | {bar.volume:.0f} |"
-            )
-
-    lines.extend(
-        [
-            "",
-            "## Workflow Coverage Matrix",
-            "",
-            "| Symbol | Step | Task | Status | Evidence | Missing | Modules |",
-            "|---|---:|---|---|---|---|---|",
-        ]
-    )
-    for row in rows:
-        audit = workflow_audits.get(row.symbol)
-        if not audit:
-            continue
-        for step in audit.steps:
-            lines.append(
-                "| "
-                + " | ".join(
-                    [
-                        _md_cell(row.symbol),
-                        str(step.step),
-                        _md_cell(step.task),
-                        step.status,
-                        _md_cell("; ".join(step.evidence) or "-"),
-                        _md_cell("; ".join(step.missing) or "-"),
-                        _md_cell(", ".join(step.modules)),
-                    ]
-                )
-                + " |"
-            )
-    lines.extend(
-        [
-            "",
-            "## Generated Artifacts",
-            "",
-            f"- Hybrid signal CSV: `{csv_path}`",
-            f"- Qlib handoff config: `{qlib_path}`",
+            "```technical-chart-data",
+            json.dumps(_technical_chart_payload(rows, bars_by_symbol, portfolio_decisions), ensure_ascii=False, separators=(",", ":")),
+            "```",
         ]
     )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -628,136 +386,385 @@ def _group_rows_by_industry(rows: list[HybridRow]) -> dict[str, list[HybridRow]]
     for row in rows:
         groups.setdefault(row.industry, []).append(row)
     return {
-        industry: sorted(group, key=lambda item: item.recommendation_score, reverse=True)
+        industry: sorted(group, key=lambda item: item.hybrid_score, reverse=True)
         for industry, group in sorted(
             groups.items(),
-            key=lambda item: sum(row.recommendation_score for row in item[1]) / len(item[1]),
+            key=lambda item: sum(row.hybrid_score for row in item[1]) / len(item[1]),
             reverse=True,
         )
     }
 
 
-def _rank_rows_with_price_bias(rows: list[HybridRow], top_n: int) -> list[HybridRow]:
-    ranked = sorted(
-        rows,
-        key=lambda item: (item.recommendation_score, item.hybrid_score, item.kronos_return),
-        reverse=True,
-    )
-    if top_n <= 0:
-        return ranked[:MAX_RECOMMENDATION_ROWS]
-    high_cap = max(1, top_n // 3)
-    selected: list[HybridRow] = []
-    deferred_high: list[HybridRow] = []
-    for row in ranked:
-        if len(selected) >= top_n:
-            break
-        if _is_high_price(row.current_close) and sum(_is_high_price(item.current_close) for item in selected) >= high_cap:
-            deferred_high.append(row)
-            continue
-        selected.append(row)
-    for row in ranked:
-        if len(selected) >= top_n:
-            break
-        if row not in selected:
-            selected.append(row)
-    return selected[:top_n]
-
-
-def _effective_report_top_n(top_n: int) -> int:
-    if top_n <= 0:
-        return MAX_RECOMMENDATION_ROWS
-    return min(top_n, MAX_RECOMMENDATION_ROWS)
-
-
-def _ensure_industry_signal_coverage(
-    industry_signals: list[IndustrySignal],
-    rows: list[HybridRow],
-    min_count: int,
-) -> list[IndustrySignal]:
-    cleaned = [item for item in industry_signals if _valid_industry_name(item.industry)]
-    existing = {item.industry for item in cleaned}
-    grouped = _group_rows_by_industry(rows)
-    for industry, group in grouped.items():
-        if len(cleaned) >= min_count:
-            break
-        if not _valid_industry_name(industry) or industry in existing:
-            continue
-        average = sum(row.hybrid_score for row in group) / len(group)
-        best = group[0]
-        cleaned.append(
-            IndustrySignal(
-                industry=industry,
-                score=round(average, 1),
-                catalysts=(f"{best.name} 等 {len(group)} 檔入選深度分析候選，作為今日產業觀察補充。",),
-                evidence_count=len(group),
-            )
-        )
-        existing.add(industry)
-    return sorted(cleaned, key=lambda item: (item.score, item.evidence_count), reverse=True)
-
-
-def _valid_industry_name(value: str) -> bool:
-    text = str(value or "").strip()
-    return bool(text) and text not in {"未知", "市場觀察"} and "?" not in text
-
-
-def _recommendation_score(hybrid_score: float, current_close: float) -> float:
-    return max(0.0, min(100.0, hybrid_score + _price_bucket_bonus(current_close)))
-
-
-def _price_bucket_bonus(current_close: float) -> float:
-    if current_close <= 0:
-        return 0.0
-    if current_close < 30:
-        return 9.0
-    if current_close <= 100:
-        return 6.0
-    if current_close <= 200:
-        return 1.5
-    if current_close <= 500:
-        return -2.0
-    return -5.0
-
-
-def _price_bucket(current_close: float) -> str:
-    if current_close <= 0:
-        return "價格不足"
-    if current_close < 30:
-        return "低價股"
-    if current_close <= 100:
-        return "中價股"
-    return "高價股"
-
-
-def _is_high_price(current_close: float) -> bool:
-    return current_close > 100
-
-
 def _industry_bias(score: float) -> str:
     if score >= 70:
-        return "積極觀察"
+        return "強勢觀察"
     if score >= 62:
-        return "等待確認"
+        return "偏多觀察"
     if score < 50:
-        return "降低曝險"
+        return "偏弱"
     return "中性觀察"
 
 
-def _strategy_points(row: HybridRow) -> tuple[float, float, float, float]:
-    entry = row.current_close * 0.995
-    add = row.current_close * 1.015
-    stop = row.current_close * 0.955
-    take_profit = max(row.predicted_close, row.current_close * 1.06)
-    return entry, stop, add, take_profit
+def _portfolio_rows(rows: list[HybridRow], decisions: dict, bucket: str) -> list[HybridRow]:
+    return [row for row in rows if portfolio_decision_bucket(decisions.get(row.symbol)) == bucket]
 
 
-def _md_cell(value: str) -> str:
-    return str(value).replace("|", "/").replace("\n", " ").strip()
+def _research_observation(row: HybridRow, label: str) -> str:
+    risk_low, risk_high = _risk_range(row)
+    return (
+        f"- {row.symbol} {row.name}: {label}；目前價格 {row.current_close:.2f}，"
+        f"Kronos 觀察價 {row.predicted_close:.2f}，Hybrid {row.hybrid_score:.1f}。"
+        f"風險區間 {risk_low:.2f} 至 {risk_high:.2f}；"
+        f"失效條件：{_invalidation_condition(row, risk_low)}；"
+        f"風險註記：{row.risk_note}。"
+    )
 
 
-def _optional_pct(value) -> str:
-    return "n/a" if value is None else f"{float(value):.2%}"
+def _risk_range(row: HybridRow) -> tuple[float, float]:
+    downside = row.current_close * 0.955
+    upside = max(row.predicted_close, row.current_close * 1.06)
+    return downside, upside
 
 
-def _optional_number(value) -> str:
-    return "n/a" if value is None else f"{float(value):.4f}"
+def _invalidation_condition(row: HybridRow, risk_low: float) -> str:
+    checks = (
+        (row.kronos_return <= 0, "Kronos 預期報酬轉負"),
+        (row.technical_score < 50, "技術分數低於 50"),
+        (row.realtime_score < 50, "即時盤分數低於 50"),
+    )
+    return next((message for matched, message in checks if matched), f"跌破風險區間下緣 {risk_low:.2f}")
+
+
+def _technical_evidence(symbol: str, tech, bars: list[Bar]) -> tuple[str, ...]:
+    if not bars:
+        return ("ohlcv=data_limited", "multi_timeframe=data_limited", "volume_price=data_limited")
+    latest = bars[-1]
+    volume_ratio = _volume_ratio(bars)
+    patterns = tuple(getattr(tech, "patterns", ())[:2]) if tech else ()
+    support = min(bar.low for bar in bars[-10:]) if len(bars) >= 2 else latest.low
+    resistance = max(bar.high for bar in bars[-10:]) if len(bars) >= 2 else latest.high
+    evidence = [
+        f"close={latest.close:.2f}",
+        f"support={support:.2f}",
+        f"resistance={resistance:.2f}",
+        f"volume_ratio={volume_ratio:.2f}" if volume_ratio is not None else "volume_ratio=data_limited",
+        f"structure_bias={getattr(tech, 'structure_bias', 'data_limited') if tech else 'data_limited'}",
+    ]
+    evidence.extend(patterns or ("pattern=data_limited",))
+    return tuple(evidence)
+
+
+def _volume_ratio(bars: list[Bar]) -> float | None:
+    if len(bars) < 2:
+        return None
+    window = bars[-20:]
+    average = sum(bar.volume for bar in window) / len(window)
+    return bars[-1].volume / average if average else None
+
+
+def _format_rate(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.2%}"
+
+
+def _technical_chart_payload(rows: list[HybridRow], bars_by_symbol: dict[str, list[Bar]], decisions: dict) -> dict:
+    return {
+        "defaults": {
+            "maShort": 5,
+            "maMid": 20,
+            "maLong": 60,
+            "rsiPeriod": 14,
+            "rsiLow": 20,
+            "rsiHigh": 80,
+            "macdFast": 12,
+            "macdSlow": 26,
+            "macdSignal": 9,
+            "bollingerPeriod": 20,
+            "bollingerSigma": 2,
+        },
+        "agentPolicy": [
+            "Market_Intelligence_Agent 只提供市場背景與風險標籤，不推薦股票。",
+            "Technical_Analyst_Agent 只使用 K 線、均線、量價與技術結構。",
+            "Quant_Research_Agent 只保留可重算的因子與 false positive 檢查。",
+            "Devil_Advocate_Agent 對低量突破、過熱背離、資料不足保留 veto。",
+            "Portfolio_Manager_Agent 只彙整其他 agents，不自行分析股票。",
+        ],
+        "stocks": [_technical_chart_stock(row, bars_by_symbol.get(row.symbol, []), decisions.get(row.symbol)) for row in rows],
+    }
+
+
+def _technical_chart_stock(row: HybridRow, bars: list[Bar], decision) -> dict:
+    recent_bars = bars[-160:]
+    support, resistance = _support_resistance(recent_bars)
+    return {
+        "symbol": row.symbol,
+        "name": row.name,
+        "industry": row.industry,
+        "hybridScore": round(row.hybrid_score, 2),
+        "technicalScore": round(row.technical_score, 2),
+        "decision": portfolio_decision_label(decision),
+        "bucket": portfolio_decision_bucket(decision),
+        "riskNote": row.risk_note,
+        "support": support,
+        "resistance": resistance,
+        "evidence": list(row.technical_evidence),
+        "strategySummary": _technical_strategy_summary(row, recent_bars),
+        "bars": [
+            {
+                "date": bar.timestamp.date().isoformat(),
+                "open": round(bar.open, 4),
+                "high": round(bar.high, 4),
+                "low": round(bar.low, 4),
+                "close": round(bar.close, 4),
+                "volume": round(bar.volume, 2),
+            }
+            for bar in recent_bars
+        ],
+    }
+
+
+def _support_resistance(bars: list[Bar]) -> tuple[float | None, float | None]:
+    if not bars:
+        return None, None
+    window = bars[-60:] if len(bars) >= 60 else bars
+    return round(min(bar.low for bar in window), 4), round(max(bar.high for bar in window), 4)
+
+
+def _technical_strategy_summary(row: HybridRow, bars: list[Bar]) -> list[dict[str, str]]:
+    if len(bars) < 2:
+        return [{"strategy": "資料完整性", "status": "資料不足", "agent": "Devil_Advocate_Agent", "use": "排除每日重點"}]
+    latest = bars[-1]
+    volume_ratio = _volume_ratio(bars)
+    support, resistance = _support_resistance(bars)
+    return [
+        {
+            "strategy": "黃金交叉 / 死亡交叉",
+            "status": _cross_status([bar.close for bar in bars], 5, 20),
+            "agent": "Technical_Analyst_Agent",
+            "use": "主圖標記均線交叉，交給 Quant 驗證觸發後表現。",
+        },
+        {
+            "strategy": "MA20 風險線",
+            "status": _ma_position_status([bar.close for bar in bars], 20),
+            "agent": "Technical_Analyst_Agent",
+            "use": "對應操作重點文件的 20 週線紀律；日線先作近似觀察。",
+        },
+        {
+            "strategy": "RSI",
+            "status": _rsi_status([bar.close for bar in bars], 14, 20, 80),
+            "agent": "Devil_Advocate_Agent",
+            "use": "檢查過熱、低檔鈍化與單一指標風險。",
+        },
+        {
+            "strategy": "布林通道",
+            "status": _bollinger_status([bar.close for bar in bars], 20, 2),
+            "agent": "Technical_Analyst_Agent",
+            "use": "檢查波動擴張、突破後回落與風險區間。",
+        },
+        {
+            "strategy": "量價確認",
+            "status": "量能放大" if volume_ratio is not None and volume_ratio >= 1.5 else "量能未明顯放大",
+            "agent": "Devil_Advocate_Agent",
+            "use": "低量突破不得列為強訊號。",
+        },
+        {
+            "strategy": "三線突破",
+            "status": _three_line_status(bars),
+            "agent": "Quant_Research_Agent",
+            "use": "作為可重算突破因子與 false positive 檢查。",
+        },
+        {
+            "strategy": "近 10 日漲停排除 3 連漲",
+            "status": _recent_limit_up_status(bars),
+            "agent": "Devil_Advocate_Agent",
+            "use": "保留短線強勢觀察，但排除連續鎖漲停造成的過熱風險。",
+        },
+        {
+            "strategy": "月均線 MACD 金叉向上",
+            "status": _monthly_ma_macd_status(bars),
+            "agent": "Technical_Analyst_Agent",
+            "use": "以月線級別確認中期動能；資料不足時不得升級為主訊號。",
+        },
+        {
+            "strategy": "20 均線附近放量陽線",
+            "status": _ma20_volume_bull_status(bars),
+            "agent": "Technical_Analyst_Agent",
+            "use": "檢查股價靠近 MA20 時是否有量價同步確認。",
+        },
+        {
+            "strategy": "支撐壓力",
+            "status": f"支撐 {support:.2f} / 壓力 {resistance:.2f}" if support is not None and resistance is not None else "資料不足",
+            "agent": "Portfolio_Manager_Agent",
+            "use": f"只彙整為{row.symbol}的研究觀察，不自行延伸判斷。",
+        },
+        {
+            "strategy": "當日 K 線",
+            "status": _candle_status(latest),
+            "agent": "Technical_Analyst_Agent",
+            "use": "K 線型態必須搭配趨勢與量能，不可孤立解讀。",
+        },
+    ]
+
+
+def _rolling_average(values: list[float], window: int) -> float | None:
+    return sum(values[-window:]) / window if len(values) >= window and window > 0 else None
+
+
+def _cross_status(values: list[float], short_window: int, long_window: int) -> str:
+    if len(values) <= long_window:
+        return "資料不足"
+    prev_short = sum(values[-short_window - 1 : -1]) / short_window
+    prev_long = sum(values[-long_window - 1 : -1]) / long_window
+    current_short = _rolling_average(values, short_window)
+    current_long = _rolling_average(values, long_window)
+    if current_short is None or current_long is None:
+        return "資料不足"
+    if prev_short <= prev_long and current_short > current_long:
+        return "黃金交叉成立"
+    if prev_short >= prev_long and current_short < current_long:
+        return "死亡交叉成立"
+    return "未出現新交叉"
+
+
+def _ma_position_status(values: list[float], window: int) -> str:
+    average = _rolling_average(values, window)
+    if average is None:
+        return "資料不足"
+    return "收盤站上均線" if values[-1] >= average else "收盤低於均線"
+
+
+def _rsi_status(values: list[float], period: int, low: float, high: float) -> str:
+    if len(values) <= period:
+        return "資料不足"
+    deltas = [values[index] - values[index - 1] for index in range(len(values) - period, len(values))]
+    gains = sum(delta for delta in deltas if delta > 0) / period
+    losses = abs(sum(delta for delta in deltas if delta < 0) / period)
+    rsi = 100.0 if losses == 0 else 100 - (100 / (1 + gains / losses))
+    if rsi <= low:
+        return f"RSI {rsi:.1f}，低檔觀察"
+    if rsi >= high:
+        return f"RSI {rsi:.1f}，過熱風險"
+    return f"RSI {rsi:.1f}，中性"
+
+
+def _bollinger_status(values: list[float], window: int, sigma: float) -> str:
+    average = _rolling_average(values, window)
+    if average is None:
+        return "資料不足"
+    variance = sum((value - average) ** 2 for value in values[-window:]) / window
+    width = variance ** 0.5 * sigma
+    close = values[-1]
+    if close > average + width:
+        return "突破上緣，檢查回落風險"
+    if close < average - width:
+        return "跌破下緣，檢查波動風險"
+    return "位於通道內"
+
+
+def _three_line_status(bars: list[Bar]) -> str:
+    if len(bars) < 4:
+        return "資料不足"
+    previous = bars[-4:-1]
+    close = bars[-1].close
+    if close > max(bar.high for bar in previous):
+        return "向上三線突破"
+    if close < min(bar.low for bar in previous):
+        return "向下三線突破"
+    return "未突破前三根區間"
+
+
+def _recent_limit_up_status(bars: list[Bar]) -> str:
+    if len(bars) < 11:
+        return "資料不足"
+    returns = [(bars[index].close / bars[index - 1].close - 1) for index in range(1, len(bars))]
+    recent = returns[-10:]
+    limit_flags = [value >= 0.095 for value in recent]
+    has_limit = any(limit_flags)
+    three_consecutive = any(all(limit_flags[start : start + 3]) for start in range(0, max(len(limit_flags) - 2, 0)))
+    if has_limit and not three_consecutive:
+        count = sum(1 for flagged in limit_flags if flagged)
+        return f"近 10 日有 {count} 次漲停，未達 3 連漲"
+    if three_consecutive:
+        return "近 10 日出現 3 連漲停，過熱排除"
+    return "近 10 日未見漲停"
+
+
+def _monthly_ma_macd_status(bars: list[Bar]) -> str:
+    monthly = _monthly_closes(bars)
+    if len(monthly) < 8:
+        return "月線資料不足"
+    closes = [item[1] for item in monthly]
+    ma3 = _rolling_average(closes, 3)
+    ma6 = _rolling_average(closes, 6)
+    macd_line, signal_line = _macd_latest(closes, 3, 6, 3)
+    if ma3 is None or ma6 is None or macd_line is None or signal_line is None:
+        return "月線資料不足"
+    if ma3 > ma6 and macd_line > signal_line and macd_line > 0:
+        return "月均線多頭且 MACD 金叉向上"
+    if ma3 > ma6 and macd_line > signal_line:
+        return "月均線偏多，MACD 金叉待確認"
+    return "月線動能未同步轉強"
+
+
+def _ma20_volume_bull_status(bars: list[Bar]) -> str:
+    if len(bars) < 20:
+        return "資料不足"
+    latest = bars[-1]
+    ma20 = _rolling_average([bar.close for bar in bars], 20)
+    volume_ratio = _volume_ratio(bars)
+    if ma20 is None or volume_ratio is None:
+        return "資料不足"
+    near_ma20 = abs(latest.close - ma20) / ma20 <= 0.02
+    bullish = latest.close > latest.open
+    high_volume = volume_ratio >= 1.5
+    if near_ma20 and bullish and high_volume:
+        return f"靠近 MA20 且放量陽線，量比 {volume_ratio:.2f}"
+    missing = []
+    if not near_ma20:
+        missing.append("未貼近 MA20")
+    if not bullish:
+        missing.append("非陽線")
+    if not high_volume:
+        missing.append(f"量比 {volume_ratio:.2f} 未放大")
+    return "，".join(missing)
+
+
+def _monthly_closes(bars: list[Bar]) -> list[tuple[str, float]]:
+    monthly: dict[str, float] = {}
+    for bar in bars:
+        key = bar.timestamp.strftime("%Y-%m")
+        monthly[key] = bar.close
+    return list(monthly.items())
+
+
+def _macd_latest(values: list[float], fast: int, slow: int, signal: int) -> tuple[float | None, float | None]:
+    if len(values) < slow + signal:
+        return None, None
+    fast_ema = _ema(values, fast)
+    slow_ema = _ema(values, slow)
+    macd = [fast_value - slow_value for fast_value, slow_value in zip(fast_ema, slow_ema)]
+    signal_line = _ema(macd, signal)
+    return macd[-1], signal_line[-1]
+
+
+def _ema(values: list[float], span: int) -> list[float]:
+    if not values:
+        return []
+    multiplier = 2 / (span + 1)
+    result = [values[0]]
+    for value in values[1:]:
+        result.append(value * multiplier + result[-1] * (1 - multiplier))
+    return result
+
+
+def _candle_status(bar: Bar) -> str:
+    body = abs(bar.close - bar.open)
+    spread = max(bar.high - bar.low, 0.0001)
+    upper = bar.high - max(bar.open, bar.close)
+    lower = min(bar.open, bar.close) - bar.low
+    if body / spread <= 0.12:
+        return "十字線，等待確認"
+    if lower >= body * 2 and upper <= body:
+        return "錘子線特徵"
+    if upper >= body * 2 and lower <= body:
+        return "長上影，檢查出貨風險"
+    return "一般 K 線"
