@@ -40,6 +40,20 @@ class HybridTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             base = Path(tmp_dir)
             price_path = base / "prices.csv"
+            universe_path = base / "universe.csv"
+            with universe_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["symbol", "market", "name", "industry", "price", "volume"])
+                writer.writeheader()
+                writer.writerow(
+                    {
+                        "symbol": "2330",
+                        "market": "tse",
+                        "name": "台積電",
+                        "industry": "半導體業",
+                        "price": 100,
+                        "volume": 1000,
+                    }
+                )
             with price_path.open("w", encoding="utf-8", newline="") as handle:
                 writer = csv.DictWriter(handle, fieldnames=["symbol", "date", "open", "high", "low", "close", "volume"])
                 writer.writeheader()
@@ -72,6 +86,7 @@ class HybridTest(unittest.TestCase):
                 kronos_model="",
                 qlib_data_path=None,
                 output_dir=base / "reports",
+                universe_path=universe_path,
             )
 
             report_path, csv_path, qlib_path, notification = run_tw_hybrid(
@@ -85,6 +100,9 @@ class HybridTest(unittest.TestCase):
             self.assertTrue(qlib_path.exists())
             self.assertEqual(notification, "disabled")
             report = report_path.read_text(encoding="utf-8")
+            self.assertIn("台積電", report)
+            self.assertIn("半導體業", report)
+            self.assertNotIn("| 2330.TW | 2330.TW |", report)
             self.assertIn("每日研究名單", report)
             self.assertIn("風險區間", report)
             self.assertIn("互動技術分析策略", report)

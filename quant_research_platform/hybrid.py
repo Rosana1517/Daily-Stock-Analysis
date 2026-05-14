@@ -22,6 +22,7 @@ from quant_research_platform.daily_stock_bridge import (
     industry_news_score,
     load_latest_realtime_states,
     load_or_fetch_industry_signals,
+    load_stock_profiles,
     notification_summary,
     send_hybrid_notification,
     stock_industry,
@@ -72,6 +73,7 @@ def run_tw_hybrid(
         news_path,
     )
     config = replace(config, symbols=selected_symbols)
+    load_stock_profiles(config.universe_path)
     bars_by_symbol = _load_bars(config)
     kronos_signals = build_signals(
         bars_by_symbol,
