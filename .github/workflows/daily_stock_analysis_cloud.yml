@@ -12,7 +12,7 @@ on:
         required: false
         default: "false"
   schedule:
-    # 08:30 Asia/Taipei, Monday-Friday.
+    # 08:30 Asia/Taipei, Monday-Friday. Registered via gh CLI workflow scope.
     - cron: "30 0 * * 1-5"
 
 permissions:
