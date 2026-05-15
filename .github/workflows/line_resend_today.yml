@@ -36,6 +36,4 @@ jobs:
           fi
           today="$(TZ=Asia/Taipei date +%F)"
           report_url="${REPORT_BASE_URL}/stock_signals_${today}.html"
-          LINE_BODY="${today}
-
-${report_url}" python -c "import os; from stock_signal_system.notify import send_notification; body=os.environ['LINE_BODY']; print(send_notification('', body, None, 'LINE_CHANNEL_ACCESS_TOKEN', None, True))"
+          LINE_BODY="$(printf '%s\n\n%s' "$today" "$report_url")" python -c "import os; from stock_signal_system.notify import send_notification; body=os.environ['LINE_BODY']; print(send_notification('', body, None, 'LINE_CHANNEL_ACCESS_TOKEN', None, True))"
