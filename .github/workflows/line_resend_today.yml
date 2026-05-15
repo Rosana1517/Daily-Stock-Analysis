@@ -1,6 +1,6 @@
 name: LINE Resend Today
 
-"on":
+on:
   push:
     branches:
       - main
