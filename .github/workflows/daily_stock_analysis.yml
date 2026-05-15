@@ -1,6 +1,6 @@
 name: Daily Stock Analysis
 
-"on":
+on:
   workflow_dispatch:
     inputs:
       send_line:
