@@ -2,15 +2,6 @@ name: Daily Stock Analysis Watchdog
 
 on:
   workflow_dispatch:
-    inputs:
-      send_line:
-        description: "Send LINE broadcast after publishing"
-        required: true
-        default: "true"
-      force_send_line:
-        description: "Force LINE broadcast even if today's marker exists"
-        required: false
-        default: "false"
   schedule:
     # Primary run: 08:30 Asia/Taipei, Monday-Friday.
     - cron: "30 0 * * 1-5"
@@ -90,13 +81,12 @@ jobs:
             --public-base-url "$REPORT_BASE_URL"
 
       - name: Send LINE report link
-        if: ${{ (github.event_name == 'schedule') || (github.event.inputs.send_line == 'true') }}
+        if: ${{ (github.event_name == 'schedule') || (github.event_name == 'workflow_dispatch') }}
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
         run: |
           marker="reports/line_sent_$(TZ=Asia/Taipei date +%F).txt"
-          force_send_line="${{ github.event.inputs.force_send_line }}"
-          if [ -f "$marker" ] && [ "$force_send_line" != "true" ]; then
+          if [ -f "$marker" ]; then
             echo "line_skipped=already_sent_today"
             exit 0
           fi
