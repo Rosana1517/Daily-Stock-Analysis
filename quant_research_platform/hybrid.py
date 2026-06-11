@@ -71,6 +71,7 @@ def run_tw_hybrid(
         config.symbols,
         config.universe_candidate_limit,
         news_path,
+        config.ohlcv_path,
     )
     config = replace(config, symbols=selected_symbols)
     load_stock_profiles(config.universe_path)

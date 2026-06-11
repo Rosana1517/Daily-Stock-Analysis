@@ -33,12 +33,13 @@ def publish_report_to_pages(
     target = reports_dir / report_html_path.name
     if report_html_path != target.resolve():
         shutil.copy2(report_html_path, target)
+    _prune_published_report_html(reports_dir)
 
     index_path = repo_dir / "index.html"
     index_path.write_text(_build_index(reports_dir), encoding="utf-8")
     (repo_dir / ".nojekyll").write_text("", encoding="utf-8")
 
-    _git(repo_dir, "add", "index.html", ".nojekyll", f"reports/{report_html_path.name}")
+    _git(repo_dir, "add", "index.html", ".nojekyll", "reports")
     if not _has_staged_changes(repo_dir):
         return PublishResult(
             repo_dir=repo_dir,
@@ -82,6 +83,14 @@ def _has_staged_changes(repo_dir: Path) -> bool:
         capture_output=True,
     )
     return result.returncode == 1
+
+
+def _prune_published_report_html(reports_dir: Path, keep_latest: int = 3) -> None:
+    if keep_latest <= 0:
+        return
+    html_reports = sorted(reports_dir.glob("stock_signals_*.html"), reverse=True)
+    for old_path in html_reports[keep_latest:]:
+        old_path.unlink(missing_ok=True)
 
 
 def _build_index(reports_dir: Path) -> str:
