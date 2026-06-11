@@ -49,7 +49,7 @@ class HybridTest(unittest.TestCase):
                         "symbol": "2330",
                         "market": "tse",
                         "name": "台積電",
-                        "industry": "半導體業",
+                        "industry": "半導體",
                         "price": 100,
                         "volume": 1000,
                     }
@@ -69,6 +69,7 @@ class HybridTest(unittest.TestCase):
                             "volume": 1000 + idx,
                         }
                     )
+
             config = QuantPlatformConfig(
                 symbols=("2330.TW",),
                 data_source="csv",
@@ -99,19 +100,18 @@ class HybridTest(unittest.TestCase):
             self.assertTrue(csv_path.exists())
             self.assertTrue(qlib_path.exists())
             self.assertEqual(notification, "disabled")
+
             report = report_path.read_text(encoding="utf-8")
             self.assertIn("台積電", report)
-            self.assertIn("半導體業", report)
+            self.assertIn("半導體", report)
             self.assertNotIn("| 2330.TW | 2330.TW |", report)
-            self.assertIn("每日研究名單", report)
-            self.assertIn("風險區間", report)
-            self.assertIn("互動技術分析策略", report)
             self.assertIn("technical-chart-data", report)
-            self.assertIn("黃金交叉", report)
-            self.assertIn("近 10 日漲停排除 3 連漲", report)
-            self.assertIn("月均線 MACD 金叉向上", report)
-            self.assertIn("日均線股價在 20 均線附近且放量陽線", report)
-            self.assertNotIn("進場", report)
+            self.assertIn("選股條件摘要", report)
+            self.assertIn("K值 < 40", report)
+            self.assertIn("近 5 日融資增加前 100 大", report)
+            self.assertIn("收盤價 20 日均線上升", report)
+            self.assertIn("舊版參數備查", report)
+            self.assertIn("TW_HYBRID_SELECTION_STRATEGY.md", report)
 
 
 if __name__ == "__main__":

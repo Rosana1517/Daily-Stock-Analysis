@@ -8,10 +8,10 @@ from stock_signal_system.report import markdown_to_html, public_report_url
 
 class ReportHtmlTest(unittest.TestCase):
     def test_markdown_to_html_contains_readable_structure(self):
-        html = markdown_to_html("# 標題\n\n## 區塊\n\n- **重點** 內容", "測試")
+        html = markdown_to_html("# 標題\n\n## 小節\n- **重點** 說明", "摘要")
 
         self.assertIn("<h1>標題</h1>", html)
-        self.assertIn("<h2>區塊</h2>", html)
+        self.assertIn("<h2>小節</h2>", html)
         self.assertIn("<strong>重點</strong>", html)
 
     def test_public_report_url_uses_report_filename(self):
@@ -22,7 +22,13 @@ class ReportHtmlTest(unittest.TestCase):
     def test_hybrid_chinese_report_renders_interactive_technical_chart(self):
         markdown = """# Hybrid 量化每日選股報告 - 2026-05-13
 
-## 每日研究名單
+## 選股條件摘要
+
+- K值 < 40
+- 近 5 日融資增加前 100 大
+- 收盤價 20 日均線上升
+
+## 候選全覽
 
 | 股票 | 名稱 |
 |---|---|
@@ -38,19 +44,20 @@ class ReportHtmlTest(unittest.TestCase):
         self.assertIn("互動技術分析", html)
         self.assertIn("technicalChart", html)
         self.assertIn("黃金交叉", html)
-        self.assertIn("短均線看短線動能", html)
-        self.assertIn("5 代表近 5 根 K 線平均", html)
-        self.assertIn("20 代表近 20 根平均", html)
-        self.assertIn("60 代表近 60 根平均", html)
-        self.assertIn("80 以上標示過熱", html)
-        self.assertIn("2 代表上下緣約 2 倍標準差", html)
-        self.assertIn("精簡 K 線/三線標記", html)
-        self.assertIn("近 10 日漲停", html)
-        self.assertIn("月均線 MACD 金叉", html)
-        self.assertIn("日均線 20 均線放量陽線", html)
+        self.assertIn("選股條件摘要", html)
+        self.assertIn("K值 &lt; 40", html)
+        self.assertIn("近 5 日融資增加前 100 大", html)
+        self.assertIn("收盤價 20 日均線上升", html)
+        self.assertIn('data-layer="markers">', html)
+        self.assertIn('data-layer="limitUp">', html)
+        self.assertIn('data-layer="monthlyMacd">', html)
+        self.assertIn('data-layer="ma20Volume">', html)
+        self.assertNotIn('data-layer="markers" checked', html)
+        self.assertNotIn('data-layer="limitUp" checked', html)
+        self.assertNotIn('data-layer="monthlyMacd" checked', html)
+        self.assertNotIn('data-layer="ma20Volume" checked', html)
         self.assertIn("strategyVisible", html)
         self.assertIn("flex-wrap: wrap", html)
-        self.assertIn("策略條件摘要", html)
         self.assertIn("repeat(auto-fit, minmax(230px, 1fr))", html)
         self.assertNotIn("technical-chart-data", html)
 

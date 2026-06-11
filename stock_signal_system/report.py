@@ -370,10 +370,10 @@ def _interactive_chart_section() -> str:
             <label><input type="checkbox" data-layer="volume" checked> 成交量</label>
             <label><input type="checkbox" data-layer="macd" checked> MACD</label>
             <label><input type="checkbox" data-layer="rsi" checked> RSI</label>
-            <label><input type="checkbox" data-layer="markers" checked> 精簡 K 線/三線標記</label>
-            <label><input type="checkbox" data-layer="limitUp" checked> 近 10 日漲停</label>
-            <label><input type="checkbox" data-layer="monthlyMacd" checked> 月均線 MACD 金叉</label>
-            <label><input type="checkbox" data-layer="ma20Volume" checked> 日均線 20 均線放量陽線</label>
+            <label><input type="checkbox" data-layer="markers"> 精簡 K 線/三線標記</label>
+            <label><input type="checkbox" data-layer="limitUp"> 近 10 日漲停</label>
+            <label><input type="checkbox" data-layer="monthlyMacd"> 月均線 MACD 金叉</label>
+            <label><input type="checkbox" data-layer="ma20Volume"> 日均線 20 均線放量陽線</label>
           </fieldset>
         </aside>
         <div class="chart-wrap">
@@ -391,11 +391,13 @@ INTERACTIVE_CHART_JS = r"""
 (function () {
   const data = window.__TECH_DATA__ || {defaults: {}, stocks: []};
   const defaults = data.defaults || {};
-  const state = {stockIndex: 0, layers: {ma: true, bollinger: true, support: true, volume: true, macd: true, rsi: true, markers: true, limitUp: true, monthlyMacd: true, ma20Volume: true}};
+  const state = {stockIndex: 0, layers: {ma: true, bollinger: true, support: true, volume: true, macd: true, rsi: true, markers: false, limitUp: false, monthlyMacd: false, ma20Volume: false}};
   const $ = (id) => document.getElementById(id);
   const canvas = $("technicalChart");
   if (!canvas || !data.stocks || data.stocks.length === 0) return;
   const ctx = canvas.getContext("2d");
+  let chartWidth = 0;
+  let chartHeight = 0;
   const controls = ["maShort", "maMid", "maLong", "rsiLow", "rsiHigh", "bollingerSigma"];
   const initial = {maShort: 5, maMid: 20, maLong: 60, rsiLow: 20, rsiHigh: 80, bollingerSigma: 2};
 
@@ -433,6 +435,8 @@ INTERACTIVE_CHART_JS = r"""
     renderStrategyList(stock);
     const ratio = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
+    chartWidth = rect.width;
+    chartHeight = rect.height;
     canvas.width = Math.max(720, Math.floor(rect.width * ratio));
     canvas.height = Math.floor(rect.height * ratio);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -565,12 +569,14 @@ INTERACTIVE_CHART_JS = r"""
   function drawCrossMarkers(values, shortWindow, longWindow, x, y) {
     const shortMa = sma(values, shortWindow);
     const longMa = sma(values, longWindow);
+    const markers = [];
     for (let i = 1; i < values.length; i += 1) {
       if (!Number.isFinite(shortMa[i - 1]) || !Number.isFinite(longMa[i - 1]) || !Number.isFinite(shortMa[i]) || !Number.isFinite(longMa[i])) continue;
       const golden = shortMa[i - 1] <= longMa[i - 1] && shortMa[i] > longMa[i];
       const death = shortMa[i - 1] >= longMa[i - 1] && shortMa[i] < longMa[i];
-      if (golden || death) label(x(i), y(values[i]) + (golden ? -14 : 16), golden ? "黃金交叉" : "死亡交叉", golden ? "#dc2626" : "#16a34a");
+      if (golden || death) markers.push({x: x(i), y: y(values[i]) + (golden ? -14 : 16), text: golden ? "黃金交叉" : "死亡交叉", color: golden ? "#dc2626" : "#16a34a", index: i});
     }
+    markers.slice(-3).forEach((item) => label(item.x, item.y, item.text, item.color));
   }
 
   function drawMarkers(bars, x, y) {
@@ -591,7 +597,7 @@ INTERACTIVE_CHART_JS = r"""
     }
     signals
       .sort((a, b) => b.priority - a.priority || b.index - a.index)
-      .slice(0, 6)
+      .slice(0, 4)
       .sort((a, b) => a.index - b.index)
       .forEach((item) => label(x(item.index), y(item.price) + item.offset, item.text, item.color));
   }
@@ -616,7 +622,7 @@ INTERACTIVE_CHART_JS = r"""
     }
     signals
       .sort((a, b) => b.priority - a.priority || b.index - a.index)
-      .slice(0, 6)
+      .slice(0, 4)
       .sort((a, b) => a.index - b.index)
       .forEach((item) => label(x(item.index), y(item.price) + item.offset, item.text, item.color));
   }
@@ -698,10 +704,14 @@ INTERACTIVE_CHART_JS = r"""
   function label(x, y, text, color) {
     ctx.font = "11px system-ui, sans-serif";
     const w = ctx.measureText(text).width + 10;
+    const maxX = Math.max(0, chartWidth - w - 4);
+    const maxY = Math.max(12, chartHeight - 6);
+    const safeX = Math.min(Math.max(4, x - w / 2), maxX);
+    const safeY = Math.min(Math.max(12, y), maxY);
     ctx.fillStyle = color;
-    ctx.fillRect(x - w / 2, y - 12, w, 18);
+    ctx.fillRect(safeX, safeY - 12, w, 18);
     ctx.fillStyle = "#ffffff";
-    ctx.fillText(text, x - w / 2 + 5, y + 1);
+    ctx.fillText(text, safeX + 5, safeY + 1);
   }
 
   function line(values, x, y, color, width) {

@@ -9,6 +9,12 @@ from stock_signal_system.data.csv_sources import load_intraday_history, load_new
 from stock_signal_system.industry import analyze_industries
 from stock_signal_system.models import IndustrySignal, StockRecommendation, StockSnapshot
 from stock_signal_system.notify import send_notification
+from stock_signal_system.pipeline_helpers import (
+    _ensure_min_industry_signals,
+    _fill_recommendations,
+    _notification_body,
+    _quant_notification_body,
+)
 from stock_signal_system.report import build_report, public_report_url, save_report, save_report_html
 from stock_signal_system.strategies.candlestick import analyze_candlesticks
 from stock_signal_system.strategies.rule_score import score_stocks
@@ -49,7 +55,12 @@ def run_pipeline(config: AppConfig, report_date: Optional[date] = None) -> Pipel
         watched = set(config.watch_industries)
         industry_signals = [item for item in industry_signals if item.industry in watched]
     required_industry_count = max(config.min_industry_signals, config.min_recommendations)
-    industry_signals = _ensure_min_industry_signals(industry_signals, stocks, required_industry_count)
+    industry_signals = _ensure_min_industry_signals(
+        industry_signals,
+        stocks,
+        required_industry_count,
+        DEFAULT_OBSERVATION_INDUSTRIES,
+    )
 
     limit = min(config.top_n, config.max_watchlist)
     recommendations = score_stocks(
@@ -84,7 +95,7 @@ def run_pipeline(config: AppConfig, report_date: Optional[date] = None) -> Pipel
         report_url,
     )
     notification_status = send_notification(
-        title=f"每日選股觀察報告 - {current_date.isoformat()}",
+        title=f"瘥?貉閫撖??- {current_date.isoformat()}",
         body=notification_body,
         webhook_env=config.notification_webhook_env,
         line_channel_access_token_env=config.line_channel_access_token_env,
@@ -107,13 +118,16 @@ def _run_quant_hybrid_pipeline(config: AppConfig, current_date: date) -> Pipelin
         news_path=config.news_path,
         rss_sources_path=config.rss_sources_path,
         notify=False,
+        stock_snapshot_path=config.stock_path,
+        price_1h_path=config.price_1h_path,
+        price_5m_path=config.price_5m_path,
     )
     report = report_path.read_text(encoding="utf-8")
     html_report_path = save_report_html(config.report_dir, current_date, report)
     report_url = public_report_url(config.report_public_base_url, html_report_path)
-    notification_body = _quant_notification_body(current_date, str(report_path), config.notification_mode, report_url)
+    notification_body = _quant_notification_body(report, str(report_path), config.notification_mode, report_url)
     notification_status = send_notification(
-        title="",
+        title=current_date.isoformat() if config.notification_mode == "report_link" and report_url else f"Hybrid Quant 瘥?∠巨?勗? - {current_date.isoformat()}",
         body=notification_body,
         webhook_env=config.notification_webhook_env,
         line_channel_access_token_env=config.line_channel_access_token_env,
@@ -123,107 +137,6 @@ def _run_quant_hybrid_pipeline(config: AppConfig, current_date: date) -> Pipelin
     return PipelineResult(str(report_path), [], [], notification_status)
 
 
-def _quant_notification_body(current_date: date, report_path: str, notification_mode: str, report_url: str | None) -> str:
-    if notification_mode == "report_link" and report_url:
-        return f"{current_date.isoformat()}\n\n{report_url}"
-    if notification_mode == "report_link":
-        return f"{current_date.isoformat()}\n\n{report_path}"
-    return f"{current_date.isoformat()}\n\n{report_url or report_path}"
-
-
 def _first_report_sections(report: str, max_lines: int = 26) -> str:
     lines = [line for line in report.splitlines() if line.strip()]
     return "\n".join(lines[:max_lines])
-
-
-def _ensure_min_industry_signals(
-    industry_signals: list[IndustrySignal],
-    stocks: list[StockSnapshot],
-    min_count: int,
-) -> list[IndustrySignal]:
-    if len(industry_signals) >= min_count:
-        return industry_signals
-    existing = {item.industry for item in industry_signals}
-    stock_industries = [industry for industry in DEFAULT_OBSERVATION_INDUSTRIES if any(s.industry == industry for s in stocks)]
-    supplemented = list(industry_signals)
-    for industry in stock_industries:
-        if len(supplemented) >= min_count:
-            break
-        if industry in existing:
-            continue
-        supplemented.append(
-            IndustrySignal(
-                industry=industry,
-                score=42.0,
-                catalysts=("今日有效新聞證據不足，依固定台股追蹤領域列為備選觀察",),
-                evidence_count=0,
-            )
-        )
-        existing.add(industry)
-    return supplemented
-
-
-def _fill_recommendations(
-    current: list[StockRecommendation],
-    stocks: list[StockSnapshot],
-    industry_signals: list[IndustrySignal],
-    technicals: dict,
-    trade_direction: str,
-    limit: int,
-) -> list[StockRecommendation]:
-    existing_symbols = {item.stock.symbol for item in current}
-    expanded = score_stocks(stocks, industry_signals, 0, technicals, trade_direction=trade_direction)
-    combined = list(current)
-    for item in expanded:
-        if len(combined) >= limit:
-            break
-        if item.stock.symbol in existing_symbols:
-            continue
-        combined.append(item)
-        existing_symbols.add(item.stock.symbol)
-    return sorted(combined, key=lambda item: item.score, reverse=True)
-
-
-def _notification_body(
-    recommendations: list[StockRecommendation],
-    report_path: str,
-    notification_min_score: float,
-    notification_mode: str,
-    report: str,
-    report_url: str | None = None,
-) -> str:
-    if notification_mode == "full_report":
-        return report
-    if notification_mode == "report_link":
-        return _notification_link_summary(recommendations, report_path, notification_min_score, report_url)
-    return _notification_summary(recommendations, report_path, notification_min_score)
-
-
-def _notification_link_summary(
-    recommendations: list[StockRecommendation],
-    report_path: str,
-    notification_min_score: float,
-    report_url: str | None,
-) -> str:
-    if report_url:
-        return report_url
-    summary = _notification_summary(recommendations, report_path, notification_min_score)
-    if report_url:
-        summary = summary.split("完整報告：", 1)[0].rstrip()
-        return f"{summary}\n\n完整報告連結：{report_url}"
-    return f"{summary}\n\n尚未設定公開報告網址，已產生本機報告：{report_path}"
-
-
-def _notification_summary(
-    recommendations: list[StockRecommendation],
-    report_path: str,
-    notification_min_score: float,
-) -> str:
-    high_priority = [item for item in recommendations if item.score >= notification_min_score]
-    if not high_priority:
-        picks = "、".join(f"{item.stock.symbol} {item.stock.name}({item.score:.1f})" for item in recommendations[:5])
-        return f"今日沒有高優先標的。候選觀察：{picks}。完整報告：{report_path}"
-    picks = "、".join(
-        f"{item.stock.symbol} {item.stock.name}({item.score:.1f})" for item in high_priority[:5]
-    )
-    return f"高優先標的：{picks}。完整報告：{report_path}"
