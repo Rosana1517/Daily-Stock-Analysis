@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
@@ -40,10 +40,14 @@
     .toggles { border: 0; padding: 0; margin: 12px 0; display: flex; flex-wrap: wrap; gap: 8px; }
     .toggles legend { flex-basis: 100%; margin-bottom: 2px; }
     .toggles label { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; border: 1px solid #d7dee8; border-radius: 999px; background: #ffffff; padding: 4px 10px; font-size: 13px; color: #1f2937; white-space: nowrap; }
-    .strategy-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-top: 14px; }
-    .strategy-item { border: 1px solid #dde5ee; border-radius: 6px; background: #ffffff; padding: 10px; font-size: 12px; min-height: 92px; }
+    .strategy-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 14px; }
+    .strategy-item { border: 1px solid #dde5ee; border-radius: 6px; background: #ffffff; padding: 10px; font-size: 12px; min-height: 0; max-height: 86px; overflow: hidden; }
     .strategy-item b { display: block; color: #0f172a; margin-bottom: 3px; }
     .strategy-item span { color: #475569; }
+    .screening-summary { margin: 0 0 20px; padding: 14px 16px; border: 1px solid #d6deea; border-radius: 10px; background: #f8fbff; }
+    .screening-summary h2 { margin: 0 0 10px; padding: 0; border: 0; font-size: 18px; color: #10233f; }
+    .screening-summary ul { margin: 0; }
+    .screening-summary li { color: #22324a; }
     .chart-wrap { padding: 16px; min-width: 0; }
     #technicalChart { width: 100%; height: 620px; display: block; border: 1px solid #d8e0ea; border-radius: 6px; background: #ffffff; }
     .chart-note { margin: 10px 0 0; color: #64748b; font-size: 13px; }
@@ -53,6 +57,14 @@
 </head>
 <body>
   <main>
+    <section class="screening-summary">
+      <h2>本次選股條件</h2>
+      <ul>
+        <li>K值 &lt; 40</li>
+        <li>近 5 日融資增加前 100 大</li>
+        <li>收盤價 20 日均線上升</li>
+      </ul>
+    </section>
     
     <section class="tech-board" aria-label="互動技術分析">
       <div class="tech-head">
@@ -91,10 +103,10 @@
             <label><input type="checkbox" data-layer="volume" checked> 成交量</label>
             <label><input type="checkbox" data-layer="macd" checked> MACD</label>
             <label><input type="checkbox" data-layer="rsi" checked> RSI</label>
-            <label><input type="checkbox" data-layer="markers" checked> 精簡 K 線/三線標記</label>
-            <label><input type="checkbox" data-layer="limitUp" checked> 近 10 日漲停</label>
-            <label><input type="checkbox" data-layer="monthlyMacd" checked> 月均線 MACD 金叉</label>
-            <label><input type="checkbox" data-layer="ma20Volume" checked> 日均線 20 均線放量陽線</label>
+            <label><input type="checkbox" data-layer="markers"> 精簡 K 線/三線標記</label>
+            <label><input type="checkbox" data-layer="limitUp"> 近 10 日漲停</label>
+            <label><input type="checkbox" data-layer="monthlyMacd"> 月均線 MACD 金叉</label>
+            <label><input type="checkbox" data-layer="ma20Volume"> 日均線 20 均線放量陽線</label>
           </fieldset>
         </aside>
         <div class="chart-wrap">
@@ -113,11 +125,13 @@
 (function () {
   const data = window.__TECH_DATA__ || {defaults: {}, stocks: []};
   const defaults = data.defaults || {};
-  const state = {stockIndex: 0, layers: {ma: true, bollinger: true, support: true, volume: true, macd: true, rsi: true, markers: true, limitUp: true, monthlyMacd: true, ma20Volume: true}};
+  const state = {stockIndex: 0, layers: {ma: true, bollinger: true, support: true, volume: true, macd: true, rsi: true, markers: false, limitUp: false, monthlyMacd: false, ma20Volume: false}};
   const $ = (id) => document.getElementById(id);
   const canvas = $("technicalChart");
   if (!canvas || !data.stocks || data.stocks.length === 0) return;
   const ctx = canvas.getContext("2d");
+  let chartWidth = 0;
+  let chartHeight = 0;
   const controls = ["maShort", "maMid", "maLong", "rsiLow", "rsiHigh", "bollingerSigma"];
   const initial = {maShort: 5, maMid: 20, maLong: 60, rsiLow: 20, rsiHigh: 80, bollingerSigma: 2};
 
@@ -155,6 +169,8 @@
     renderStrategyList(stock);
     const ratio = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
+    chartWidth = rect.width;
+    chartHeight = rect.height;
     canvas.width = Math.max(720, Math.floor(rect.width * ratio));
     canvas.height = Math.floor(rect.height * ratio);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -164,7 +180,7 @@
   function renderStrategyList(stock) {
     const list = $("strategyList");
     list.innerHTML = "";
-    (stock.strategySummary || []).filter((item) => strategyVisible(item.strategy)).forEach((item) => {
+    (stock.strategySummary || []).filter((item) => strategyVisible(item.strategy)).slice(0, 4).forEach((item) => {
       const node = document.createElement("div");
       node.className = "strategy-item";
       node.innerHTML = `<b>${escapeHtml(item.strategy)}｜${escapeHtml(item.status)}</b><span>${escapeHtml(item.agent)}：${escapeHtml(item.use)}</span>`;
@@ -287,12 +303,14 @@
   function drawCrossMarkers(values, shortWindow, longWindow, x, y) {
     const shortMa = sma(values, shortWindow);
     const longMa = sma(values, longWindow);
+    const markers = [];
     for (let i = 1; i < values.length; i += 1) {
       if (!Number.isFinite(shortMa[i - 1]) || !Number.isFinite(longMa[i - 1]) || !Number.isFinite(shortMa[i]) || !Number.isFinite(longMa[i])) continue;
       const golden = shortMa[i - 1] <= longMa[i - 1] && shortMa[i] > longMa[i];
       const death = shortMa[i - 1] >= longMa[i - 1] && shortMa[i] < longMa[i];
-      if (golden || death) label(x(i), y(values[i]) + (golden ? -14 : 16), golden ? "黃金交叉" : "死亡交叉", golden ? "#dc2626" : "#16a34a");
+      if (golden || death) markers.push({x: x(i), y: y(values[i]) + (golden ? -14 : 16), text: golden ? "黃金交叉" : "死亡交叉", color: golden ? "#dc2626" : "#16a34a"});
     }
+    markers.slice(-3).forEach((item) => label(item.x, item.y, item.text, item.color));
   }
 
   function drawMarkers(bars, x, y) {
@@ -313,7 +331,7 @@
     }
     signals
       .sort((a, b) => b.priority - a.priority || b.index - a.index)
-      .slice(0, 6)
+      .slice(0, 4)
       .sort((a, b) => a.index - b.index)
       .forEach((item) => label(x(item.index), y(item.price) + item.offset, item.text, item.color));
   }
@@ -338,7 +356,7 @@
     }
     signals
       .sort((a, b) => b.priority - a.priority || b.index - a.index)
-      .slice(0, 6)
+      .slice(0, 4)
       .sort((a, b) => a.index - b.index)
       .forEach((item) => label(x(item.index), y(item.price) + item.offset, item.text, item.color));
   }
@@ -420,10 +438,14 @@
   function label(x, y, text, color) {
     ctx.font = "11px system-ui, sans-serif";
     const w = ctx.measureText(text).width + 10;
+    const maxX = Math.max(0, chartWidth - w - 4);
+    const maxY = Math.max(12, chartHeight - 6);
+    const safeX = Math.min(Math.max(4, x - w / 2), maxX);
+    const safeY = Math.min(Math.max(12, y), maxY);
     ctx.fillStyle = color;
-    ctx.fillRect(x - w / 2, y - 12, w, 18);
+    ctx.fillRect(safeX, safeY - 12, w, 18);
     ctx.fillStyle = "#ffffff";
-    ctx.fillText(text, x - w / 2 + 5, y + 1);
+    ctx.fillText(text, safeX + 5, safeY + 1);
   }
 
   function line(values, x, y, color, width) {
@@ -514,3 +536,6 @@
 </script>
 </body>
 </html>
+
+
+
