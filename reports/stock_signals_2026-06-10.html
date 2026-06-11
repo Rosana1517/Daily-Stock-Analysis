@@ -40,10 +40,15 @@
     .toggles { border: 0; padding: 0; margin: 12px 0; display: flex; flex-wrap: wrap; gap: 8px; }
     .toggles legend { flex-basis: 100%; margin-bottom: 2px; }
     .toggles label { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; border: 1px solid #d7dee8; border-radius: 999px; background: #ffffff; padding: 4px 10px; font-size: 13px; color: #1f2937; white-space: nowrap; }
-    .strategy-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 14px; }
-    .strategy-item { border: 1px solid #dde5ee; border-radius: 6px; background: #ffffff; padding: 10px; font-size: 12px; min-height: 0; max-height: 86px; overflow: hidden; }
-    .strategy-item b { display: block; color: #0f172a; margin-bottom: 3px; }
-    .strategy-item span { color: #475569; }
+    .strategy-panel { margin-top: 14px; border: 1px solid #dde5ee; border-radius: 10px; background: #ffffff; overflow: hidden; }
+    .strategy-panel summary { cursor: pointer; list-style: none; padding: 10px 12px; color: #334155; font-size: 13px; font-weight: 800; background: #f8fafc; }
+    .strategy-panel summary::-webkit-details-marker { display: none; }
+    .strategy-panel summary::after { content: "展開"; float: right; color: #64748b; font-weight: 600; }
+    .strategy-panel[open] summary::after { content: "收合"; }
+    .strategy-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; padding: 12px; }
+    .strategy-item { border: 1px solid #dde5ee; border-radius: 6px; background: #ffffff; padding: 10px; font-size: 12px; min-height: 0; max-height: 78px; overflow: hidden; }
+    .strategy-item b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; color: #0f172a; margin-bottom: 3px; }
+    .strategy-item span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: #475569; line-height: 1.45; }
     .screening-summary { margin: 0 0 20px; padding: 14px 16px; border: 1px solid #d6deea; border-radius: 10px; background: #f8fbff; }
     .screening-summary h2 { margin: 0 0 10px; padding: 0; border: 0; font-size: 18px; color: #10233f; }
     .screening-summary ul { margin: 0; }
@@ -112,8 +117,10 @@
         <div class="chart-wrap">
           <canvas id="technicalChart" width="1120" height="620"></canvas>
           <p class="chart-note">圖表僅呈現可重算的研究條件；Devil veto、資料不足或低量突破不會被視為每日重點依據。</p>
-          <h3 class="strategy-summary-head">策略條件摘要</h3>
-          <div id="strategyList" class="strategy-list"></div>
+          <details class="strategy-panel">
+            <summary>策略條件摘要</summary>
+            <div id="strategyList" class="strategy-list"></div>
+          </details>
         </div>
       </div>
     </section>
@@ -180,7 +187,7 @@
   function renderStrategyList(stock) {
     const list = $("strategyList");
     list.innerHTML = "";
-    (stock.strategySummary || []).filter((item) => strategyVisible(item.strategy)).slice(0, 4).forEach((item) => {
+    (stock.strategySummary || []).filter((item) => strategyVisible(item.strategy)).slice(0, 3).forEach((item) => {
       const node = document.createElement("div");
       node.className = "strategy-item";
       node.innerHTML = `<b>${escapeHtml(item.strategy)}｜${escapeHtml(item.status)}</b><span>${escapeHtml(item.agent)}：${escapeHtml(item.use)}</span>`;
@@ -308,9 +315,9 @@
       if (!Number.isFinite(shortMa[i - 1]) || !Number.isFinite(longMa[i - 1]) || !Number.isFinite(shortMa[i]) || !Number.isFinite(longMa[i])) continue;
       const golden = shortMa[i - 1] <= longMa[i - 1] && shortMa[i] > longMa[i];
       const death = shortMa[i - 1] >= longMa[i - 1] && shortMa[i] < longMa[i];
-      if (golden || death) markers.push({x: x(i), y: y(values[i]) + (golden ? -14 : 16), text: golden ? "黃金交叉" : "死亡交叉", color: golden ? "#dc2626" : "#16a34a"});
+      if (golden || death) markers.push({x: x(i), y: y(values[i]) + (golden ? -14 : 16), text: golden ? "金叉" : "死叉", color: golden ? "#dc2626" : "#16a34a"});
     }
-    markers.slice(-3).forEach((item) => label(item.x, item.y, item.text, item.color));
+    markers.slice(-1).forEach((item) => label(item.x, item.y, item.text, item.color));
   }
 
   function drawMarkers(bars, x, y) {
@@ -320,18 +327,18 @@
       if (i < start) continue;
       const prev = bars.slice(i - 3, i);
       if (bars[i].close > Math.max(...prev.map((bar) => bar.high))) {
-        signals.push({index: i, price: bars[i].high, text: "三線突破", color: "#7c3aed", priority: 3, offset: -18});
+        signals.push({index: i, price: bars[i].high, text: "突破", color: "#7c3aed", priority: 3, offset: -18});
       } else if (bars[i].close < Math.min(...prev.map((bar) => bar.low))) {
-        signals.push({index: i, price: bars[i].low, text: "三線跌破", color: "#0f766e", priority: 3, offset: 18});
+        signals.push({index: i, price: bars[i].low, text: "跌破", color: "#0f766e", priority: 3, offset: 18});
       } else if (isLongUpper(bars[i])) {
-        signals.push({index: i, price: bars[i].high, text: "長上影", color: "#b91c1c", priority: 2, offset: -12});
+        signals.push({index: i, price: bars[i].high, text: "上影", color: "#b91c1c", priority: 2, offset: -12});
       } else if (isDoji(bars[i]) && i >= bars.length - 18) {
         signals.push({index: i, price: bars[i].close, text: "十字", color: "#475569", priority: 1, offset: 0});
       }
     }
     signals
       .sort((a, b) => b.priority - a.priority || b.index - a.index)
-      .slice(0, 4)
+      .slice(0, 2)
       .sort((a, b) => a.index - b.index)
       .forEach((item) => label(x(item.index), y(item.price) + item.offset, item.text, item.color));
   }
@@ -351,12 +358,12 @@
       const nearMa20 = Number.isFinite(average20) && Math.abs(bar.close - average20) / average20 <= 0.02;
       const bullish = bar.close > bar.open;
       if (state.layers.ma20Volume && nearMa20 && bullish && volumeRatio >= 1.5) {
-        signals.push({index: i, price: bar.close, text: "日MA20量陽", color: "#ea580c", priority: 2, offset: -22});
+        signals.push({index: i, price: bar.close, text: "MA20量陽", color: "#ea580c", priority: 2, offset: -22});
       }
     }
     signals
       .sort((a, b) => b.priority - a.priority || b.index - a.index)
-      .slice(0, 4)
+      .slice(0, 2)
       .sort((a, b) => a.index - b.index)
       .forEach((item) => label(x(item.index), y(item.price) + item.offset, item.text, item.color));
   }
@@ -536,6 +543,7 @@
 </script>
 </body>
 </html>
+
 
 
 

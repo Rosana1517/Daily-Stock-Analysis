@@ -58,7 +58,9 @@ class ReportHtmlTest(unittest.TestCase):
         self.assertNotIn('data-layer="ma20Volume" checked', html)
         self.assertIn("strategyVisible", html)
         self.assertIn("flex-wrap: wrap", html)
-        self.assertIn("repeat(auto-fit, minmax(230px, 1fr))", html)
+        self.assertIn("strategy-panel", html)
+        self.assertIn("repeat(auto-fit, minmax(180px, 1fr))", html)
+        self.assertIn('summary>策略條件摘要</summary>', html)
         self.assertNotIn("technical-chart-data", html)
 
 

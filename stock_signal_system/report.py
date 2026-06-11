@@ -293,14 +293,18 @@ def hybrid_interactive_markdown_to_html(markdown: str, title: str) -> str:
     .toggles {{ border: 0; padding: 0; margin: 12px 0; display: flex; flex-wrap: wrap; gap: 8px; }}
     .toggles legend {{ flex-basis: 100%; margin-bottom: 2px; }}
     .toggles label {{ display: inline-flex; align-items: center; gap: 6px; min-height: 30px; border: 1px solid #d7dee8; border-radius: 999px; background: #ffffff; padding: 4px 10px; font-size: 13px; color: #1f2937; white-space: nowrap; }}
-    .strategy-list {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-top: 14px; }}
-    .strategy-item {{ border: 1px solid #dde5ee; border-radius: 6px; background: #ffffff; padding: 10px; font-size: 12px; min-height: 92px; }}
-    .strategy-item b {{ display: block; color: #0f172a; margin-bottom: 3px; }}
-    .strategy-item span {{ color: #475569; }}
+    .strategy-panel {{ margin-top: 14px; border: 1px solid #dde5ee; border-radius: 10px; background: #ffffff; overflow: hidden; }}
+    .strategy-panel summary {{ cursor: pointer; list-style: none; padding: 10px 12px; color: #334155; font-size: 13px; font-weight: 800; background: #f8fafc; }}
+    .strategy-panel summary::-webkit-details-marker {{ display: none; }}
+    .strategy-panel summary::after {{ content: "展開"; float: right; color: #64748b; font-weight: 600; }}
+    .strategy-panel[open] summary::after {{ content: "收合"; }}
+    .strategy-list {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; padding: 12px; }}
+    .strategy-item {{ border: 1px solid #dde5ee; border-radius: 6px; background: #ffffff; padding: 10px; font-size: 12px; min-height: 0; max-height: 78px; overflow: hidden; }}
+    .strategy-item b {{ display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; color: #0f172a; margin-bottom: 3px; }}
+    .strategy-item span {{ display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: #475569; line-height: 1.45; }}
     .chart-wrap {{ padding: 16px; min-width: 0; }}
     #technicalChart {{ width: 100%; height: 620px; display: block; border: 1px solid #d8e0ea; border-radius: 6px; background: #ffffff; }}
     .chart-note {{ margin: 10px 0 0; color: #64748b; font-size: 13px; }}
-    .strategy-summary-head {{ margin: 16px 0 0; color: #334155; font-size: 13px; font-weight: 800; }}
     @media (max-width: 860px) {{ .tech-grid {{ grid-template-columns: 1fr; }} .tech-controls {{ border-right: 0; border-bottom: 1px solid #e4e9f0; }} #technicalChart {{ height: 540px; }} }}
   </style>
 </head>
@@ -379,8 +383,10 @@ def _interactive_chart_section() -> str:
         <div class="chart-wrap">
           <canvas id="technicalChart" width="1120" height="620"></canvas>
           <p class="chart-note">圖表僅呈現可重算的研究條件；Devil veto、資料不足或低量突破不會被視為每日重點依據。</p>
-          <h3 class="strategy-summary-head">策略條件摘要</h3>
-          <div id="strategyList" class="strategy-list"></div>
+          <details class="strategy-panel">
+            <summary>策略條件摘要</summary>
+            <div id="strategyList" class="strategy-list"></div>
+          </details>
         </div>
       </div>
     </section>
@@ -429,6 +435,39 @@ INTERACTIVE_CHART_JS = r"""
     };
   }
 
+  function renderStrategyList(stock) {
+    const list = $("strategyList");
+    if (!list) return;
+    list.innerHTML = "";
+    (stock.strategySummary || [])
+      .filter((item) => strategyVisible(item.strategy))
+      .slice(0, 3)
+      .forEach((item) => {
+        const node = document.createElement("div");
+        node.className = "strategy-item";
+        node.innerHTML = `<b>${escapeHtml(item.strategy)} | ${escapeHtml(item.status)}</b><span>${escapeHtml(item.agent)}：${escapeHtml(item.use)}</span>`;
+        list.appendChild(node);
+      });
+  }
+
+  function strategyVisible(strategy) {
+    const map = new Map([
+      ["近 10 日漲停排除 3 連漲", "limitUp"],
+      ["月均線 MACD 金叉向上", "monthlyMacd"],
+      ["日均線股價在 20 均線附近且放量陽線", "ma20Volume"],
+      ["黃金交叉 / 死亡交叉", "ma"],
+      ["MA20 風險線", "ma"],
+      ["布林通道", "bollinger"],
+      ["RSI", "rsi"],
+      ["量價確認", "volume"],
+      ["三線突破", "markers"],
+      ["支撐壓力", "support"],
+      ["當日 K 線", "markers"],
+    ]);
+    const layer = map.get(strategy);
+    return layer ? state.layers[layer] : true;
+  }
+
   function render() {
     const stock = data.stocks[state.stockIndex];
     if (!stock || !stock.bars || stock.bars.length === 0) return;
@@ -446,7 +485,7 @@ INTERACTIVE_CHART_JS = r"""
   function renderStrategyList(stock) {
     const list = $("strategyList");
     list.innerHTML = "";
-    (stock.strategySummary || []).filter((item) => strategyVisible(item.strategy)).forEach((item) => {
+    (stock.strategySummary || []).filter((item) => strategyVisible(item.strategy)).slice(0, 3).forEach((item) => {
       const node = document.createElement("div");
       node.className = "strategy-item";
       node.innerHTML = `<b>${escapeHtml(item.strategy)}｜${escapeHtml(item.status)}</b><span>${escapeHtml(item.agent)}：${escapeHtml(item.use)}</span>`;
@@ -574,9 +613,9 @@ INTERACTIVE_CHART_JS = r"""
       if (!Number.isFinite(shortMa[i - 1]) || !Number.isFinite(longMa[i - 1]) || !Number.isFinite(shortMa[i]) || !Number.isFinite(longMa[i])) continue;
       const golden = shortMa[i - 1] <= longMa[i - 1] && shortMa[i] > longMa[i];
       const death = shortMa[i - 1] >= longMa[i - 1] && shortMa[i] < longMa[i];
-      if (golden || death) markers.push({x: x(i), y: y(values[i]) + (golden ? -14 : 16), text: golden ? "黃金交叉" : "死亡交叉", color: golden ? "#dc2626" : "#16a34a", index: i});
+      if (golden || death) markers.push({x: x(i), y: y(values[i]) + (golden ? -14 : 16), text: golden ? "金叉" : "死叉", color: golden ? "#dc2626" : "#16a34a", index: i});
     }
-    markers.slice(-3).forEach((item) => label(item.x, item.y, item.text, item.color));
+    markers.slice(-1).forEach((item) => label(item.x, item.y, item.text, item.color));
   }
 
   function drawMarkers(bars, x, y) {
@@ -586,18 +625,18 @@ INTERACTIVE_CHART_JS = r"""
       if (i < start) continue;
       const prev = bars.slice(i - 3, i);
       if (bars[i].close > Math.max(...prev.map((bar) => bar.high))) {
-        signals.push({index: i, price: bars[i].high, text: "三線突破", color: "#7c3aed", priority: 3, offset: -18});
+        signals.push({index: i, price: bars[i].high, text: "突破", color: "#7c3aed", priority: 3, offset: -18});
       } else if (bars[i].close < Math.min(...prev.map((bar) => bar.low))) {
-        signals.push({index: i, price: bars[i].low, text: "三線跌破", color: "#0f766e", priority: 3, offset: 18});
+        signals.push({index: i, price: bars[i].low, text: "跌破", color: "#0f766e", priority: 3, offset: 18});
       } else if (isLongUpper(bars[i])) {
-        signals.push({index: i, price: bars[i].high, text: "長上影", color: "#b91c1c", priority: 2, offset: -12});
+        signals.push({index: i, price: bars[i].high, text: "上影", color: "#b91c1c", priority: 2, offset: -12});
       } else if (isDoji(bars[i]) && i >= bars.length - 18) {
         signals.push({index: i, price: bars[i].close, text: "十字", color: "#475569", priority: 1, offset: 0});
       }
     }
     signals
       .sort((a, b) => b.priority - a.priority || b.index - a.index)
-      .slice(0, 4)
+      .slice(0, 2)
       .sort((a, b) => a.index - b.index)
       .forEach((item) => label(x(item.index), y(item.price) + item.offset, item.text, item.color));
   }
@@ -617,12 +656,12 @@ INTERACTIVE_CHART_JS = r"""
       const nearMa20 = Number.isFinite(average20) && Math.abs(bar.close - average20) / average20 <= 0.02;
       const bullish = bar.close > bar.open;
       if (state.layers.ma20Volume && nearMa20 && bullish && volumeRatio >= 1.5) {
-        signals.push({index: i, price: bar.close, text: "日MA20量陽", color: "#ea580c", priority: 2, offset: -22});
+        signals.push({index: i, price: bar.close, text: "MA20量陽", color: "#ea580c", priority: 2, offset: -22});
       }
     }
     signals
       .sort((a, b) => b.priority - a.priority || b.index - a.index)
-      .slice(0, 4)
+      .slice(0, 2)
       .sort((a, b) => a.index - b.index)
       .forEach((item) => label(x(item.index), y(item.price) + item.offset, item.text, item.color));
   }
@@ -782,6 +821,112 @@ INTERACTIVE_CHART_JS = r"""
       return mean - sd * sigma;
     });
     return {mid, upper, lower};
+  }
+
+  function drawHeader(stock, width) {
+    ctx.fillStyle = "#111827";
+    ctx.font = "700 15px system-ui, sans-serif";
+    ctx.fillText(`${stock.symbol} ${stock.name} | ${stock.industry}`, 16, 20);
+    ctx.textAlign = "right";
+    ctx.fillStyle = stock.bucket === "exclude" ? "#b91c1c" : "#0f766e";
+    ctx.fillText(`${stock.decision} | 技術 ${stock.technicalScore}`, width - 18, 20);
+    ctx.textAlign = "left";
+  }
+
+  function drawSupportResistance(stock, y, width) {
+    [["support", "#0891b2", "支撐"], ["resistance", "#f59e0b", "壓力"]].forEach(([key, color, text]) => {
+      const value = stock[key];
+      if (!Number.isFinite(value)) return;
+      const yy = y(value);
+      ctx.strokeStyle = color;
+      ctx.setLineDash([6, 5]);
+      ctx.beginPath();
+      ctx.moveTo(56, yy);
+      ctx.lineTo(width - 18, yy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = color;
+      ctx.fillText(`${text} ${value.toFixed(2)}`, 64, yy - 4);
+    });
+  }
+
+  function drawCrossMarkers(values, shortWindow, longWindow, x, y) {
+    const shortMa = sma(values, shortWindow);
+    const longMa = sma(values, longWindow);
+    const markers = [];
+    for (let i = 1; i < values.length; i += 1) {
+      if (!Number.isFinite(shortMa[i - 1]) || !Number.isFinite(longMa[i - 1]) || !Number.isFinite(shortMa[i]) || !Number.isFinite(longMa[i])) continue;
+      const golden = shortMa[i - 1] <= longMa[i - 1] && shortMa[i] > longMa[i];
+      const death = shortMa[i - 1] >= longMa[i - 1] && shortMa[i] < longMa[i];
+      if (golden || death) {
+        markers.push({
+          x: x(i),
+          y: y(values[i]) + (golden ? -14 : 16),
+          text: golden ? "金叉" : "死叉",
+          color: golden ? "#dc2626" : "#16a34a",
+          index: i,
+        });
+      }
+    }
+    markers.slice(-1).forEach((item) => label(item.x, item.y, item.text, item.color));
+  }
+
+  function drawMarkers(bars, x, y) {
+    const signals = [];
+    const start = Math.max(3, bars.length - 45);
+    for (let i = 3; i < bars.length; i += 1) {
+      if (i < start) continue;
+      const prev = bars.slice(i - 3, i);
+      if (bars[i].close > Math.max(...prev.map((bar) => bar.high))) {
+        signals.push({index: i, price: bars[i].high, text: "突破", color: "#7c3aed", priority: 3, offset: -18});
+      } else if (bars[i].close < Math.min(...prev.map((bar) => bar.low))) {
+        signals.push({index: i, price: bars[i].low, text: "跌破", color: "#0f766e", priority: 3, offset: 18});
+      } else if (isLongUpper(bars[i])) {
+        signals.push({index: i, price: bars[i].high, text: "上影", color: "#b91c1c", priority: 2, offset: -12});
+      } else if (isDoji(bars[i]) && i >= bars.length - 18) {
+        signals.push({index: i, price: bars[i].close, text: "十字", color: "#475569", priority: 1, offset: 0});
+      }
+    }
+    signals
+      .sort((a, b) => b.priority - a.priority || b.index - a.index)
+      .slice(0, 2)
+      .sort((a, b) => a.index - b.index)
+      .forEach((item) => label(x(item.index), y(item.price) + item.offset, item.text, item.color));
+  }
+
+  function drawConditionMarkers(bars, closes, x, y, p) {
+    const signals = [];
+    const ma20 = sma(closes, 20);
+    const start = Math.max(1, bars.length - 45);
+    for (let i = start; i < bars.length; i += 1) {
+      const bar = bars[i];
+      const previous = bars[i - 1];
+      if (state.layers.limitUp && previous && bar.close / previous.close - 1 >= 0.095 && !hasThreeLimitUps(bars, i)) {
+        signals.push({index: i, price: bar.high, text: "漲停", color: "#dc2626", priority: 3, offset: -28});
+      }
+      const average20 = ma20[i];
+      const volumeRatio = volumeRatioAt(bars, i, 20);
+      const nearMa20 = Number.isFinite(average20) && Math.abs(bar.close - average20) / average20 <= 0.02;
+      const bullish = bar.close > bar.open;
+      if (state.layers.ma20Volume && nearMa20 && bullish && volumeRatio >= 1.5) {
+        signals.push({index: i, price: bar.close, text: "MA20量陽", color: "#ea580c", priority: 2, offset: -22});
+      }
+    }
+    signals
+      .sort((a, b) => b.priority - a.priority || b.index - a.index)
+      .slice(0, 2)
+      .sort((a, b) => a.index - b.index)
+      .forEach((item) => label(x(item.index), y(item.price) + item.offset, item.text, item.color));
+  }
+
+  function drawVolume(bars, x, step, pane, width) {
+    drawPane(pane, width, "成交量");
+    const maxVol = Math.max(...bars.map((bar) => bar.volume), 1);
+    bars.forEach((bar, i) => {
+      const h = (bar.volume / maxVol) * (pane.height - 22);
+      ctx.fillStyle = bar.close >= bar.open ? "#fecaca" : "#bbf7d0";
+      ctx.fillRect(x(i) - step * 0.32, pane.top + pane.height - h, Math.max(1, step * 0.64), h);
+    });
   }
 
   function isDoji(bar) {
