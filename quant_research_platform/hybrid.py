@@ -29,10 +29,14 @@ from quant_research_platform.daily_stock_bridge import (
     stock_name,
 )
 from quant_research_platform.data import Bar, fetch_openbb_ohlcv, load_csv_ohlcv
-from quant_research_platform.qlib_adapter import build_qlib_signal_backtest_config
+from quant_research_platform.qlib_adapter import (
+    build_qlib_signal_backtest_config,
+    run_inline_signal_diagnostics,
+    run_qlib_engine_portfolio_backtest,
+)
 from quant_research_platform.signals import build_signals
 from quant_research_platform.universe import select_candidate_symbols
-from stock_signal_system.data.csv_sources import load_news
+from stock_signal_system.data.csv_sources import load_intraday_history, load_news
 
 
 @dataclass(frozen=True)
@@ -40,6 +44,7 @@ class HybridRow:
     symbol: str
     name: str
     industry: str
+    signal_source: str
     kronos_return: float
     kronos_score: float
     news_score: float
@@ -60,6 +65,9 @@ def run_tw_hybrid(
     realtime_cache: Path | None = None,
     news_path: Path | None = None,
     rss_sources_path: Path | None = None,
+    stock_snapshot_path: Path | None = None,
+    price_1h_path: Path | None = None,
+    price_5m_path: Path | None = None,
     notify: bool = False,
     webhook_env: str | None = None,
     line_channel_access_token_env: str | None = None,
@@ -74,8 +82,10 @@ def run_tw_hybrid(
         config.ohlcv_path,
     )
     config = replace(config, symbols=selected_symbols)
-    load_stock_profiles(config.universe_path)
+    load_stock_profiles(config.universe_path, stock_snapshot_path)
     bars_by_symbol = _load_bars(config)
+    structure_history = load_intraday_history(price_1h_path) if price_1h_path and price_1h_path.exists() else {}
+    trigger_history = load_intraday_history(price_5m_path) if price_5m_path and price_5m_path.exists() else {}
     kronos_signals = build_signals(
         bars_by_symbol,
         lookback=config.lookback,
@@ -84,7 +94,11 @@ def run_tw_hybrid(
         kronos_tokenizer=config.kronos_tokenizer,
         kronos_model=config.kronos_model,
     )
-    technicals = build_technical_signals(bars_by_symbol)
+    technicals = build_technical_signals(
+        bars_by_symbol,
+        structure_history if structure_history else None,
+        trigger_history if trigger_history else None,
+    )
     industry_signals = load_or_fetch_industry_signals(news_path, rss_sources_path)
     news_items = load_news(news_path) if news_path and news_path.exists() else []
     realtime_states = load_latest_realtime_states(realtime_cache)
@@ -112,6 +126,7 @@ def run_tw_hybrid(
                 symbol=symbol,
                 name=stock_name(symbol),
                 industry=industry,
+                signal_source=signal.source,
                 kronos_return=signal.expected_return,
                 kronos_score=kronos_score,
                 news_score=news_score,
@@ -127,6 +142,17 @@ def run_tw_hybrid(
             )
         )
     rows = sorted(rows, key=lambda item: item.hybrid_score, reverse=True)
+    qlib_metrics = run_inline_signal_diagnostics(kronos_signals, bars_by_symbol, config.top_n)
+    qlib_engine = run_qlib_engine_portfolio_backtest(
+        kronos_signals,
+        bars_by_symbol,
+        config.output_dir / f"qlib_provider_{report_date.isoformat()}",
+        config.output_dir / f"qlib_engine_{report_date.isoformat()}.csv",
+        config.benchmark_symbol,
+        config.top_n,
+        config.initial_cash,
+        config.transaction_cost_bps,
+    )
     agent_workflow = run_five_agent_workflow(rows)
     portfolio_decisions = portfolio_decision_map(agent_workflow)
     report_rows = _portfolio_rows(rows, portfolio_decisions, "include")
@@ -155,6 +181,9 @@ def run_tw_hybrid(
         news_items,
         agent_workflow,
         bars_by_symbol,
+        qlib_metrics,
+        qlib_engine,
+        config,
     )
     build_qlib_signal_backtest_config(csv_path, "custom_tw", config.benchmark_symbol or "2330.TW", qlib_path, config.top_n, 1)
 
@@ -255,6 +284,9 @@ def _save_report(
     news_items: list,
     agent_workflow,
     bars_by_symbol: dict[str, list[Bar]],
+    qlib_metrics,
+    qlib_engine,
+    config: QuantPlatformConfig,
 ) -> None:
     portfolio_decisions = portfolio_decision_map(agent_workflow)
     focus_rows = _portfolio_rows(rows, portfolio_decisions, "include")
@@ -390,6 +422,20 @@ def _save_report(
     lines.extend(
         [
             "",
+            "## Model Execution Evidence",
+            "",
+            f"- Kronos repo path: `{config.kronos_repo_path}`",
+            f"- Kronos native signals: {sum(1 for row in rows if row.signal_source == 'kronos')}/{len(rows)}",
+            f"- OpenBB provider: `{config.openbb_provider or 'default'}`",
+            f"- Qlib inline observations: {int(getattr(qlib_metrics, 'observations', 0) or 0)}",
+            f"- Qlib inline IC / RankIC / TopK: {getattr(qlib_metrics, 'ic', None)} / {getattr(qlib_metrics, 'rank_ic', None)} / {getattr(qlib_metrics, 'topk_return', None)}",
+            f"- Qlib engine executed: {bool(getattr(qlib_engine, 'executed', False))}",
+            f"- Qlib engine report: `{getattr(qlib_engine, 'report_path', None) or 'n/a'}`",
+        ]
+    )
+    lines.extend(
+        [
+            "",
             "```technical-chart-data",
             json.dumps(_technical_chart_payload(rows, bars_by_symbol, portfolio_decisions), ensure_ascii=False, separators=(",", ":")),
             "```",
@@ -516,6 +562,7 @@ def _technical_chart_stock(row: HybridRow, bars: list[Bar], decision) -> dict:
         "symbol": row.symbol,
         "name": row.name,
         "industry": row.industry,
+        "signalSource": row.signal_source,
         "hybridScore": round(row.hybrid_score, 2),
         "technicalScore": round(row.technical_score, 2),
         "decision": portfolio_decision_label(decision),

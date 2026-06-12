@@ -94,6 +94,7 @@ class HybridTest(unittest.TestCase):
                 config,
                 date(2026, 4, 30),
                 news_path=None,
+                stock_snapshot_path=universe_path,
             )
 
             self.assertTrue(report_path.exists())
@@ -112,6 +113,9 @@ class HybridTest(unittest.TestCase):
             self.assertIn("收盤價 20 日均線上升", report)
             self.assertIn("舊版參數備查", report)
             self.assertIn("TW_HYBRID_SELECTION_STRATEGY.md", report)
+            self.assertIn("Model Execution Evidence", report)
+            self.assertIn("Kronos native signals:", report)
+            self.assertIn("Qlib engine executed:", report)
 
 
 if __name__ == "__main__":
