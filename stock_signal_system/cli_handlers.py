@@ -4,6 +4,10 @@ import shutil
 import time
 from pathlib import Path
 
+from quant_research_platform.config import QuantPlatformConfig
+from quant_research_platform.data import fetch_openbb_ohlcv, save_ohlcv_csv
+from quant_research_platform.twse_realtime import poll_realtime_quotes
+from quant_research_platform.universe import select_candidate_symbols
 from stock_signal_system.config import AppConfig
 from stock_signal_system.data.rss_sources import fetch_rss_news, save_news_csv
 from stock_signal_system.data.tpex import (
@@ -105,6 +109,52 @@ def handle_refresh_data(args) -> None:
         raise SystemExit("ERROR no TWSE/TPEx data could be refreshed and no fallback examples are available.")
 
 
+def handle_refresh_quant_ohlcv(args) -> None:
+    config = QuantPlatformConfig.from_file(args.config)
+    if not config.ohlcv_path:
+        raise SystemExit("ERROR quant config missing ohlcv_path.")
+    symbols = select_candidate_symbols(
+        config.universe_path,
+        config.symbols,
+        config.universe_candidate_limit,
+        ohlcv_path=config.ohlcv_path,
+    )
+    if not symbols:
+        raise SystemExit("ERROR no quant candidate symbols available for OHLCV refresh.")
+    with _step_timer("quant_candidate_ohlcv_refresh"):
+        bars_by_symbol = fetch_openbb_ohlcv(symbols, config.openbb_provider, args.period)
+        output = save_ohlcv_csv(config.ohlcv_path, bars_by_symbol)
+        rows = sum(len(rows) for rows in bars_by_symbol.values())
+        print(f"quant_ohlcv_output={output}", flush=True)
+        print(f"quant_candidate_symbols={len(symbols)}", flush=True)
+        print(f"quant_ohlcv_rows={rows}", flush=True)
+
+
+def handle_refresh_quant_realtime(args) -> None:
+    config = QuantPlatformConfig.from_file(args.config)
+    symbols = select_candidate_symbols(
+        config.universe_path,
+        config.symbols,
+        config.universe_candidate_limit,
+        ohlcv_path=config.ohlcv_path,
+    )
+    if not symbols:
+        raise SystemExit("ERROR no quant candidate symbols available for realtime refresh.")
+    channels = [_symbol_to_realtime_channel(symbol) for symbol in symbols]
+    with _step_timer("quant_candidate_realtime_refresh"):
+        poll_realtime_quotes(
+            channels,
+            cache_path=Path(args.cache),
+            interval_seconds=0.0,
+            batch_size=args.batch_size,
+            iterations=1,
+            random_sleep_min=0.0,
+            random_sleep_max=0.0,
+        )
+        print(f"quant_realtime_cache={Path(args.cache)}", flush=True)
+        print(f"quant_realtime_symbols={len(symbols)}", flush=True)
+
+
 def handle_fetch_news(args) -> None:
     news = fetch_rss_news(Path(args.sources), Path(args.cache_dir))
     output = save_news_csv(news, Path(args.output))
@@ -168,6 +218,17 @@ def handle_publish_pages(args) -> None:
     print(f"pushed={result.pushed}")
     if result.url:
         print(f"url={result.url}")
+
+
+def _symbol_to_realtime_channel(symbol: str) -> str:
+    text = symbol.strip().upper()
+    if ":" in text:
+        return text.lower()
+    if text.endswith(".TWO"):
+        return f"otc:{text[:-4]}"
+    if text.endswith(".TW"):
+        return f"tse:{text[:-3]}"
+    return f"tse:{text}"
 
 
 class _step_timer:

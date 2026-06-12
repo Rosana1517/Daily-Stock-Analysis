@@ -9,6 +9,8 @@ from stock_signal_system.cli_handlers import (
     handle_fetch_yfinance,
     handle_publish_pages,
     handle_refresh_data,
+    handle_refresh_quant_ohlcv,
+    handle_refresh_quant_realtime,
     handle_run,
     handle_validate_config,
     handle_verify_tpex,
@@ -31,6 +33,21 @@ def main() -> None:
     refresh_parser.add_argument("--cache-dir", default=".cache", help="Cache directory.")
     refresh_parser.add_argument("--skip-twse", action="store_true", help="Skip TWSE OpenAPI refresh.")
     refresh_parser.add_argument("--skip-tpex", action="store_true", help="Skip TPEx OpenAPI refresh.")
+
+    quant_ohlcv_parser = subparsers.add_parser(
+        "refresh-quant-ohlcv",
+        help="Select quant candidates and refresh TW/OTC OHLCV history.",
+    )
+    quant_ohlcv_parser.add_argument("--config", required=True, help="Path to quant platform JSON config.")
+    quant_ohlcv_parser.add_argument("--period", default="1y", help="OHLCV history period.")
+
+    quant_realtime_parser = subparsers.add_parser(
+        "refresh-quant-realtime",
+        help="Refresh realtime quotes for quant candidate symbols.",
+    )
+    quant_realtime_parser.add_argument("--config", required=True, help="Path to quant platform JSON config.")
+    quant_realtime_parser.add_argument("--cache", required=True, help="Realtime cache CSV path.")
+    quant_realtime_parser.add_argument("--batch-size", type=int, default=75, help="Symbols per realtime request batch.")
 
     rss_parser = subparsers.add_parser("fetch-news", help="Fetch RSS news into a CSV file.")
     rss_parser.add_argument("--sources", required=True, help="Path to RSS sources JSON.")
@@ -80,6 +97,10 @@ def main() -> None:
         handle_validate_config(args)
     elif args.command == "refresh-data":
         handle_refresh_data(args)
+    elif args.command == "refresh-quant-ohlcv":
+        handle_refresh_quant_ohlcv(args)
+    elif args.command == "refresh-quant-realtime":
+        handle_refresh_quant_realtime(args)
     elif args.command == "fetch-news":
         handle_fetch_news(args)
     elif args.command == "fetch-yfinance":
