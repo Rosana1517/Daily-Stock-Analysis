@@ -404,6 +404,7 @@ INTERACTIVE_CHART_JS = r"""
   const ctx = canvas.getContext("2d");
   let chartWidth = 0;
   let chartHeight = 0;
+  let labelBoxes = [];
   const controls = ["maShort", "maMid", "maLong", "rsiLow", "rsiHigh", "bollingerSigma"];
   const initial = {maShort: 5, maMid: 20, maLong: 60, rsiLow: 20, rsiHigh: 80, bollingerSigma: 2};
 
@@ -476,6 +477,7 @@ INTERACTIVE_CHART_JS = r"""
     const rect = canvas.getBoundingClientRect();
     chartWidth = rect.width;
     chartHeight = rect.height;
+    labelBoxes = [];
     canvas.width = Math.max(720, Math.floor(rect.width * ratio));
     canvas.height = Math.floor(rect.height * ratio);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -742,15 +744,37 @@ INTERACTIVE_CHART_JS = r"""
 
   function label(x, y, text, color) {
     ctx.font = "11px system-ui, sans-serif";
+    const h = 18;
     const w = ctx.measureText(text).width + 10;
-    const maxX = Math.max(0, chartWidth - w - 4);
-    const maxY = Math.max(12, chartHeight - 6);
-    const safeX = Math.min(Math.max(4, x - w / 2), maxX);
-    const safeY = Math.min(Math.max(12, y), maxY);
+    const minX = 4;
+    const maxX = Math.max(minX, chartWidth - w - 4);
+    const minY = 40;
+    const maxY = Math.max(minY, Math.min(chartHeight * 0.55, chartHeight - h - 6));
+    let safeX = x - w / 2;
+    if (x > chartWidth - w - 18) safeX = x - w - 10;
+    if (x < w + 18) safeX = x + 10;
+    safeX = Math.min(Math.max(minX, safeX), maxX);
+    const anchorY = Math.min(Math.max(minY, y), maxY);
+    const offsets = [0, -22, 22, -44, 44, -66, 66];
+    let safeY = anchorY;
+    for (const offset of offsets) {
+      const candidateY = Math.min(Math.max(minY, anchorY + offset), maxY);
+      const box = {x: safeX, y: candidateY - 12, w, h};
+      if (!labelBoxes.some((item) => boxesOverlap(item, box))) {
+        safeY = candidateY;
+        labelBoxes.push(box);
+        break;
+      }
+      safeY = candidateY;
+    }
     ctx.fillStyle = color;
-    ctx.fillRect(safeX, safeY - 12, w, 18);
+    ctx.fillRect(safeX, safeY - 12, w, h);
     ctx.fillStyle = "#ffffff";
     ctx.fillText(text, safeX + 5, safeY + 1);
+  }
+
+  function boxesOverlap(a, b) {
+    return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
   }
 
   function line(values, x, y, color, width) {
