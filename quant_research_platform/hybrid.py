@@ -296,12 +296,6 @@ def _save_report(
     lines = [
         f"# Hybrid 量化每日選股報告 - {report_date.isoformat()}",
         "",
-        "## 工作流程覆蓋",
-        "",
-        "- Kronos：預測各股票的預期報酬與信心度；若本機模型不可用，報告會標記為模型回退風險。",
-        "- Qlib：輸出訊號 CSV 與 TopK-Dropout 交接設定，後續可做更完整的 IC、Rank IC 與回撤檢查。",
-        "- 五代理：Portfolio_Manager_Agent 的決策會控制每日研究名單；Devil_Advocate_Agent 否決標的不會進入重點 CSV。",
-        "",
         "## 每日研究名單",
         "",
         "| 排名 | 股票 | 名稱 | 產業 | Hybrid | Kronos | 新聞 | 技術 | 即時盤 | 組合決策 |",
