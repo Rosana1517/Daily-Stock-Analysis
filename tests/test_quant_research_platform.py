@@ -2,14 +2,28 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import builtins
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 from quant_research_platform.config import QuantPlatformConfig
+from quant_research_platform.data import fetch_openbb_ohlcv
 from quant_research_platform.workflow import run_quant_workflow
+
+_REAL_IMPORT = builtins.__import__
 
 
 class QuantResearchPlatformTest(unittest.TestCase):
+    def test_fetch_openbb_ohlcv_falls_back_to_yfinance_when_openbb_missing(self):
+        expected = {"2330.TW": []}
+        with patch("builtins.__import__", side_effect=_import_without_openbb):
+            with patch("quant_research_platform.data.fetch_yahoo_ohlcv", return_value=expected) as fallback:
+                result = fetch_openbb_ohlcv(["2330.TW"], provider="yfinance", period="1y")
+
+        fallback.assert_called_once_with(["2330.TW"], "1y")
+        self.assertEqual(result, expected)
+
     def test_quant_workflow_generates_report(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             config = QuantPlatformConfig(
@@ -44,6 +58,12 @@ class QuantResearchPlatformTest(unittest.TestCase):
             self.assertIn("Quant Research Platform Report", report)
             self.assertIn("Signal Ranking", report)
             self.assertIn("Portfolio Simulation", report)
+
+
+def _import_without_openbb(name, globals=None, locals=None, fromlist=(), level=0):
+    if name == "openbb":
+        raise ImportError("No module named 'openbb'")
+    return _REAL_IMPORT(name, globals, locals, fromlist, level)
 
 
 if __name__ == "__main__":

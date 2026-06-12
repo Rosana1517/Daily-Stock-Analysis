@@ -53,8 +53,8 @@ def fetch_openbb_ohlcv(symbols: Iterable[str], provider: str | None = None, peri
     os.environ["USERPROFILE"] = str(openbb_home)
     try:
         from openbb import obb
-    except ImportError as exc:
-        raise RuntimeError("OpenBB is not installed. Install it with `pip install openbb`.") from exc
+    except ImportError:
+        return fetch_yahoo_ohlcv(symbols, period)
 
     grouped: dict[str, list[Bar]] = {}
     for symbol in symbols:
