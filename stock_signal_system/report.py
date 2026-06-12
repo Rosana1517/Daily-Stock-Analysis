@@ -298,10 +298,10 @@ def hybrid_interactive_markdown_to_html(markdown: str, title: str) -> str:
     .strategy-panel summary::-webkit-details-marker {{ display: none; }}
     .strategy-panel summary::after {{ content: "展開"; float: right; color: #64748b; font-weight: 600; }}
     .strategy-panel[open] summary::after {{ content: "收合"; }}
-    .strategy-list {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; padding: 12px; }}
-    .strategy-item {{ border: 1px solid #dde5ee; border-radius: 6px; background: #ffffff; padding: 10px; font-size: 12px; min-height: 0; max-height: 78px; overflow: hidden; }}
-    .strategy-item b {{ display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; color: #0f172a; margin-bottom: 3px; }}
-    .strategy-item span {{ display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: #475569; line-height: 1.45; }}
+    .strategy-list {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; padding: 12px; }}
+    .strategy-item {{ border: 1px solid #dde5ee; border-radius: 8px; background: #ffffff; padding: 10px 12px; font-size: 12px; min-height: 0; max-height: 92px; overflow: hidden; }}
+    .strategy-item b {{ display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: #0f172a; margin-bottom: 4px; line-height: 1.4; }}
+    .strategy-item span {{ display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: #475569; line-height: 1.5; }}
     .chart-wrap {{ padding: 16px; min-width: 0; }}
     #technicalChart {{ width: 100%; height: 620px; display: block; border: 1px solid #d8e0ea; border-radius: 6px; background: #ffffff; }}
     .chart-note {{ margin: 10px 0 0; color: #64748b; font-size: 13px; }}
@@ -442,11 +442,11 @@ INTERACTIVE_CHART_JS = r"""
     list.innerHTML = "";
     (stock.strategySummary || [])
       .filter((item) => strategyVisible(item.strategy))
-      .slice(0, 3)
+      .slice(0, 2)
       .forEach((item) => {
         const node = document.createElement("div");
         node.className = "strategy-item";
-        node.innerHTML = `<b>${escapeHtml(item.strategy)} | ${escapeHtml(item.status)}</b><span>${escapeHtml(item.agent)}：${escapeHtml(item.use)}</span>`;
+        node.innerHTML = `<b>${escapeHtml(item.strategy)} | ${escapeHtml(item.status)}</b><span>${escapeHtml(item.use)}</span>`;
         list.appendChild(node);
       });
   }
@@ -455,15 +455,9 @@ INTERACTIVE_CHART_JS = r"""
     const map = new Map([
       ["近 10 日漲停排除 3 連漲", "limitUp"],
       ["月均線 MACD 金叉向上", "monthlyMacd"],
-      ["日均線股價在 20 均線附近且放量陽線", "ma20Volume"],
-      ["黃金交叉 / 死亡交叉", "ma"],
-      ["MA20 風險線", "ma"],
-      ["布林通道", "bollinger"],
-      ["RSI", "rsi"],
-      ["量價確認", "volume"],
-      ["三線突破", "markers"],
-      ["支撐壓力", "support"],
-      ["當日 K 線", "markers"],
+      ["均線、趨勢與支撐壓力", "ma"],
+      ["動能與波動", "rsi"],
+      ["型態、量價與突破確認", "markers"],
     ]);
     const layer = map.get(strategy);
     return layer ? state.layers[layer] : true;
@@ -749,7 +743,7 @@ INTERACTIVE_CHART_JS = r"""
     const minX = 4;
     const maxX = Math.max(minX, chartWidth - w - 4);
     const minY = 40;
-    const maxY = Math.max(minY, Math.min(chartHeight * 0.55, chartHeight - h - 6));
+    const maxY = Math.max(minY, Math.min(chartHeight * 0.42, chartHeight - h - 6));
     let safeX = x - w / 2;
     if (x > chartWidth - w - 18) safeX = x - w - 10;
     if (x < w + 18) safeX = x + 10;
@@ -913,7 +907,7 @@ INTERACTIVE_CHART_JS = r"""
     }
     signals
       .sort((a, b) => b.priority - a.priority || b.index - a.index)
-      .slice(0, 2)
+      .slice(0, 1)
       .sort((a, b) => a.index - b.index)
       .forEach((item) => label(x(item.index), y(item.price) + item.offset, item.text, item.color));
   }
@@ -938,7 +932,7 @@ INTERACTIVE_CHART_JS = r"""
     }
     signals
       .sort((a, b) => b.priority - a.priority || b.index - a.index)
-      .slice(0, 2)
+      .slice(0, 1)
       .sort((a, b) => a.index - b.index)
       .forEach((item) => label(x(item.index), y(item.price) + item.offset, item.text, item.color));
   }

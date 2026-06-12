@@ -8,7 +8,6 @@ from datetime import date
 from pathlib import Path
 
 from quant_research_platform.agent_workflow import (
-    agent_workflow_markdown,
     portfolio_decision_bucket,
     portfolio_decision_label,
     portfolio_decision_map,
@@ -320,7 +319,6 @@ def _save_report(
             f"{portfolio_decision_label(decision)} | {row.risk_note} |"
         )
 
-    lines.extend(["", *agent_workflow_markdown(agent_workflow)])
     lines.extend(
         [
             "",
@@ -329,10 +327,6 @@ def _save_report(
             f"- K值 < 40",
             f"- 近 5 日融資增加前 100 大",
             f"- 收盤價 20 日均線上升",
-            "",
-            "## 舊版參數備查",
-            "",
-            "- 原有選股條件已另存於 `docs/TW_HYBRID_SELECTION_STRATEGY.md`，方便後續對照與回溯。",
         ]
     )
     lines.extend(
@@ -342,16 +336,11 @@ def _save_report(
             "",
             "| 策略 | 圖上位置 | 採用角色 | 用途邊界 |",
             "|---|---|---|---|",
-            "| 黃金交叉 / 死亡交叉 | 主 K 線區，MA5/MA20/MA60 可調 | Technical、Quant、Devil | 研究條件與假突破檢查，不直接產生推薦 |",
-            "| 週期均線與支撐壓力 | 主 K 線區，預設近 60 根高低點 | Technical、Portfolio | 決定觀察條件是否清楚；Portfolio 只彙整 |",
-            "| MACD | 副圖動能區，12/26/9 可調 | Technical、Quant | 量化交叉與柱狀體翻轉，需樣本驗證 |",
-            "| RSI | 副圖相對強弱區，14 日與 20/80 可調 | Technical、Devil | 標示過熱或低檔鈍化風險，避免單一指標決策 |",
-            "| 布林通道 | 主 K 線區，20 日/2 倍標準差可調 | Technical、Devil | 檢查突破、回落與波動擴張 |",
-            "| K 線型態與量價 | 主 K 線標記與成交量副圖 | Technical、Devil | 只在趨勢與量能確認後作為證據 |",
-            "| 三線突破 | 主 K 線訊號標記 | Quant、Devil | 作為可重算突破因子，低量或未站穩需降權 |",
+            "| 均線、趨勢與支撐壓力 | 主 K 線區，MA5/MA20/MA60 與近 60 根高低點 | Technical、Quant、Portfolio | 先確認方向、站位與關鍵價位，再決定是否列入研究重點 |",
+            "| 動能與波動 | MACD、RSI、布林通道 | Technical、Quant、Devil | 觀察動能延續、過熱回落與波動擴張，不單靠單一指標下結論 |",
+            "| 型態、量價與突破確認 | K 線標記、成交量、副圖突破訊號 | Technical、Quant、Devil | 只把有量能配合的型態與突破列為證據，低量或未站穩一律降權 |",
             "| 近 10 日漲停排除 3 連漲 | 策略摘要與標記區 | Quant、Devil | 找短線強勢但排除過熱連續鎖漲停 |",
             "| 月均線 MACD 金叉向上 | 策略摘要 | Technical、Quant | 以月線級別確認中期動能，樣本不足時只列觀察 |",
-            "| 日均線股價在 20 均線附近且放量陽線 | 日 K 線與成交量副圖 | Technical、Devil | 僅檢查日線收盤價是否靠近日 MA20，且當日為放量陽線；低量或非陽線不成立 |",
         ]
     )
     lines.extend(["", "## RSS 產業訊號", "", "| 產業 | RSS 分數 | 證據數 | 主要催化 |", "|---|---:|---:|---|"])
@@ -412,21 +401,6 @@ def _save_report(
         lines.append(f"- [{industries}] {item.title}（{item.source}, {item.date.isoformat()}）")
     if not news_items:
         lines.append("- 本次 RSS 不可用；報告使用快取市場資料與中性 RSS 分數。")
-    lines.extend(["", "## 產出檔案", "", f"- Hybrid 研究名單 CSV：`{csv_path}`", f"- Qlib 交接設定：`{qlib_path}`"])
-    lines.extend(
-        [
-            "",
-            "## Model Execution Evidence",
-            "",
-            f"- Kronos repo path: `{config.kronos_repo_path}`",
-            f"- Kronos native signals: {sum(1 for row in rows if row.signal_source == 'kronos')}/{len(rows)}",
-            f"- OpenBB provider: `{config.openbb_provider or 'default'}`",
-            f"- Qlib inline observations: {int(getattr(qlib_metrics, 'observations', 0) or 0)}",
-            f"- Qlib inline IC / RankIC / TopK: {getattr(qlib_metrics, 'ic', None)} / {getattr(qlib_metrics, 'rank_ic', None)} / {getattr(qlib_metrics, 'topk_return', None)}",
-            f"- Qlib engine executed: {bool(getattr(qlib_engine, 'executed', False))}",
-            f"- Qlib engine report: `{getattr(qlib_engine, 'report_path', None) or 'n/a'}`",
-        ]
-    )
     lines.extend(
         [
             "",
@@ -590,45 +564,29 @@ def _support_resistance(bars: list[Bar]) -> tuple[float | None, float | None]:
 def _technical_strategy_summary(row: HybridRow, bars: list[Bar]) -> list[dict[str, str]]:
     if len(bars) < 2:
         return [{"strategy": "資料完整性", "status": "資料不足", "agent": "Devil_Advocate_Agent", "use": "排除每日重點"}]
-    latest = bars[-1]
     volume_ratio = _volume_ratio(bars)
     support, resistance = _support_resistance(bars)
+    closes = [bar.close for bar in bars]
+    support_status = f"支撐 {support:.2f} / 壓力 {resistance:.2f}" if support is not None and resistance is not None else "資料不足"
+    volume_status = "量能放大" if volume_ratio is not None and volume_ratio >= 1.5 else "量能未明顯放大"
     return [
         {
-            "strategy": "黃金交叉 / 死亡交叉",
-            "status": _cross_status([bar.close for bar in bars], 5, 20),
+            "strategy": "均線、趨勢與支撐壓力",
+            "status": "；".join((_cross_status(closes, 5, 20), _ma_position_status(closes, 20), support_status)),
             "agent": "Technical_Analyst_Agent",
-            "use": "主圖標記均線交叉，交給 Quant 驗證觸發後表現。",
+            "use": "先確認方向、站位與關鍵價位，再決定是否列入研究重點。",
         },
         {
-            "strategy": "MA20 風險線",
-            "status": _ma_position_status([bar.close for bar in bars], 20),
-            "agent": "Technical_Analyst_Agent",
-            "use": "對應操作重點文件的 20 週線紀律；日線先作近似觀察。",
-        },
-        {
-            "strategy": "RSI",
-            "status": _rsi_status([bar.close for bar in bars], 14, 20, 80),
+            "strategy": "動能與波動",
+            "status": "；".join((_rsi_status(closes, 14, 20, 80), _bollinger_status(closes, 20, 2))),
             "agent": "Devil_Advocate_Agent",
-            "use": "檢查過熱、低檔鈍化與單一指標風險。",
+            "use": "用來辨識過熱、鈍化與波動擴張，避免追高或過早抄底。",
         },
         {
-            "strategy": "布林通道",
-            "status": _bollinger_status([bar.close for bar in bars], 20, 2),
-            "agent": "Technical_Analyst_Agent",
-            "use": "檢查波動擴張、突破後回落與風險區間。",
-        },
-        {
-            "strategy": "量價確認",
-            "status": "量能放大" if volume_ratio is not None and volume_ratio >= 1.5 else "量能未明顯放大",
-            "agent": "Devil_Advocate_Agent",
-            "use": "低量突破不得列為強訊號。",
-        },
-        {
-            "strategy": "三線突破",
-            "status": _three_line_status(bars),
+            "strategy": "型態、量價與突破確認",
+            "status": "；".join((volume_status, _three_line_status(bars), _ma20_volume_bull_status(bars))),
             "agent": "Quant_Research_Agent",
-            "use": "作為可重算突破因子與 false positive 檢查。",
+            "use": "只有在量價配合時才提高可信度，否則一律視為待確認訊號。",
         },
         {
             "strategy": "近 10 日漲停排除 3 連漲",
@@ -640,25 +598,7 @@ def _technical_strategy_summary(row: HybridRow, bars: list[Bar]) -> list[dict[st
             "strategy": "月均線 MACD 金叉向上",
             "status": _monthly_ma_macd_status(bars),
             "agent": "Technical_Analyst_Agent",
-            "use": "以月線級別確認中期動能；資料不足時不得升級為主訊號。",
-        },
-        {
-            "strategy": "日均線股價在 20 均線附近且放量陽線",
-            "status": _ma20_volume_bull_status(bars),
-            "agent": "Technical_Analyst_Agent",
-            "use": "檢查日線收盤價靠近日 MA20 時，當日是否為放量陽線。",
-        },
-        {
-            "strategy": "支撐壓力",
-            "status": f"支撐 {support:.2f} / 壓力 {resistance:.2f}" if support is not None and resistance is not None else "資料不足",
-            "agent": "Portfolio_Manager_Agent",
-            "use": f"只彙整為{row.symbol}的研究觀察，不自行延伸判斷。",
-        },
-        {
-            "strategy": "當日 K 線",
-            "status": _candle_status(latest),
-            "agent": "Technical_Analyst_Agent",
-            "use": "K 線型態必須搭配趨勢與量能，不可孤立解讀。",
+            "use": f"用較長週期確認 {row.symbol} 的中期動能是否仍偏多。",
         },
     ]
 

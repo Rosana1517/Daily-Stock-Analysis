@@ -91,8 +91,10 @@ def _candidate_score(row: dict, news_terms: set[str]) -> float:
     revenue_growth = _float(row.get("revenue_growth_yoy"))
     pe_ratio = _float(row.get("pe_ratio"))
     industry = str(row.get("industry", "")).lower()
-    score = math.log10(max(volume, 1.0)) * 8
-    score += _price_bucket_score(price)
+    # Legacy heuristics stay only as tie-break support after the revised filters:
+    # keep liquidity and basic quality, but avoid letting price buckets dominate.
+    score = math.log10(max(volume, 1.0)) * 10
+    score += _price_bucket_score(price) * 0.25
     score += max(min(revenue_growth, 80), -40) * 0.08
     score += 4 if 0 < pe_ratio <= 35 else 0
     score += 10 if any(term and term in industry for term in news_terms) else 0

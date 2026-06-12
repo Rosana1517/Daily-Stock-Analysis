@@ -111,11 +111,15 @@ class HybridTest(unittest.TestCase):
             self.assertIn("K值 < 40", report)
             self.assertIn("近 5 日融資增加前 100 大", report)
             self.assertIn("收盤價 20 日均線上升", report)
-            self.assertIn("舊版參數備查", report)
-            self.assertIn("TW_HYBRID_SELECTION_STRATEGY.md", report)
-            self.assertIn("Model Execution Evidence", report)
-            self.assertIn("Kronos native signals:", report)
-            self.assertIn("Qlib engine executed:", report)
+            self.assertIn("互動技術分析策略", report)
+            self.assertIn("均線、趨勢與支撐壓力", report)
+            self.assertIn("動能與波動", report)
+            self.assertIn("型態、量價與突破確認", report)
+            self.assertNotIn("舊版參數備查", report)
+            self.assertNotIn("TW_HYBRID_SELECTION_STRATEGY.md", report)
+            self.assertNotIn("五代理決策看板", report)
+            self.assertNotIn("產出檔案", report)
+            self.assertNotIn("Model Execution Evidence", report)
 
 
 if __name__ == "__main__":

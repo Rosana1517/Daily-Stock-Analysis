@@ -35,7 +35,7 @@ class ReportHtmlTest(unittest.TestCase):
 | 2330.TW | 台積電 |
 
 ```technical-chart-data
-{"defaults":{"maShort":5,"maMid":20,"maLong":60,"rsiLow":20,"rsiHigh":80,"bollingerSigma":2},"stocks":[{"symbol":"2330.TW","name":"台積電","industry":"半導體","decision":"研究觀察","bucket":"include","technicalScore":66,"support":100,"resistance":120,"strategySummary":[{"strategy":"黃金交叉 / 死亡交叉","status":"未出現新交叉","agent":"Technical_Analyst_Agent","use":"研究條件"}],"bars":[{"date":"2026-05-11","open":100,"high":105,"low":99,"close":104,"volume":1000},{"date":"2026-05-12","open":104,"high":108,"low":103,"close":107,"volume":1500}]}]}
+{"defaults":{"maShort":5,"maMid":20,"maLong":60,"rsiLow":20,"rsiHigh":80,"bollingerSigma":2},"stocks":[{"symbol":"2330.TW","name":"台積電","industry":"半導體","decision":"研究觀察","bucket":"include","technicalScore":66,"support":100,"resistance":120,"strategySummary":[{"strategy":"均線、趨勢與支撐壓力","status":"未出現新交叉；收盤站上 MA20；支撐 100 / 壓力 120","agent":"Technical_Analyst_Agent","use":"研究條件"}],"bars":[{"date":"2026-05-11","open":100,"high":105,"low":99,"close":104,"volume":1000},{"date":"2026-05-12","open":104,"high":108,"low":103,"close":107,"volume":1500}]}]}
 ```
 """
 
@@ -43,7 +43,7 @@ class ReportHtmlTest(unittest.TestCase):
 
         self.assertIn("互動技術分析", html)
         self.assertIn("technicalChart", html)
-        self.assertIn("黃金交叉", html)
+        self.assertIn("均線、趨勢與支撐壓力", html)
         self.assertIn("選股條件摘要", html)
         self.assertIn("K值 &lt; 40", html)
         self.assertIn("近 5 日融資增加前 100 大", html)
@@ -59,7 +59,7 @@ class ReportHtmlTest(unittest.TestCase):
         self.assertIn("strategyVisible", html)
         self.assertIn("flex-wrap: wrap", html)
         self.assertIn("strategy-panel", html)
-        self.assertIn("repeat(auto-fit, minmax(180px, 1fr))", html)
+        self.assertIn("repeat(auto-fit, minmax(240px, 1fr))", html)
         self.assertIn('summary>策略條件摘要</summary>', html)
         self.assertNotIn("technical-chart-data", html)
 
