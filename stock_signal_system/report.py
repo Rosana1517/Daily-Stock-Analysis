@@ -286,6 +286,16 @@ def hybrid_interactive_markdown_to_html(markdown: str, title: str) -> str:
     .field label, .toggles legend {{ font-size: 12px; font-weight: 700; color: #334155; }}
     .field select, .field input {{ width: 100%; min-height: 36px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 8px; background: white; color: #111827; }}
     .control-note {{ margin: 6px 0 0; color: #64748b; font-size: 12px; line-height: 1.45; }}
+    .stock-filter-row {{ display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }}
+    .stock-filter-toggle {{ display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #1f2937; }}
+    .stock-filter-toggle input {{ width: 16px; height: 16px; }}
+    .screening-columns {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }}
+    .screening-card {{ border: 1px solid #dde5ee; border-radius: 10px; background: #ffffff; padding: 10px 12px; }}
+    .screening-card h3 {{ margin: 0 0 8px; font-size: 13px; color: #0f172a; }}
+    .screening-card ul {{ margin: 0; padding-left: 18px; }}
+    .screening-card li {{ margin: 4px 0; font-size: 12px; color: #334155; }}
+    .screening-card li.active {{ color: #0f766e; font-weight: 700; }}
+    .screening-empty {{ margin: 0; font-size: 12px; color: #64748b; }}
     .number-row {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }}
     .control-cell {{ display: grid; gap: 4px; min-width: 0; }}
     .control-cell span {{ color: #334155; font-size: 12px; font-weight: 700; }}
@@ -305,7 +315,7 @@ def hybrid_interactive_markdown_to_html(markdown: str, title: str) -> str:
     .chart-wrap {{ padding: 16px; min-width: 0; }}
     #technicalChart {{ width: 100%; height: 620px; display: block; border: 1px solid #d8e0ea; border-radius: 6px; background: #ffffff; }}
     .chart-note {{ margin: 10px 0 0; color: #64748b; font-size: 13px; }}
-    @media (max-width: 860px) {{ .tech-grid {{ grid-template-columns: 1fr; }} .tech-controls {{ border-right: 0; border-bottom: 1px solid #e4e9f0; }} #technicalChart {{ height: 540px; }} }}
+    @media (max-width: 860px) {{ .tech-grid {{ grid-template-columns: 1fr; }} .tech-controls {{ border-right: 0; border-bottom: 1px solid #e4e9f0; }} .screening-columns {{ grid-template-columns: 1fr; }} #technicalChart {{ height: 540px; }} }}
   </style>
 </head>
 <body>
@@ -347,6 +357,19 @@ def _interactive_chart_section() -> str:
           <div class="field">
             <label for="stockSelect">股票</label>
             <select id="stockSelect"></select>
+            <div class="stock-filter-row">
+              <label class="stock-filter-toggle"><input id="revisedOnlyToggle" type="checkbox">只看新版策略</label>
+            </div>
+            <div class="screening-columns">
+              <section class="screening-card">
+                <h3>舊策略股票</h3>
+                <div id="legacyStockList"></div>
+              </section>
+              <section class="screening-card">
+                <h3>新版策略股票</h3>
+                <div id="revisedStockList"></div>
+              </section>
+            </div>
           </div>
           <div class="field">
             <label>均線參數</label>
@@ -397,7 +420,7 @@ INTERACTIVE_CHART_JS = r"""
 (function () {
   const data = window.__TECH_DATA__ || {defaults: {}, stocks: []};
   const defaults = data.defaults || {};
-  const state = {stockIndex: 0, layers: {ma: true, bollinger: true, support: true, volume: true, macd: true, rsi: true, markers: false, limitUp: false, monthlyMacd: false, ma20Volume: false}};
+  const state = {stockIndex: 0, revisedOnly: false, layers: {ma: true, bollinger: true, support: true, volume: true, macd: true, rsi: true, markers: false, limitUp: false, monthlyMacd: false, ma20Volume: false}};
   const $ = (id) => document.getElementById(id);
   const canvas = $("technicalChart");
   if (!canvas || !data.stocks || data.stocks.length === 0) return;
@@ -407,6 +430,9 @@ INTERACTIVE_CHART_JS = r"""
   let labelBoxes = [];
   const controls = ["maShort", "maMid", "maLong", "rsiLow", "rsiHigh", "bollingerSigma"];
   const initial = {maShort: 5, maMid: 20, maLong: 60, rsiLow: 20, rsiHigh: 80, bollingerSigma: 2};
+  function visibleStocks() {
+    return state.revisedOnly ? data.stocks.filter((stock) => stock.screeningBucket === "revised") : data.stocks;
+  }
 
   function init() {
     const select = $("stockSelect");
@@ -418,12 +444,55 @@ INTERACTIVE_CHART_JS = r"""
     });
     Object.keys(initial).forEach((key) => { $(key).value = defaults[key] || initial[key]; });
     select.addEventListener("change", () => { state.stockIndex = Number(select.value); render(); });
+    populateStockLists();
+    syncStockSelect();
+    $("revisedOnlyToggle").addEventListener("change", (event) => {
+      state.revisedOnly = event.target.checked;
+      state.stockIndex = 0;
+      syncStockSelect();
+      render();
+    });
     controls.forEach((id) => $(id).addEventListener("input", render));
     document.querySelectorAll("[data-layer]").forEach((item) => {
       item.addEventListener("change", () => { state.layers[item.dataset.layer] = item.checked; render(); });
     });
     window.addEventListener("resize", render);
     render();
+  }
+
+  function syncStockSelect() {
+    const select = $("stockSelect");
+    const stocks = visibleStocks();
+    select.innerHTML = "";
+    stocks.forEach((stock, index) => {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = `${stock.symbol} ${stock.name} | ${stock.decision}`;
+      select.appendChild(option);
+    });
+    if (state.stockIndex >= stocks.length) state.stockIndex = 0;
+    select.value = String(state.stockIndex);
+  }
+
+  function populateStockLists() {
+    renderScreeningList("legacyStockList", data.stocks.filter((stock) => stock.screeningBucket !== "revised"));
+    renderScreeningList("revisedStockList", data.stocks.filter((stock) => stock.screeningBucket === "revised"));
+  }
+
+  function renderScreeningList(id, stocks) {
+    const node = $(id);
+    if (!node) return;
+    if (!stocks.length) {
+      node.innerHTML = '<p class="screening-empty">目前沒有股票。</p>';
+      return;
+    }
+    node.innerHTML = `<ul>${stocks.map((stock) => `<li data-symbol="${escapeHtml(stock.symbol)}">${escapeHtml(stock.symbol)} ${escapeHtml(stock.name)}</li>`).join("")}</ul>`;
+  }
+
+  function highlightActiveStock(symbol) {
+    document.querySelectorAll(".screening-card li").forEach((item) => {
+      item.classList.toggle("active", item.dataset.symbol === symbol);
+    });
   }
 
   function params() {
@@ -464,8 +533,9 @@ INTERACTIVE_CHART_JS = r"""
   }
 
   function render() {
-    const stock = data.stocks[state.stockIndex];
+    const stock = visibleStocks()[state.stockIndex];
     if (!stock || !stock.bars || stock.bars.length === 0) return;
+    highlightActiveStock(stock.symbol);
     renderStrategyList(stock);
     const ratio = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();

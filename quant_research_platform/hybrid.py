@@ -563,6 +563,8 @@ def _technical_chart_stock(row: HybridRow, bars: list[Bar], decision) -> dict:
         "symbol": row.symbol,
         "name": row.name,
         "industry": row.industry,
+        "screeningBucket": row.screening_bucket,
+        "screeningLabel": "新版策略" if row.screening_bucket == "revised" else "舊策略",
         "signalSource": row.signal_source,
         "hybridScore": round(row.hybrid_score, 2),
         "technicalScore": round(row.technical_score, 2),
