@@ -103,6 +103,8 @@ class HybridTest(unittest.TestCase):
             self.assertEqual(notification, "disabled")
 
             report = report_path.read_text(encoding="utf-8")
+            self.assertIn("新版主清單 + 舊版觀察清單", report)
+            self.assertIn("<table>", report)
             self.assertIn("台積電", report)
             self.assertIn("半導體", report)
             self.assertNotIn("| 2330.TW | 2330.TW |", report)

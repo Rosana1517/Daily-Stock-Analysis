@@ -2,10 +2,18 @@ from __future__ import annotations
 
 import csv
 import math
+from dataclasses import dataclass
 from pathlib import Path
 
 from quant_research_platform.data import load_csv_ohlcv
 from stock_signal_system.data.csv_sources import load_news
+
+
+@dataclass(frozen=True)
+class CandidateSelectionPlan:
+    selected_symbols: tuple[str, ...]
+    revised_symbols: tuple[str, ...]
+    legacy_watch_symbols: tuple[str, ...]
 
 
 def select_candidate_symbols(
@@ -15,22 +23,52 @@ def select_candidate_symbols(
     news_path: Path | None = None,
     ohlcv_path: Path | None = None,
 ) -> tuple[str, ...]:
+    plan = build_candidate_selection_plan(universe_path, fallback_symbols, limit, news_path, ohlcv_path)
+    return plan.selected_symbols
+
+
+def build_candidate_selection_plan(
+    universe_path: Path | None,
+    fallback_symbols: tuple[str, ...],
+    limit: int,
+    news_path: Path | None = None,
+    ohlcv_path: Path | None = None,
+) -> CandidateSelectionPlan:
     if not universe_path or not universe_path.exists():
-        return fallback_symbols[:limit] if limit > 0 else fallback_symbols
+        selected = fallback_symbols[:limit] if limit > 0 else fallback_symbols
+        return CandidateSelectionPlan(selected, (), selected)
     rows = _load_universe_rows(universe_path)
     if not rows:
-        return fallback_symbols[:limit] if limit > 0 else fallback_symbols
+        selected = fallback_symbols[:limit] if limit > 0 else fallback_symbols
+        return CandidateSelectionPlan(selected, (), selected)
     news_terms = _news_terms(news_path)
     bars_by_symbol = _load_price_bars(ohlcv_path)
-    ranked = _rank_candidate_rows(rows, news_terms, bars_by_symbol)
-    symbols = [_platform_symbol(row) for row in ranked if _platform_symbol(row)]
-    unique = []
-    for symbol in symbols:
-        if symbol not in unique:
-            unique.append(symbol)
-        if limit > 0 and len(unique) >= limit:
-            break
-    return tuple(unique or fallback_symbols[:limit])
+    revised_rows = _rank_revised_rows(rows, news_terms, bars_by_symbol)
+    legacy_rows = _rank_legacy_rows(rows, news_terms)
+
+    selected_symbols: list[str] = []
+    revised_symbols: list[str] = []
+    legacy_watch_symbols: list[str] = []
+
+    def add_symbols(source_rows: list[dict], target: list[str]) -> None:
+        for row in source_rows:
+            symbol = _platform_symbol(row)
+            if not symbol or symbol in selected_symbols:
+                continue
+            selected_symbols.append(symbol)
+            target.append(symbol)
+            if limit > 0 and len(selected_symbols) >= limit:
+                break
+
+    add_symbols(revised_rows, revised_symbols)
+    if limit <= 0 or len(selected_symbols) < limit:
+        add_symbols(legacy_rows, legacy_watch_symbols)
+
+    if not selected_symbols:
+        selected_symbols = list(fallback_symbols[:limit] if limit > 0 else fallback_symbols)
+        legacy_watch_symbols = list(selected_symbols)
+
+    return CandidateSelectionPlan(tuple(selected_symbols), tuple(revised_symbols), tuple(legacy_watch_symbols))
 
 
 def _load_price_bars(path: Path | None) -> dict[str, list]:
@@ -42,7 +80,7 @@ def _load_price_bars(path: Path | None) -> dict[str, list]:
         return {}
 
 
-def _rank_candidate_rows(rows: list[dict], news_terms: set[str], bars_by_symbol: dict[str, list]) -> list[dict]:
+def _rank_revised_rows(rows: list[dict], news_terms: set[str], bars_by_symbol: dict[str, list]) -> list[dict]:
     margin_ready = [row for row in rows if _margin_change_5d(row) is not None]
     margin_top_100 = {
         str(row.get("symbol", "")).strip().upper()
@@ -54,9 +92,8 @@ def _rank_candidate_rows(rows: list[dict], news_terms: set[str], bars_by_symbol:
         for row in rows
         if _passes_revised_strategy(row, bars_by_symbol, require_margin=bool(margin_ready), margin_top_100=margin_top_100)
     ]
-    ranked_source = filtered or rows
     return sorted(
-        ranked_source,
+        filtered,
         key=lambda row: (
             float(_margin_change_5d(row) or 0.0),
             100.0 - (_stochastic_k_value(_bars_for_row(row, bars_by_symbol)) or 100.0),
@@ -64,6 +101,15 @@ def _rank_candidate_rows(rows: list[dict], news_terms: set[str], bars_by_symbol:
         ),
         reverse=True,
     )
+
+
+def _rank_legacy_rows(rows: list[dict], news_terms: set[str]) -> list[dict]:
+    return sorted(rows, key=lambda row: _candidate_score(row, news_terms), reverse=True)
+
+
+def _rank_candidate_rows(rows: list[dict], news_terms: set[str], bars_by_symbol: dict[str, list]) -> list[dict]:
+    revised_rows = _rank_revised_rows(rows, news_terms, bars_by_symbol)
+    return revised_rows or _rank_legacy_rows(rows, news_terms)
 
 
 def save_candidate_csv(path: Path, symbols: tuple[str, ...]) -> Path:

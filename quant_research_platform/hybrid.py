@@ -34,7 +34,7 @@ from quant_research_platform.qlib_adapter import (
     run_qlib_engine_portfolio_backtest,
 )
 from quant_research_platform.signals import build_signals
-from quant_research_platform.universe import select_candidate_symbols
+from quant_research_platform.universe import build_candidate_selection_plan
 from stock_signal_system.data.csv_sources import load_intraday_history, load_news
 
 
@@ -43,6 +43,7 @@ class HybridRow:
     symbol: str
     name: str
     industry: str
+    screening_bucket: str
     signal_source: str
     kronos_return: float
     kronos_score: float
@@ -73,13 +74,14 @@ def run_tw_hybrid(
     line_to_env: str | None = None,
     line_broadcast: bool = False,
 ) -> tuple[Path, Path, Path, str]:
-    selected_symbols = select_candidate_symbols(
+    selection_plan = build_candidate_selection_plan(
         config.universe_path,
         config.symbols,
         config.universe_candidate_limit,
         news_path,
         config.ohlcv_path,
     )
+    selected_symbols = selection_plan.selected_symbols
     config = replace(config, symbols=selected_symbols)
     load_stock_profiles(config.universe_path, stock_snapshot_path)
     bars_by_symbol = _load_bars(config)
@@ -103,6 +105,7 @@ def run_tw_hybrid(
     realtime_states = load_latest_realtime_states(realtime_cache)
 
     rows = []
+    revised_symbols = set(selection_plan.revised_symbols)
     for signal in kronos_signals:
         symbol = signal.symbol
         industry = stock_industry(symbol)
@@ -125,6 +128,7 @@ def run_tw_hybrid(
                 symbol=symbol,
                 name=stock_name(symbol),
                 industry=industry,
+                screening_bucket="revised" if symbol in revised_symbols else "legacy_watch",
                 signal_source=signal.source,
                 kronos_return=signal.expected_return,
                 kronos_score=kronos_score,
@@ -291,6 +295,8 @@ def _save_report(
     focus_rows = _portfolio_rows(rows, portfolio_decisions, "include")
     watch_rows = _portfolio_rows(rows, portfolio_decisions, "watch")
     excluded_rows = _portfolio_rows(rows, portfolio_decisions, "exclude")
+    revised_rows = [row for row in rows if row.screening_bucket == "revised"]
+    legacy_watch_rows = [row for row in rows if row.screening_bucket == "legacy_watch"]
 
     lines = [
         f"# Hybrid 量化每日選股報告 - {report_date.isoformat()}",
@@ -299,6 +305,12 @@ def _save_report(
         "",
         "| 排名 | 股票 | 名稱 | 產業 | Hybrid | Kronos | 新聞 | 技術 | 即時盤 | 組合決策 |",
         "|---:|---|---|---|---:|---:|---:|---:|---|---|",
+    ]
+    lines[2:2] = [
+        "## 新版主清單 + 舊版觀察清單",
+        "",
+        *_screening_dual_column_block(revised_rows, legacy_watch_rows, portfolio_decisions),
+        "",
     ]
     if focus_rows:
         for rank, row in enumerate(focus_rows, start=1):
@@ -521,6 +533,27 @@ def _technical_chart_payload(rows: list[HybridRow], bars_by_symbol: dict[str, li
         ],
         "stocks": [_technical_chart_stock(row, bars_by_symbol.get(row.symbol, []), decisions.get(row.symbol)) for row in rows],
     }
+
+
+def _screening_dual_column_block(rows_main: list[HybridRow], rows_watch: list[HybridRow], decisions: dict) -> list[str]:
+    return [
+        "<table>",
+        "<tr>",
+        f'<td valign="top" width="50%"><strong>新版主清單</strong><br>{_screening_column_html(rows_main, decisions, "目前無符合新版三條件的標的。")}</td>',
+        f'<td valign="top" width="50%"><strong>舊版觀察清單</strong><br>{_screening_column_html(rows_watch, decisions, "目前沒有補入舊版觀察標的。")}</td>',
+        "</tr>",
+        "</table>",
+    ]
+
+
+def _screening_column_html(rows: list[HybridRow], decisions: dict, empty_text: str) -> str:
+    if not rows:
+        return empty_text
+    items = []
+    for rank, row in enumerate(rows[:8], start=1):
+        decision = portfolio_decision_label(decisions.get(row.symbol))
+        items.append(f"{rank}. {row.symbol} {row.name} | {row.industry} | Hybrid {row.hybrid_score:.1f} | {decision}")
+    return "<br>".join(items)
 
 
 def _technical_chart_stock(row: HybridRow, bars: list[Bar], decision) -> dict:
