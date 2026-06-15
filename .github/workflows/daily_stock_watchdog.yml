@@ -31,4 +31,35 @@ jobs:
           fi
 
           echo "line_marker_missing=${marker}"
-          gh workflow run "Daily Stock Analysis" --repo "${GITHUB_REPOSITORY}" --ref main -f send_line=true
+          latest_run_json="$(gh run list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --workflow "Daily Stock Analysis" \
+            --branch main \
+            --limit 10 \
+            --json databaseId,status,conclusion,event,createdAt \
+            --jq "map(select((.createdAt | sub(\"Z$\"; \"+00:00\") | fromdateiso8601 | strftime(\"%Y-%m-%d\")) == \"${today}\")) | .[0]")"
+
+          if [ -n "${latest_run_json}" ] && [ "${latest_run_json}" != "null" ]; then
+            latest_status="$(echo "${latest_run_json}" | jq -r '.status')"
+            latest_conclusion="$(echo "${latest_run_json}" | jq -r '.conclusion // ""')"
+            latest_run_id="$(echo "${latest_run_json}" | jq -r '.databaseId')"
+            latest_event="$(echo "${latest_run_json}" | jq -r '.event')"
+            echo "latest_run_id=${latest_run_id}"
+            echo "latest_run_event=${latest_event}"
+            echo "latest_run_status=${latest_status}"
+            echo "latest_run_conclusion=${latest_conclusion}"
+
+            if [ "${latest_status}" = "queued" ] || [ "${latest_status}" = "in_progress" ]; then
+              echo "daily_analysis_already_active=true"
+              exit 0
+            fi
+
+            if [ "${latest_status}" = "completed" ] && [ "${latest_conclusion}" = "success" ]; then
+              echo "daily_analysis_succeeded_without_marker=true"
+            fi
+          fi
+
+          gh workflow run "Daily Stock Analysis" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref main \
+            -f send_line=true
