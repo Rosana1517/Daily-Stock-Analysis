@@ -1,0 +1,4 @@
+﻿symbol,name,industry,screening_bucket,signal_source,kronos_return,kronos_score,news_score,technical_score,realtime_score,hybrid_score,current_close,predicted_close,realtime_status,action,risk_note
+2303.TW,聯電,半導體業,legacy_watch,kronos,0.1286662241046348,100.0,53.4,53.0,89.32584269662915,77.71258426966291,133.5,150.67694091796875,盤中強勢,研究重點,風險穩定
+2409.TW,友達,光電業,revised,kronos,0.10511276569772265,100.0,52.7,50.0,63.40425531914884,74.38042553191488,23.5,25.970149993896484,盤中強勢,研究重點,風險穩定
+2324.TW,仁寶,電腦及週邊設備業,revised,kronos,0.010621439921821185,56.37286395309271,52.7,50.0,50.962861072902314,55.685431688527316,36.349998474121094,36.736087799072266,持平,觀察,風險穩定
