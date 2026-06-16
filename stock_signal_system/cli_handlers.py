@@ -94,6 +94,7 @@ def handle_refresh_data(args) -> None:
         with _step_timer("combine_tw_market_data"):
             stock_inputs = [Path("data/twse_stocks.csv"), Path("data/tpex_stocks.csv")]
             chip_snapshot = Path("data/tw_chip_snapshot.csv")
+            chip_snapshot_ready = False
             try:
                 with _step_timer("tw_chip_snapshot_refresh"):
                     broker_symbols, latest_volume_by_symbol = _chip_candidate_symbols_and_volumes(
@@ -106,12 +107,16 @@ def handle_refresh_data(args) -> None:
                         broker_symbols=broker_symbols,
                         latest_volume_by_symbol=latest_volume_by_symbol,
                     )
+                    _validate_chip_snapshot_schema(chip_snapshot)
+                    chip_snapshot_ready = True
                     print(f"chip_snapshot_output={chip_snapshot}", flush=True)
             except Exception as exc:
                 print(f"warning: chip_snapshot_refresh_failed={exc}", flush=True)
-            if chip_snapshot.exists():
+            if chip_snapshot_ready:
                 stock_inputs.append(chip_snapshot)
                 print(f"chip_snapshot_input={chip_snapshot}", flush=True)
+            else:
+                raise SystemExit("ERROR chip snapshot refresh failed or schema invalid; refusing to use stale proxy snapshot.")
             combined_stocks = combine_csv_files(
                 stock_inputs,
                 Path("data/tw_listed_otc_stocks.csv"),
@@ -253,7 +258,7 @@ def _symbol_to_realtime_channel(symbol: str) -> str:
     return f"tse:{text}"
 
 
-def _chip_candidate_symbols_and_volumes(*stock_paths: Path, limit: int = 120) -> tuple[tuple[str, ...], dict[str, int]]:
+def _chip_candidate_symbols_and_volumes(*stock_paths: Path, limit: int = 30) -> tuple[tuple[str, ...], dict[str, int]]:
     rows = []
     latest_volume_by_symbol: dict[str, int] = {}
     for path in stock_paths:
@@ -278,6 +283,23 @@ def _safe_float(value) -> float:
         return float(str(value or "0").replace(",", "").strip())
     except ValueError:
         return 0.0
+
+
+def _validate_chip_snapshot_schema(path: Path) -> None:
+    required = {
+        "symbol",
+        "top10_main_force_buy_strength",
+        "top10_main_force_net_buy",
+        "branch_main_force_buy_streak_days",
+        "foreign_buy_streak_days",
+        "chip_data_source",
+        "chip_data_source_status",
+    }
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        fieldnames = set((csv.DictReader(handle).fieldnames or []))
+    missing = sorted(required - fieldnames)
+    if missing:
+        raise ValueError(f"chip snapshot schema missing fields: {', '.join(missing)}")
 
 
 class _step_timer:

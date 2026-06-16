@@ -39,6 +39,7 @@ def build_tw_chip_snapshot_csv(
     max_calendar_days: int = 20,
     broker_symbols: tuple[str, ...] | None = None,
     latest_volume_by_symbol: dict[str, int] | None = None,
+    broker_lookback_sessions: int = 3,
 ) -> Path:
     days = load_recent_twse_institutional_days(
         cache_dir,
@@ -51,6 +52,7 @@ def build_tw_chip_snapshot_csv(
         days,
         broker_symbols or (),
         latest_volume_by_symbol or {},
+        broker_lookback_sessions=broker_lookback_sessions,
     )
     rows = _build_chip_rows_from_twse_days(days, broker_summaries)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -113,10 +115,11 @@ def load_histock_broker_summaries(
     twse_days: tuple[TwseInstitutionalDay, ...],
     broker_symbols: tuple[str, ...],
     latest_volume_by_symbol: dict[str, int],
+    broker_lookback_sessions: int = 3,
 ) -> dict[str, BrokerChipSummary]:
     if not twse_days or not broker_symbols:
         return {}
-    official_dates = tuple(day.trade_date for day in twse_days)
+    official_dates = tuple(day.trade_date for day in twse_days[: max(1, broker_lookback_sessions)])
     results: dict[str, BrokerChipSummary] = {}
     for raw_symbol in broker_symbols:
         symbol = str(raw_symbol).split(".")[0].strip()
