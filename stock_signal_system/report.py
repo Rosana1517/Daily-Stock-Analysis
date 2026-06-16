@@ -396,15 +396,15 @@ def _interactive_chart_section() -> str:
             <div class="stock-filter-stack">
               <section class="stock-filter-item">
                 <label class="stock-filter-toggle"><input id="chipRadarToggle" type="checkbox" checked>看籌碼雷達</label>
-                <p class="stock-filter-brief">先用前十大主力強度、外資連買與主分點連買抓出當日雷達名單，適合先看籌碼熱區。</p>
+                <p class="stock-filter-brief">先用前十大主力強度、外資連買與主分點連買抓出當日雷達名單；單獨勾選看雷達熱區，和其他條件同時勾選時則顯示交集。</p>
               </section>
               <section class="stock-filter-item">
                 <label class="stock-filter-toggle"><input id="newStrategyToggle" type="checkbox" checked>看新版策略</label>
-                <p class="stock-filter-brief">籌碼雷達命中後，再用 MA20 上升、平台突破與融資條件當確認器，只保留較強訊號。</p>
+                <p class="stock-filter-brief">以籌碼雷達命中股為母群，再用 MA20 上升、平台突破與融資條件當確認器；和其他條件同勾時顯示交集。</p>
               </section>
               <section class="stock-filter-item">
                 <label class="stock-filter-toggle"><input id="legacyStrategyToggle" type="checkbox" checked>看舊版策略</label>
-                <p class="stock-filter-brief">沿用既有流程做觀察補位，保留沒有進籌碼主線、但基本面與流動性仍值得追蹤的標的。</p>
+                <p class="stock-filter-brief">舊版以流動性、成交量、20 日均量、營收成長、本益比與產業新聞關聯做較大股票池初篩；單獨勾選看母池，和其他條件同勾時顯示交集。</p>
               </section>
             </div>
             <div class="screening-columns">
@@ -485,14 +485,17 @@ INTERACTIVE_CHART_JS = r"""
   let labelBoxes = [];
   const controls = ["maShort", "maMid", "maLong", "rsiLow", "rsiHigh", "bollingerSigma"];
   const initial = {maShort: 5, maMid: 20, maLong: 60, rsiLow: 20, rsiHigh: 80, bollingerSigma: 2};
+  function screeningFlags(stock) {
+    return stock.screeningFlags || {};
+  }
   function isChipRadar(stock) {
-    return stock.screeningBucket === "chip_confirmed" || stock.screeningBucket === "chip_watch";
+    return Boolean(screeningFlags(stock).chipRadar);
   }
   function isNewStrategy(stock) {
-    return stock.screeningBucket === "chip_confirmed";
+    return Boolean(screeningFlags(stock).newStrategy);
   }
   function isOldStrategy(stock) {
-    return stock.screeningBucket === "legacy_watch";
+    return Boolean(screeningFlags(stock).legacy);
   }
   function visibleStocks() {
     const active = [];
@@ -501,11 +504,11 @@ INTERACTIVE_CHART_JS = r"""
     if (state.filters.oldStrategy) active.push("oldStrategy");
     if (!active.length) return [];
     return data.stocks.filter((stock) => {
-      return (
-        (state.filters.chipRadar && isChipRadar(stock)) ||
-        (state.filters.newStrategy && isNewStrategy(stock)) ||
-        (state.filters.oldStrategy && isOldStrategy(stock))
-      );
+      const checks = [];
+      if (state.filters.chipRadar) checks.push(isChipRadar(stock));
+      if (state.filters.newStrategy) checks.push(isNewStrategy(stock));
+      if (state.filters.oldStrategy) checks.push(isOldStrategy(stock));
+      return checks.length > 0 && checks.every(Boolean);
     });
   }
 
@@ -553,8 +556,8 @@ INTERACTIVE_CHART_JS = r"""
 
   function populateStockLists() {
     renderScreeningList("chipRadarStockList", data.stocks.filter((stock) => isChipRadar(stock)));
-    renderScreeningList("legacyStockList", data.stocks.filter((stock) => stock.screeningBucket === "legacy_watch"));
-    renderScreeningList("revisedStockList", data.stocks.filter((stock) => stock.screeningBucket === "chip_confirmed"));
+    renderScreeningList("legacyStockList", data.stocks.filter((stock) => isOldStrategy(stock)));
+    renderScreeningList("revisedStockList", data.stocks.filter((stock) => isNewStrategy(stock)));
   }
 
   function renderScreeningList(id, stocks) {

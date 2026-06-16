@@ -16,6 +16,7 @@ class CandidateSelectionPlan:
     chip_breakout_symbols: tuple[str, ...]
     revised_symbols: tuple[str, ...]
     legacy_watch_symbols: tuple[str, ...]
+    legacy_pool_symbols: tuple[str, ...]
 
 
 def select_candidate_symbols(
@@ -38,11 +39,11 @@ def build_candidate_selection_plan(
 ) -> CandidateSelectionPlan:
     if not universe_path or not universe_path.exists():
         selected = fallback_symbols[:limit] if limit > 0 else fallback_symbols
-        return CandidateSelectionPlan(selected, (), (), (), selected)
+        return CandidateSelectionPlan(selected, (), (), (), selected, selected)
     rows = _load_universe_rows(universe_path)
     if not rows:
         selected = fallback_symbols[:limit] if limit > 0 else fallback_symbols
-        return CandidateSelectionPlan(selected, (), (), (), selected)
+        return CandidateSelectionPlan(selected, (), (), (), selected, selected)
     news_terms = _news_terms(news_path)
     bars_by_symbol = _load_price_bars(ohlcv_path)
     margin_ready = [row for row in rows if _margin_change_5d(row) is not None]
@@ -73,12 +74,14 @@ def build_candidate_selection_plan(
         for row in _rank_legacy_rows(rows, news_terms)
         if str(row.get("symbol", "")).strip().upper() not in radar_symbols
     ]
+    legacy_pool_rows = _rank_legacy_rows(rows, news_terms)
 
     selected_symbols: list[str] = []
     chip_radar_symbols: list[str] = []
     chip_breakout_symbols: list[str] = []
     revised_symbols: list[str] = []
     legacy_watch_symbols: list[str] = []
+    legacy_pool_symbols: list[str] = []
 
     def add_symbols(source_rows: list[dict], target: list[str]) -> None:
         for row in source_rows:
@@ -99,9 +102,18 @@ def build_candidate_selection_plan(
     chip_radar_symbols.extend(chip_breakout_symbols)
     chip_radar_symbols.extend(revised_symbols)
 
+    for row in legacy_pool_rows:
+        symbol = _platform_symbol(row)
+        if not symbol or symbol in legacy_pool_symbols:
+            continue
+        legacy_pool_symbols.append(symbol)
+        if limit > 0 and len(legacy_pool_symbols) >= limit:
+            break
+
     if not selected_symbols:
         selected_symbols = list(fallback_symbols[:limit] if limit > 0 else fallback_symbols)
         legacy_watch_symbols = list(selected_symbols)
+        legacy_pool_symbols = list(selected_symbols)
 
     return CandidateSelectionPlan(
         tuple(selected_symbols),
@@ -109,6 +121,7 @@ def build_candidate_selection_plan(
         tuple(chip_breakout_symbols),
         tuple(revised_symbols),
         tuple(legacy_watch_symbols),
+        tuple(legacy_pool_symbols),
     )
 
 

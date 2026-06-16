@@ -44,6 +44,9 @@ class HybridRow:
     name: str
     industry: str
     screening_bucket: str
+    legacy_hit: bool
+    new_strategy_hit: bool
+    chip_radar_hit: bool
     signal_source: str
     kronos_return: float
     kronos_score: float
@@ -117,6 +120,7 @@ def run_tw_hybrid(
     rows = []
     chip_radar_symbols = set(selection_plan.chip_radar_symbols)
     chip_breakout_symbols = set(selection_plan.chip_breakout_symbols)
+    legacy_pool_symbols = set(selection_plan.legacy_pool_symbols)
     revised_symbols = set(selection_plan.revised_symbols)
     for signal in kronos_signals:
         symbol = signal.symbol
@@ -146,6 +150,9 @@ def run_tw_hybrid(
                     if symbol in chip_breakout_symbols
                     else "chip_watch" if symbol in revised_symbols or symbol in chip_radar_symbols else "legacy_watch"
                 ),
+                legacy_hit=symbol in legacy_pool_symbols,
+                new_strategy_hit=symbol in chip_breakout_symbols,
+                chip_radar_hit=symbol in chip_radar_symbols,
                 signal_source=signal.source,
                 kronos_return=signal.expected_return,
                 kronos_score=kronos_score,
@@ -659,6 +666,11 @@ def _technical_chart_stock(row: HybridRow, bars: list[Bar], decision) -> dict:
         "industry": row.industry,
         "screeningBucket": row.screening_bucket,
         "screeningLabel": "\u7c4c\u78bc\u7a81\u7834\u4e3b\u6e05\u55ae" if row.screening_bucket == "chip_confirmed" else "\u7c4c\u78bc\u89c0\u5bdf\u6e05\u55ae" if row.screening_bucket == "chip_watch" else "\u820a\u7248\u89c0\u5bdf\u6e05\u55ae",
+        "screeningFlags": {
+            "legacy": row.legacy_hit,
+            "newStrategy": row.new_strategy_hit,
+            "chipRadar": row.chip_radar_hit,
+        },
         "signalSource": row.signal_source,
         "hybridScore": round(row.hybrid_score, 2),
         "technicalScore": round(row.technical_score, 2),
