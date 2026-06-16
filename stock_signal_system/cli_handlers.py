@@ -10,6 +10,7 @@ from quant_research_platform.twse_realtime import poll_realtime_quotes
 from quant_research_platform.universe import select_candidate_symbols
 from stock_signal_system.config import AppConfig
 from stock_signal_system.data.rss_sources import fetch_rss_news, save_news_csv
+from stock_signal_system.data.chip_snapshot import build_tw_chip_snapshot_csv
 from stock_signal_system.data.tpex import (
     build_tpex_daily_price_csv,
     build_tpex_stock_csv,
@@ -92,6 +93,12 @@ def handle_refresh_data(args) -> None:
         with _step_timer("combine_tw_market_data"):
             stock_inputs = [Path("data/twse_stocks.csv"), Path("data/tpex_stocks.csv")]
             chip_snapshot = Path("data/tw_chip_snapshot.csv")
+            try:
+                with _step_timer("tw_chip_snapshot_refresh"):
+                    build_tw_chip_snapshot_csv(chip_snapshot, Path(args.cache_dir))
+                    print(f"chip_snapshot_output={chip_snapshot}", flush=True)
+            except Exception as exc:
+                print(f"warning: chip_snapshot_refresh_failed={exc}", flush=True)
             if chip_snapshot.exists():
                 stock_inputs.append(chip_snapshot)
                 print(f"chip_snapshot_input={chip_snapshot}", flush=True)

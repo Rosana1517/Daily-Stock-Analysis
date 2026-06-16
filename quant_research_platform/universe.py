@@ -297,6 +297,8 @@ def _top10_main_force_strong(row: dict) -> bool:
 
 def _top10_main_force_strength(row: dict) -> float:
     score = _optional_float(row, "top10_main_force_buy_strength", "top10_main_force_strength")
+    if score is None:
+        score = _optional_float(row, "top10_main_force_buy_strength_proxy", "institutional_main_force_strength_proxy")
     if score is not None:
         return score
     ratio = _optional_float(
@@ -320,9 +322,11 @@ def _branch_buy_streak_days(row: dict) -> float:
     return _optional_float(
         row,
         "branch_main_force_buy_streak_days",
+        "branch_main_force_buy_streak_days_proxy",
         "main_broker_buy_streak_days",
         "broker_buy_streak_days",
         "branch_buy_streak_days",
+        "dealer_buy_streak_days_proxy",
     ) or 0.0
 
 
