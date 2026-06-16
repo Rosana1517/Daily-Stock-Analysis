@@ -186,6 +186,10 @@ def _render_markdown_body(markdown: str) -> list[str]:
             table_lines.append(line)
             continue
         flush_table()
+        if _is_supported_html_block(line):
+            close_list()
+            body_lines.append(line)
+            continue
         if line.startswith("# "):
             close_list()
             body_lines.append(f"<h1>{html.escape(line[2:])}</h1>")
@@ -228,6 +232,30 @@ def _markdown_title(markdown: str) -> str | None:
 
 def _is_table_line(line: str) -> bool:
     return line.startswith("|") and line.endswith("|")
+
+
+def _is_supported_html_block(line: str) -> bool:
+    normalized = line.strip().lower()
+    if not (normalized.startswith("<") and normalized.endswith(">")):
+        return False
+    allowed_prefixes = (
+        "<table",
+        "</table",
+        "<tr",
+        "</tr",
+        "<td",
+        "</td",
+        "<th",
+        "</th",
+        "<thead",
+        "</thead",
+        "<tbody",
+        "</tbody",
+        "<strong",
+        "</strong",
+        "<br",
+    )
+    return normalized.startswith(allowed_prefixes)
 
 
 def _markdown_table_to_html(lines: list[str]) -> str:

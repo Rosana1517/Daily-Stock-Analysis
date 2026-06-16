@@ -19,6 +19,25 @@ class ReportHtmlTest(unittest.TestCase):
 
         self.assertEqual(url, "https://example.com/reports/stock_signals_2026-04-27.html")
 
+    def test_markdown_to_html_keeps_supported_raw_html_blocks(self):
+        markdown = """# 標題
+
+## 雙欄
+
+<table>
+<tr>
+<td valign="top" width="50%"><strong>新版主清單</strong><br>1. 2330.TW 台積電</td>
+<td valign="top" width="50%"><strong>舊版觀察清單</strong><br>1. 2317.TW 鴻海</td>
+</tr>
+</table>
+"""
+
+        html = markdown_to_html(markdown, "標題")
+
+        self.assertIn("<table>", html)
+        self.assertIn("<strong>新版主清單</strong><br>1. 2330.TW 台積電", html)
+        self.assertNotIn("&lt;table&gt;", html)
+
     def test_hybrid_chinese_report_renders_interactive_technical_chart(self):
         markdown = """# Hybrid 量化每日選股報告 - 2026-05-13
 
