@@ -118,6 +118,7 @@ def run_tw_hybrid(
     chip_snapshot_by_symbol = _load_chip_snapshot_lookup(config.universe_path, stock_snapshot_path)
 
     rows = []
+    rows_by_symbol: dict[str, HybridRow] = {}
     chip_radar_symbols = set(selection_plan.chip_radar_symbols)
     chip_breakout_symbols = set(selection_plan.chip_breakout_symbols)
     legacy_pool_symbols = set(selection_plan.legacy_pool_symbols)
@@ -140,44 +141,66 @@ def run_tw_hybrid(
             + realtime_score * 0.10
             + signal.confidence * 100 * 0.10
         )
-        rows.append(
-            HybridRow(
-                symbol=symbol,
-                name=stock_name(symbol),
-                industry=industry,
-                screening_bucket=(
-                    "chip_confirmed"
-                    if symbol in chip_breakout_symbols
-                    else "chip_watch" if symbol in revised_symbols or symbol in chip_radar_symbols else "legacy_watch"
-                ),
-                legacy_hit=symbol in legacy_pool_symbols,
-                new_strategy_hit=symbol in chip_breakout_symbols,
-                chip_radar_hit=symbol in chip_radar_symbols,
-                signal_source=signal.source,
-                kronos_return=signal.expected_return,
-                kronos_score=kronos_score,
-                news_score=news_score,
-                technical_score=technical_score,
-                realtime_score=realtime_score,
-                hybrid_score=hybrid_score,
-                current_close=signal.current_close,
-                predicted_close=signal.predicted_close,
-                realtime_status=realtime.status if realtime else "無即時資料",
-                action=_action(hybrid_score, signal.expected_return, intraday_return),
-                risk_note=_risk_note(signal.expected_return, tech.bias if tech else "neutral", intraday_return),
-                top10_main_force_buy_strength=_optional_float(chip_snapshot, "top10_main_force_buy_strength", "top10_main_force_buy_strength_proxy"),
-                top10_main_force_net_buy=_optional_float(chip_snapshot, "top10_main_force_net_buy"),
-                foreign_buy_streak_days=_optional_float(chip_snapshot, "foreign_buy_streak_days"),
-                branch_main_force_buy_streak_days=_optional_float(chip_snapshot, "branch_main_force_buy_streak_days"),
-                branch_main_force_leader=str(chip_snapshot.get("branch_main_force_leader", "")).strip(),
-                chip_data_date=str(chip_snapshot.get("chip_data_date", "")).strip(),
-                chip_data_source=str(chip_snapshot.get("chip_data_source", "")).strip(),
-                chip_data_source_status=str(chip_snapshot.get("chip_data_source_status", "")).strip(),
-                top10_main_force_brokers=str(chip_snapshot.get("top10_main_force_brokers", "")).strip(),
-                technical_evidence=_technical_evidence(symbol, tech, bars_by_symbol.get(symbol, [])),
-            )
+        rows_by_symbol[symbol] = HybridRow(
+            symbol=symbol,
+            name=stock_name(symbol),
+            industry=industry,
+            screening_bucket=(
+                "chip_confirmed"
+                if symbol in chip_breakout_symbols
+                else "chip_watch" if symbol in revised_symbols or symbol in chip_radar_symbols else "legacy_watch"
+            ),
+            legacy_hit=symbol in legacy_pool_symbols,
+            new_strategy_hit=symbol in chip_breakout_symbols or symbol in revised_symbols,
+            chip_radar_hit=symbol in chip_radar_symbols,
+            signal_source=signal.source,
+            kronos_return=signal.expected_return,
+            kronos_score=kronos_score,
+            news_score=news_score,
+            technical_score=technical_score,
+            realtime_score=realtime_score,
+            hybrid_score=hybrid_score,
+            current_close=signal.current_close,
+            predicted_close=signal.predicted_close,
+            realtime_status=realtime.status if realtime else "無即時資料",
+            action=_action(hybrid_score, signal.expected_return, intraday_return),
+            risk_note=_risk_note(signal.expected_return, tech.bias if tech else "neutral", intraday_return),
+            top10_main_force_buy_strength=_optional_float(chip_snapshot, "top10_main_force_buy_strength", "top10_main_force_buy_strength_proxy"),
+            top10_main_force_net_buy=_optional_float(chip_snapshot, "top10_main_force_net_buy"),
+            foreign_buy_streak_days=_optional_float(chip_snapshot, "foreign_buy_streak_days"),
+            branch_main_force_buy_streak_days=_optional_float(chip_snapshot, "branch_main_force_buy_streak_days"),
+            branch_main_force_leader=str(chip_snapshot.get("branch_main_force_leader", "")).strip(),
+            chip_data_date=str(chip_snapshot.get("chip_data_date", "")).strip(),
+            chip_data_source=str(chip_snapshot.get("chip_data_source", "")).strip(),
+            chip_data_source_status=str(chip_snapshot.get("chip_data_source_status", "")).strip(),
+            top10_main_force_brokers=str(chip_snapshot.get("top10_main_force_brokers", "")).strip(),
+            technical_evidence=_technical_evidence(symbol, tech, bars_by_symbol.get(symbol, [])),
         )
-    rows = sorted(rows, key=lambda item: item.hybrid_score, reverse=True)
+    report_symbols = []
+    for symbol in (*selection_plan.legacy_pool_symbols, *selection_plan.chip_radar_symbols, *selection_plan.selected_symbols):
+        if symbol not in report_symbols:
+            report_symbols.append(symbol)
+    for symbol in report_symbols:
+        if symbol in rows_by_symbol:
+            continue
+        rows_by_symbol[symbol] = _placeholder_row(
+            symbol,
+            chip_snapshot_by_symbol.get(symbol, {}),
+            symbol in legacy_pool_symbols,
+            symbol in revised_symbols or symbol in chip_breakout_symbols,
+            symbol in chip_radar_symbols,
+        )
+    rank_map = {symbol: index for index, symbol in enumerate(report_symbols)}
+    rows = sorted(
+        rows_by_symbol.values(),
+        key=lambda item: (
+            not item.new_strategy_hit,
+            not item.chip_radar_hit,
+            not item.legacy_hit,
+            -item.hybrid_score,
+            rank_map.get(item.symbol, 9999),
+        ),
+    )
     qlib_metrics = run_inline_signal_diagnostics(kronos_signals, bars_by_symbol, config.top_n)
     qlib_engine = run_qlib_engine_portfolio_backtest(
         kronos_signals,
@@ -604,6 +627,48 @@ def _chip_value(value: float | None, digits: int = 1) -> str:
     if value is None:
         return "n/a"
     return f"{value:.{digits}f}"
+
+
+def _placeholder_row(
+    symbol: str,
+    chip_snapshot: dict,
+    legacy_hit: bool,
+    new_strategy_hit: bool,
+    chip_radar_hit: bool,
+) -> HybridRow:
+    price = _optional_float(chip_snapshot, "price") or 0.0
+    bucket = "chip_confirmed" if new_strategy_hit and chip_radar_hit else "chip_watch" if chip_radar_hit or new_strategy_hit else "legacy_watch"
+    return HybridRow(
+        symbol=symbol,
+        name=stock_name(symbol),
+        industry=stock_industry(symbol),
+        screening_bucket=bucket,
+        legacy_hit=legacy_hit,
+        new_strategy_hit=new_strategy_hit,
+        chip_radar_hit=chip_radar_hit,
+        signal_source="data-limited",
+        kronos_return=0.0,
+        kronos_score=0.0,
+        news_score=50.0,
+        technical_score=0.0,
+        realtime_score=0.0,
+        hybrid_score=0.0,
+        current_close=price,
+        predicted_close=price,
+        realtime_status="無即時資料",
+        action="待補資料",
+        risk_note="缺少完整 OHLCV / 技術資料",
+        top10_main_force_buy_strength=_optional_float(chip_snapshot, "top10_main_force_buy_strength", "top10_main_force_buy_strength_proxy"),
+        top10_main_force_net_buy=_optional_float(chip_snapshot, "top10_main_force_net_buy"),
+        foreign_buy_streak_days=_optional_float(chip_snapshot, "foreign_buy_streak_days"),
+        branch_main_force_buy_streak_days=_optional_float(chip_snapshot, "branch_main_force_buy_streak_days"),
+        branch_main_force_leader=str(chip_snapshot.get("branch_main_force_leader", "")).strip(),
+        chip_data_date=str(chip_snapshot.get("chip_data_date", "")).strip(),
+        chip_data_source=str(chip_snapshot.get("chip_data_source", "")).strip(),
+        chip_data_source_status=str(chip_snapshot.get("chip_data_source_status", "")).strip(),
+        top10_main_force_brokers=str(chip_snapshot.get("top10_main_force_brokers", "")).strip(),
+        technical_evidence=("ohlcv=data_limited", "screening=pool_only"),
+    )
 
 
 def _technical_chart_payload(rows: list[HybridRow], bars_by_symbol: dict[str, list[Bar]], decisions: dict) -> dict:
