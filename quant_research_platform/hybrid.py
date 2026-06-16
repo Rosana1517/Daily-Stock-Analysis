@@ -115,6 +115,7 @@ def run_tw_hybrid(
     chip_snapshot_by_symbol = _load_chip_snapshot_lookup(config.universe_path, stock_snapshot_path)
 
     rows = []
+    chip_radar_symbols = set(selection_plan.chip_radar_symbols)
     chip_breakout_symbols = set(selection_plan.chip_breakout_symbols)
     revised_symbols = set(selection_plan.revised_symbols)
     for signal in kronos_signals:
@@ -141,9 +142,9 @@ def run_tw_hybrid(
                 name=stock_name(symbol),
                 industry=industry,
                 screening_bucket=(
-                    "chip_breakout"
+                    "chip_confirmed"
                     if symbol in chip_breakout_symbols
-                    else "revised" if symbol in revised_symbols else "legacy_watch"
+                    else "chip_watch" if symbol in revised_symbols or symbol in chip_radar_symbols else "legacy_watch"
                 ),
                 signal_source=signal.source,
                 kronos_return=signal.expected_return,
@@ -352,8 +353,9 @@ def _save_report(
     focus_rows = _portfolio_rows(rows, portfolio_decisions, "include")
     watch_rows = _portfolio_rows(rows, portfolio_decisions, "watch")
     excluded_rows = _portfolio_rows(rows, portfolio_decisions, "exclude")
-    chip_rows = [row for row in rows if row.screening_bucket == "chip_breakout"]
-    revised_rows = [row for row in rows if row.screening_bucket in {"revised", "chip_breakout"}]
+    chip_rows = [row for row in rows if row.screening_bucket == "chip_confirmed"]
+    revised_rows = [row for row in rows if row.screening_bucket in {"chip_confirmed", "chip_watch"}]
+    chip_watch_rows = [row for row in rows if row.screening_bucket == "chip_watch"]
     legacy_watch_rows = [row for row in rows if row.screening_bucket == "legacy_watch"]
 
     lines = [
@@ -365,9 +367,9 @@ def _save_report(
         "|---:|---|---|---|---:|---:|---:|---:|---:|---|---|---|---|",
     ]
     lines[2:2] = [
-        "## 新版主清單 + 舊版觀察清單",
+        "## \u7c4c\u78bc\u512a\u5148\u96d9\u968e\u6bb5\u8f38\u51fa",
         "",
-        *_screening_dual_column_block(revised_rows, legacy_watch_rows, portfolio_decisions),
+        *_screening_triple_column_block(chip_rows, chip_watch_rows, legacy_watch_rows, portfolio_decisions),
         "",
     ]
     if focus_rows:
@@ -404,13 +406,25 @@ def _save_report(
             f"- 收盤價 20 日均線上升",
         ]
     )
-    lines.extend(["", "## 籌碼突破策略", ""])
-    if chip_rows:
-        lines.append("- 條件：前十大主力買氣強 + 外資連買或分點主力連買 + 突破平台整理區。")
-        for row in chip_rows[:8]:
-            lines.append(f"- {row.symbol} {row.name}: 已命中籌碼突破策略，優先納入候選池。")
+    lines.extend(["", "## \u7c4c\u78bc\u512a\u5148\u6d41\u7a0b\u6458\u8981", ""])
+    lines.append("- \u7b2c\u4e00\u5c64\uff1a\u4ee5\u7c4c\u78bc\u5feb\u7167\u7576\u524d\u7f6e\u96f7\u9054\uff0c\u5148\u6490\u51fa\u4e3b\u529b\u8207\u6cd5\u4eba\u6301\u7e8c\u505a\u591a\u7684\u5019\u9078\u6c60\u3002")
+    lines.append("- \u7b2c\u4e8c\u5c64\uff1a\u4ee5\u65e2\u6709\u50f9\u91cf\u6d41\u7a0b\u7576\u78ba\u8a8d\u5668\uff0c\u8981\u6c42 MA20 \u4e0a\u5347\u3001\u7a81\u7834\u5e73\u53f0\u8207\u878d\u8cc7\u689d\u4ef6\u901a\u904e\u3002")
+    lines.append("- \u7b2c\u4e09\u5c64\uff1a\u4f9d\u78ba\u8a8d\u5f37\u5ea6\u5206\u7d1a\u8f38\u51fa\u70ba\u300c\u7c4c\u78bc\u7a81\u7834\u4e3b\u6e05\u55ae\u300d\u300c\u7c4c\u78bc\u89c0\u5bdf\u6e05\u55ae\u300d\u8207\u300c\u820a\u7248\u89c0\u5bdf\u6e05\u55ae\u300d\u3002")
+    lines.append(f"- \u7c4c\u78bc\u7a81\u7834\u4e3b\u6e05\u55ae\uff1a{len(chip_rows)} \u6a94")
+    lines.append(f"- \u7c4c\u78bc\u89c0\u5bdf\u6e05\u55ae\uff1a{len(chip_watch_rows)} \u6a94")
+    lines.append(f"- \u820a\u7248\u89c0\u5bdf\u6e05\u55ae\uff1a{len(legacy_watch_rows)} \u6a94")
+    lines.extend(["", "## \u7c4c\u78bc\u89c0\u5bdf\u6e05\u55ae", ""])
+    if chip_watch_rows:
+        for row in chip_watch_rows[:8]:
+            lines.append(f"- {row.symbol} {row.name}: \u7c4c\u78bc\u96f7\u9054\u5df2\u89f8\u767c\uff0c\u4f46\u5c1a\u672a\u901a\u904e\u5b8c\u6574\u6280\u8853\u8207\u878d\u8cc7\u78ba\u8a8d\u3002")
     else:
-        lines.append("- 今日候選池未出現同時符合籌碼與平台突破條件的標的。")
+        lines.append("- \u672c\u6b21\u7121\u9700\u7368\u7acb\u8ffd\u8e64\u7684\u7c4c\u78bc\u89c0\u5bdf\u6a19\u7684\u3002")
+    lines.extend(["", "## \u820a\u7248\u89c0\u5bdf\u6e05\u55ae", ""])
+    if legacy_watch_rows:
+        for row in legacy_watch_rows[:8]:
+            lines.append(f"- {row.symbol} {row.name}: \u901a\u904e\u65e2\u6709\u6d41\u7a0b\u689d\u4ef6\uff0c\u4f46\u7576\u65e5\u7c4c\u78bc\u96f7\u9054\u672a\u9054\u512a\u5148\u7b49\u7d1a\u3002")
+    else:
+        lines.append("- \u672c\u6b21\u7121\u50c5\u7531\u820a\u7248\u6d41\u7a0b\u652f\u6490\u7684\u89c0\u5bdf\u6a19\u7684\u3002")
     lines.extend(
         [
             "",
@@ -611,16 +625,19 @@ def _technical_chart_payload(rows: list[HybridRow], bars_by_symbol: dict[str, li
     }
 
 
-def _screening_dual_column_block(rows_main: list[HybridRow], rows_watch: list[HybridRow], decisions: dict) -> list[str]:
+def _screening_triple_column_block(rows_main: list[HybridRow], rows_chip_watch: list[HybridRow], rows_legacy: list[HybridRow], decisions: dict) -> list[str]:
+    main_empty = "\u672c\u6b21\u7121\u7b26\u5408\u300c\u7c4c\u78bc\u512a\u5148 + \u6280\u8853\u78ba\u8a8d\u300d\u7684\u6a19\u7684"
+    chip_watch_empty = "\u7c4c\u78bc\u96f7\u9054\u5df2\u89f8\u767c\uff0c\u4f46\u5c1a\u672a\u901a\u904e\u7b2c\u4e8c\u5c64\u78ba\u8a8d"
+    legacy_empty = "\u672c\u6b21\u7121\u820a\u7248\u6d41\u7a0b\u7368\u7acb\u4fdd\u7559\u7684\u6a19\u7684"
     return [
         "<table>",
         "<tr>",
-        f'<td valign="top" width="50%"><strong>新版主清單</strong><br>{_screening_column_html(rows_main, decisions, "目前無符合新版三條件的標的。")}</td>',
-        f'<td valign="top" width="50%"><strong>舊版觀察清單</strong><br>{_screening_column_html(rows_watch, decisions, "目前沒有補入舊版觀察標的。")}</td>',
+        f'<td valign="top" width="33%"><strong>\u7c4c\u78bc\u7a81\u7834\u4e3b\u6e05\u55ae</strong><br>{_screening_column_html(rows_main, decisions, main_empty)}</td>',
+        f'<td valign="top" width="33%"><strong>\u7c4c\u78bc\u89c0\u5bdf\u6e05\u55ae</strong><br>{_screening_column_html(rows_chip_watch, decisions, chip_watch_empty)}</td>',
+        f'<td valign="top" width="34%"><strong>\u820a\u7248\u89c0\u5bdf\u6e05\u55ae</strong><br>{_screening_column_html(rows_legacy, decisions, legacy_empty)}</td>',
         "</tr>",
         "</table>",
     ]
-
 
 def _screening_column_html(rows: list[HybridRow], decisions: dict, empty_text: str) -> str:
     if not rows:
@@ -628,7 +645,7 @@ def _screening_column_html(rows: list[HybridRow], decisions: dict, empty_text: s
     items = []
     for rank, row in enumerate(rows[:8], start=1):
         decision = portfolio_decision_label(decisions.get(row.symbol))
-        bucket_label = " | 籌碼突破" if row.screening_bucket == "chip_breakout" else ""
+        bucket_label = " | \u7c4c\u78bc\u7a81\u7834" if row.screening_bucket == "chip_confirmed" else " | \u7c4c\u78bc\u89c0\u5bdf" if row.screening_bucket == "chip_watch" else ""
         items.append(f"{rank}. {row.symbol} {row.name} | {row.industry} | Hybrid {row.hybrid_score:.1f} | {decision}{bucket_label}")
     return "<br>".join(items)
 
@@ -641,7 +658,7 @@ def _technical_chart_stock(row: HybridRow, bars: list[Bar], decision) -> dict:
         "name": row.name,
         "industry": row.industry,
         "screeningBucket": row.screening_bucket,
-        "screeningLabel": "籌碼突破" if row.screening_bucket == "chip_breakout" else "新版策略" if row.screening_bucket == "revised" else "舊策略",
+        "screeningLabel": "\u7c4c\u78bc\u7a81\u7834\u4e3b\u6e05\u55ae" if row.screening_bucket == "chip_confirmed" else "\u7c4c\u78bc\u89c0\u5bdf\u6e05\u55ae" if row.screening_bucket == "chip_watch" else "\u820a\u7248\u89c0\u5bdf\u6e05\u55ae",
         "signalSource": row.signal_source,
         "hybridScore": round(row.hybrid_score, 2),
         "technicalScore": round(row.technical_score, 2),

@@ -104,9 +104,10 @@ class UniverseSelectionTest(unittest.TestCase):
 
             plan = build_candidate_selection_plan(universe_path, ("2330.TW",), 2, ohlcv_path=ohlcv_path)
 
-            self.assertEqual(plan.revised_symbols, ("1111.TW",))
-            self.assertEqual(plan.legacy_watch_symbols, ("2222.TW",))
-            self.assertEqual(plan.selected_symbols, ("1111.TW", "2222.TW"))
+            self.assertEqual(plan.chip_radar_symbols, ())
+            self.assertEqual(plan.revised_symbols, ())
+            self.assertEqual(plan.legacy_watch_symbols, ("2222.TW", "1111.TW"))
+            self.assertEqual(plan.selected_symbols, ("2222.TW", "1111.TW"))
 
     def test_selection_plan_prioritizes_chip_breakout_symbols(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -247,7 +248,8 @@ class UniverseSelectionTest(unittest.TestCase):
 
             plan = build_candidate_selection_plan(universe_path, ("2330.TW",), 2, ohlcv_path=ohlcv_path)
 
-            self.assertEqual(plan.chip_breakout_symbols, ())
+            self.assertEqual(plan.chip_radar_symbols, ("5555.TW",))
+            self.assertEqual(plan.chip_breakout_symbols, ("5555.TW",))
 
 
 if __name__ == "__main__":

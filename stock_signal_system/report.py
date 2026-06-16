@@ -469,7 +469,7 @@ INTERACTIVE_CHART_JS = r"""
   const controls = ["maShort", "maMid", "maLong", "rsiLow", "rsiHigh", "bollingerSigma"];
   const initial = {maShort: 5, maMid: 20, maLong: 60, rsiLow: 20, rsiHigh: 80, bollingerSigma: 2};
   function visibleStocks() {
-    return state.revisedOnly ? data.stocks.filter((stock) => stock.screeningBucket === "revised" || stock.screeningBucket === "chip_breakout") : data.stocks;
+    return state.revisedOnly ? data.stocks.filter((stock) => stock.screeningBucket === "chip_watch" || stock.screeningBucket === "chip_confirmed") : data.stocks;
   }
 
   function init() {
@@ -514,7 +514,7 @@ INTERACTIVE_CHART_JS = r"""
 
   function populateStockLists() {
     renderScreeningList("legacyStockList", data.stocks.filter((stock) => stock.screeningBucket === "legacy_watch"));
-    renderScreeningList("revisedStockList", data.stocks.filter((stock) => stock.screeningBucket === "revised" || stock.screeningBucket === "chip_breakout"));
+    renderScreeningList("revisedStockList", data.stocks.filter((stock) => stock.screeningBucket === "chip_watch" || stock.screeningBucket === "chip_confirmed"));
   }
 
   function renderScreeningList(id, stocks) {

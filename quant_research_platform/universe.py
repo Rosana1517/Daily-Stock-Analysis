@@ -12,6 +12,7 @@ from stock_signal_system.data.csv_sources import load_news
 @dataclass(frozen=True)
 class CandidateSelectionPlan:
     selected_symbols: tuple[str, ...]
+    chip_radar_symbols: tuple[str, ...]
     chip_breakout_symbols: tuple[str, ...]
     revised_symbols: tuple[str, ...]
     legacy_watch_symbols: tuple[str, ...]
@@ -37,18 +38,44 @@ def build_candidate_selection_plan(
 ) -> CandidateSelectionPlan:
     if not universe_path or not universe_path.exists():
         selected = fallback_symbols[:limit] if limit > 0 else fallback_symbols
-        return CandidateSelectionPlan(selected, (), (), selected)
+        return CandidateSelectionPlan(selected, (), (), (), selected)
     rows = _load_universe_rows(universe_path)
     if not rows:
         selected = fallback_symbols[:limit] if limit > 0 else fallback_symbols
-        return CandidateSelectionPlan(selected, (), (), selected)
+        return CandidateSelectionPlan(selected, (), (), (), selected)
     news_terms = _news_terms(news_path)
     bars_by_symbol = _load_price_bars(ohlcv_path)
-    chip_rows = _rank_chip_breakout_rows(rows, news_terms, bars_by_symbol)
+    margin_ready = [row for row in rows if _margin_change_5d(row) is not None]
+    margin_top_100 = {
+        str(row.get("symbol", "")).strip().upper()
+        for row in sorted(margin_ready, key=lambda row: float(_margin_change_5d(row) or 0.0), reverse=True)[:100]
+        if float(_margin_change_5d(row) or 0.0) > 0
+    }
+    chip_radar_rows = _rank_chip_radar_rows(rows, news_terms, bars_by_symbol)
+    chip_rows = [
+        row
+        for row in chip_radar_rows
+        if _passes_chip_confirmation_strategy(
+            row,
+            bars_by_symbol,
+            require_margin=bool(margin_ready),
+            margin_top_100=margin_top_100,
+        )
+    ]
+    chip_watch_rows = [row for row in chip_radar_rows if row not in chip_rows]
     revised_rows = _rank_revised_rows(rows, news_terms, bars_by_symbol)
-    legacy_rows = _rank_legacy_rows(rows, news_terms)
+    radar_symbols = {
+        str(row.get("symbol", "")).strip().upper()
+        for row in chip_radar_rows
+    }
+    legacy_rows = [
+        row
+        for row in _rank_legacy_rows(rows, news_terms)
+        if str(row.get("symbol", "")).strip().upper() not in radar_symbols
+    ]
 
     selected_symbols: list[str] = []
+    chip_radar_symbols: list[str] = []
     chip_breakout_symbols: list[str] = []
     revised_symbols: list[str] = []
     legacy_watch_symbols: list[str] = []
@@ -65,9 +92,12 @@ def build_candidate_selection_plan(
 
     add_symbols(chip_rows, chip_breakout_symbols)
     if limit <= 0 or len(selected_symbols) < limit:
-        add_symbols(revised_rows, revised_symbols)
+        add_symbols(chip_watch_rows, revised_symbols)
     if limit <= 0 or len(selected_symbols) < limit:
         add_symbols(legacy_rows, legacy_watch_symbols)
+
+    chip_radar_symbols.extend(chip_breakout_symbols)
+    chip_radar_symbols.extend(revised_symbols)
 
     if not selected_symbols:
         selected_symbols = list(fallback_symbols[:limit] if limit > 0 else fallback_symbols)
@@ -75,6 +105,7 @@ def build_candidate_selection_plan(
 
     return CandidateSelectionPlan(
         tuple(selected_symbols),
+        tuple(chip_radar_symbols),
         tuple(chip_breakout_symbols),
         tuple(revised_symbols),
         tuple(legacy_watch_symbols),
@@ -135,6 +166,19 @@ def _rank_candidate_rows(rows: list[dict], news_terms: set[str], bars_by_symbol:
         return chip_rows
     revised_rows = _rank_revised_rows(rows, news_terms, bars_by_symbol)
     return revised_rows or _rank_legacy_rows(rows, news_terms)
+
+
+def _rank_chip_radar_rows(rows: list[dict], news_terms: set[str], bars_by_symbol: dict[str, list]) -> list[dict]:
+    filtered = [row for row in rows if _passes_chip_radar_strategy(row)]
+    return sorted(
+        filtered,
+        key=lambda row: (
+            _chip_radar_score(row),
+            _platform_breakout_strength(_bars_for_row(row, bars_by_symbol)),
+            _candidate_score(row, news_terms),
+        ),
+        reverse=True,
+    )
 
 
 def save_candidate_csv(path: Path, symbols: tuple[str, ...]) -> Path:
@@ -199,6 +243,32 @@ def _passes_chip_breakout_strategy(row: dict, bars_by_symbol: dict[str, list]) -
     return _foreign_buy_streak_days(row) >= 3 or _branch_buy_streak_days(row) >= 2
 
 
+def _passes_chip_radar_strategy(row: dict) -> bool:
+    return _top10_main_force_strong(row) or _foreign_buy_streak_days(row) >= 3 or _branch_buy_streak_days(row) >= 2
+
+
+def _passes_chip_confirmation_strategy(
+    row: dict,
+    bars_by_symbol: dict[str, list],
+    require_margin: bool,
+    margin_top_100: set[str],
+) -> bool:
+    if not _passes_chip_radar_strategy(row):
+        return False
+    bars = _bars_for_row(row, bars_by_symbol)
+    if not bars:
+        return False
+    if not _is_ma20_rising(bars):
+        return False
+    if not _breaks_platform_consolidation(row, bars):
+        return False
+    if require_margin:
+        symbol = str(row.get("symbol", "")).strip().upper()
+        if symbol not in margin_top_100:
+            return False
+    return True
+
+
 def _bars_for_row(row: dict, bars_by_symbol: dict[str, list]) -> list:
     symbol = str(row.get("symbol", "")).strip().upper()
     platform_symbol = _platform_symbol(row).upper()
@@ -226,6 +296,13 @@ def _chip_breakout_score(row: dict, bars_by_symbol: dict[str, list]) -> float:
     foreign_streak = min(10.0, _foreign_buy_streak_days(row)) * 6.0
     branch_streak = min(10.0, _branch_buy_streak_days(row)) * 7.0
     return top10_strength + foreign_streak + branch_streak + breakout_strength
+
+
+def _chip_radar_score(row: dict) -> float:
+    top10_strength = _top10_main_force_strength(row)
+    foreign_streak = min(10.0, _foreign_buy_streak_days(row)) * 7.0
+    branch_streak = min(10.0, _branch_buy_streak_days(row)) * 8.0
+    return top10_strength + foreign_streak + branch_streak
 
 
 def _stochastic_k_value(bars: list) -> float | None:
