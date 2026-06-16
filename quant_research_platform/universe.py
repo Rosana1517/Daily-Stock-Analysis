@@ -322,11 +322,9 @@ def _branch_buy_streak_days(row: dict) -> float:
     return _optional_float(
         row,
         "branch_main_force_buy_streak_days",
-        "branch_main_force_buy_streak_days_proxy",
         "main_broker_buy_streak_days",
         "broker_buy_streak_days",
         "branch_buy_streak_days",
-        "dealer_buy_streak_days_proxy",
     ) or 0.0
 
 

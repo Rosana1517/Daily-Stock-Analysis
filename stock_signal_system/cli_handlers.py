@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import time
+import csv
 from pathlib import Path
 
 from quant_research_platform.config import QuantPlatformConfig
@@ -95,7 +96,16 @@ def handle_refresh_data(args) -> None:
             chip_snapshot = Path("data/tw_chip_snapshot.csv")
             try:
                 with _step_timer("tw_chip_snapshot_refresh"):
-                    build_tw_chip_snapshot_csv(chip_snapshot, Path(args.cache_dir))
+                    broker_symbols, latest_volume_by_symbol = _chip_candidate_symbols_and_volumes(
+                        Path("data/twse_stocks.csv"),
+                        Path("data/tpex_stocks.csv"),
+                    )
+                    build_tw_chip_snapshot_csv(
+                        chip_snapshot,
+                        Path(args.cache_dir),
+                        broker_symbols=broker_symbols,
+                        latest_volume_by_symbol=latest_volume_by_symbol,
+                    )
                     print(f"chip_snapshot_output={chip_snapshot}", flush=True)
             except Exception as exc:
                 print(f"warning: chip_snapshot_refresh_failed={exc}", flush=True)
@@ -241,6 +251,33 @@ def _symbol_to_realtime_channel(symbol: str) -> str:
     if text.endswith(".TW"):
         return f"tse:{text[:-3]}"
     return f"tse:{text}"
+
+
+def _chip_candidate_symbols_and_volumes(*stock_paths: Path, limit: int = 120) -> tuple[tuple[str, ...], dict[str, int]]:
+    rows = []
+    latest_volume_by_symbol: dict[str, int] = {}
+    for path in stock_paths:
+        if not path.exists():
+            continue
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            for row in csv.DictReader(handle):
+                symbol = str(row.get("symbol", "")).strip()
+                market = str(row.get("market", "")).strip().lower()
+                if not symbol or market not in {"tse", "twse"}:
+                    continue
+                volume = int(_safe_float(row.get("volume")))
+                latest_volume_by_symbol[symbol] = volume
+                rows.append((symbol, volume))
+    rows.sort(key=lambda item: item[1], reverse=True)
+    symbols = tuple(symbol for symbol, volume in rows[:limit] if volume > 0)
+    return symbols, latest_volume_by_symbol
+
+
+def _safe_float(value) -> float:
+    try:
+        return float(str(value or "0").replace(",", "").strip())
+    except ValueError:
+        return 0.0
 
 
 class _step_timer:

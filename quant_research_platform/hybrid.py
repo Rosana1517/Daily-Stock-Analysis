@@ -56,6 +56,15 @@ class HybridRow:
     realtime_status: str
     action: str
     risk_note: str
+    top10_main_force_buy_strength: float | None
+    top10_main_force_net_buy: float | None
+    foreign_buy_streak_days: float | None
+    branch_main_force_buy_streak_days: float | None
+    branch_main_force_leader: str
+    chip_data_date: str
+    chip_data_source: str
+    chip_data_source_status: str
+    top10_main_force_brokers: str
     technical_evidence: tuple[str, ...]
 
 
@@ -103,6 +112,7 @@ def run_tw_hybrid(
     industry_signals = load_or_fetch_industry_signals(news_path, rss_sources_path)
     news_items = load_news(news_path) if news_path and news_path.exists() else []
     realtime_states = load_latest_realtime_states(realtime_cache)
+    chip_snapshot_by_symbol = _load_chip_snapshot_lookup(config.universe_path, stock_snapshot_path)
 
     rows = []
     chip_breakout_symbols = set(selection_plan.chip_breakout_symbols)
@@ -112,6 +122,7 @@ def run_tw_hybrid(
         industry = stock_industry(symbol)
         tech = technicals.get(symbol)
         realtime = realtime_states.get(symbol)
+        chip_snapshot = chip_snapshot_by_symbol.get(symbol, {})
         intraday_return = realtime.intraday_return if realtime else 0.0
         kronos_score = _kronos_score(signal.expected_return)
         news_score = industry_news_score(industry, industry_signals)
@@ -146,6 +157,15 @@ def run_tw_hybrid(
                 realtime_status=realtime.status if realtime else "無即時資料",
                 action=_action(hybrid_score, signal.expected_return, intraday_return),
                 risk_note=_risk_note(signal.expected_return, tech.bias if tech else "neutral", intraday_return),
+                top10_main_force_buy_strength=_optional_float(chip_snapshot, "top10_main_force_buy_strength", "top10_main_force_buy_strength_proxy"),
+                top10_main_force_net_buy=_optional_float(chip_snapshot, "top10_main_force_net_buy"),
+                foreign_buy_streak_days=_optional_float(chip_snapshot, "foreign_buy_streak_days"),
+                branch_main_force_buy_streak_days=_optional_float(chip_snapshot, "branch_main_force_buy_streak_days"),
+                branch_main_force_leader=str(chip_snapshot.get("branch_main_force_leader", "")).strip(),
+                chip_data_date=str(chip_snapshot.get("chip_data_date", "")).strip(),
+                chip_data_source=str(chip_snapshot.get("chip_data_source", "")).strip(),
+                chip_data_source_status=str(chip_snapshot.get("chip_data_source_status", "")).strip(),
+                top10_main_force_brokers=str(chip_snapshot.get("top10_main_force_brokers", "")).strip(),
                 technical_evidence=_technical_evidence(symbol, tech, bars_by_symbol.get(symbol, [])),
             )
         )
@@ -213,6 +233,38 @@ def _load_bars(config: QuantPlatformConfig):
     if not config.ohlcv_path:
         return {}
     return load_csv_ohlcv(config.ohlcv_path, config.symbols)
+
+
+def _load_chip_snapshot_lookup(*paths: Path | None) -> dict[str, dict]:
+    lookup: dict[str, dict] = {}
+    for path in paths:
+        if not path or not path.exists():
+            continue
+        try:
+            with path.open("r", encoding="utf-8-sig", newline="") as handle:
+                for row in csv.DictReader(handle):
+                    symbol = str(row.get("symbol", "")).strip().upper()
+                    if not symbol:
+                        continue
+                    lookup[symbol] = row
+                    if "." not in symbol:
+                        lookup[f"{symbol}.TW"] = row
+                        lookup[f"{symbol}.TWO"] = row
+        except OSError:
+            continue
+    return lookup
+
+
+def _optional_float(row: dict, *keys: str) -> float | None:
+    for key in keys:
+        value = str(row.get(key, "")).replace(",", "").strip()
+        if not value:
+            continue
+        try:
+            return float(value)
+        except ValueError:
+            continue
+    return None
 
 
 def _kronos_score(expected_return: float) -> float:
@@ -309,8 +361,8 @@ def _save_report(
         "",
         "## 每日研究名單",
         "",
-        "| 排名 | 股票 | 名稱 | 產業 | Hybrid | Kronos | 新聞 | 技術 | 即時盤 | 組合決策 |",
-        "|---:|---|---|---|---:|---:|---:|---:|---|---|",
+        "| 排名 | 股票 | 名稱 | 產業 | Hybrid | 前十大主力強度 | 前十大主力淨買超 | 外資連買 | 主分點連買 | 主分點 | 籌碼日期 | 籌碼狀態 | 組合決策 |",
+        "|---:|---|---|---|---:|---:|---:|---:|---:|---|---|---|---|",
     ]
     lines[2:2] = [
         "## 新版主清單 + 舊版觀察清單",
@@ -323,17 +375,22 @@ def _save_report(
             decision = portfolio_decisions.get(row.symbol)
             lines.append(
                 f"| {rank} | {row.symbol} | {row.name} | {row.industry} | {row.hybrid_score:.1f} | "
-                f"{row.kronos_return:.2%} | {row.news_score:.1f} | {row.technical_score:.1f} | "
-                f"{row.realtime_status} | {portfolio_decision_label(decision)} |"
+                f"{_chip_value(row.top10_main_force_buy_strength)} | {_chip_value(row.top10_main_force_net_buy, digits=0)} | "
+                f"{_chip_value(row.foreign_buy_streak_days, digits=0)} | {_chip_value(row.branch_main_force_buy_streak_days, digits=0)} | "
+                f"{row.branch_main_force_leader or 'n/a'} | {row.chip_data_date or 'n/a'} | {row.chip_data_source_status or 'n/a'} | "
+                f"{portfolio_decision_label(decision)} |"
             )
     else:
-        lines.append("| - | - | - | - | - | - | - | - | - | 本次無符合條件標的 |")
+        lines.append("| - | - | - | - | - | - | - | - | - | - | - | - | 本次無符合條件標的 |")
 
-    lines.extend(["", "## 候選全覽", "", "| 股票 | 名稱 | 產業 | Hybrid | 組合決策 | 風險註記 |", "|---|---|---|---:|---|---|"])
+    lines.extend(["", "## 候選全覽", "", "| 股票 | 名稱 | 產業 | Hybrid | 前十大主力強度 | 外資連買 | 主分點連買 | 主分點 | 籌碼日期 | 籌碼狀態 | 組合決策 | 風險註記 |", "|---|---|---|---:|---:|---:|---:|---|---|---|---|---|"])
     for row in rows:
         decision = portfolio_decisions.get(row.symbol)
         lines.append(
             f"| {row.symbol} | {row.name} | {row.industry} | {row.hybrid_score:.1f} | "
+            f"{_chip_value(row.top10_main_force_buy_strength)} | {_chip_value(row.foreign_buy_streak_days, digits=0)} | "
+            f"{_chip_value(row.branch_main_force_buy_streak_days, digits=0)} | {row.branch_main_force_leader or 'n/a'} | "
+            f"{row.chip_data_date or 'n/a'} | {row.chip_data_source_status or 'n/a'} | "
             f"{portfolio_decision_label(decision)} | {row.risk_note} |"
         )
 
@@ -522,6 +579,12 @@ def _format_rate(value: float | None) -> str:
     return "n/a" if value is None else f"{value:.2%}"
 
 
+def _chip_value(value: float | None, digits: int = 1) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.{digits}f}"
+
+
 def _technical_chart_payload(rows: list[HybridRow], bars_by_symbol: dict[str, list[Bar]], decisions: dict) -> dict:
     return {
         "defaults": {
@@ -565,7 +628,8 @@ def _screening_column_html(rows: list[HybridRow], decisions: dict, empty_text: s
     items = []
     for rank, row in enumerate(rows[:8], start=1):
         decision = portfolio_decision_label(decisions.get(row.symbol))
-        items.append(f"{rank}. {row.symbol} {row.name} | {row.industry} | Hybrid {row.hybrid_score:.1f} | {decision}")
+        bucket_label = " | 籌碼突破" if row.screening_bucket == "chip_breakout" else ""
+        items.append(f"{rank}. {row.symbol} {row.name} | {row.industry} | Hybrid {row.hybrid_score:.1f} | {decision}{bucket_label}")
     return "<br>".join(items)
 
 
@@ -577,13 +641,24 @@ def _technical_chart_stock(row: HybridRow, bars: list[Bar], decision) -> dict:
         "name": row.name,
         "industry": row.industry,
         "screeningBucket": row.screening_bucket,
-        "screeningLabel": "新版策略" if row.screening_bucket == "revised" else "舊策略",
+        "screeningLabel": "籌碼突破" if row.screening_bucket == "chip_breakout" else "新版策略" if row.screening_bucket == "revised" else "舊策略",
         "signalSource": row.signal_source,
         "hybridScore": round(row.hybrid_score, 2),
         "technicalScore": round(row.technical_score, 2),
         "decision": portfolio_decision_label(decision),
         "bucket": portfolio_decision_bucket(decision),
         "riskNote": row.risk_note,
+        "chipSnapshot": {
+            "top10MainForceBuyStrength": row.top10_main_force_buy_strength,
+            "top10MainForceNetBuy": row.top10_main_force_net_buy,
+            "foreignBuyStreakDays": row.foreign_buy_streak_days,
+            "branchMainForceBuyStreakDays": row.branch_main_force_buy_streak_days,
+            "branchMainForceLeader": row.branch_main_force_leader,
+            "chipDataDate": row.chip_data_date,
+            "chipDataSource": row.chip_data_source,
+            "chipDataSourceStatus": row.chip_data_source_status,
+            "top10MainForceBrokers": row.top10_main_force_brokers,
+        },
         "support": support,
         "resistance": resistance,
         "evidence": list(row.technical_evidence),

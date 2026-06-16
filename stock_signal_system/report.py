@@ -296,6 +296,12 @@ def hybrid_interactive_markdown_to_html(markdown: str, title: str) -> str:
     .screening-card li {{ margin: 4px 0; font-size: 12px; color: #334155; }}
     .screening-card li.active {{ color: #0f766e; font-weight: 700; }}
     .screening-empty {{ margin: 0; font-size: 12px; color: #64748b; }}
+    .chip-card {{ margin-top: 12px; border: 1px solid #dde5ee; border-radius: 10px; background: #ffffff; padding: 10px 12px; }}
+    .chip-card h3 {{ margin: 0 0 8px; font-size: 13px; color: #0f172a; }}
+    .chip-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }}
+    .chip-metric {{ min-width: 0; }}
+    .chip-metric b {{ display: block; color: #334155; font-size: 11px; margin-bottom: 2px; }}
+    .chip-metric span {{ display: block; color: #111827; font-size: 12px; line-height: 1.4; word-break: break-word; }}
     .number-row {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }}
     .control-cell {{ display: grid; gap: 4px; min-width: 0; }}
     .control-cell span {{ color: #334155; font-size: 12px; font-weight: 700; }}
@@ -370,6 +376,10 @@ def _interactive_chart_section() -> str:
                 <div id="revisedStockList"></div>
               </section>
             </div>
+            <section class="chip-card">
+              <h3>籌碼快照</h3>
+              <div id="chipSnapshotPanel" class="chip-grid"></div>
+            </section>
           </div>
           <div class="field">
             <label>均線參數</label>
@@ -495,6 +505,28 @@ INTERACTIVE_CHART_JS = r"""
     });
   }
 
+  function renderChipSnapshot(stock) {
+    const node = $("chipSnapshotPanel");
+    if (!node) return;
+    const chip = stock.chipSnapshot || {};
+    const metrics = [
+      ["前十大主力強度", formatChipNumber(chip.top10MainForceBuyStrength)],
+      ["前十大主力淨買超", formatChipNumber(chip.top10MainForceNetBuy, 0)],
+      ["外資連買天數", formatChipNumber(chip.foreignBuyStreakDays, 0)],
+      ["主分點連買天數", formatChipNumber(chip.branchMainForceBuyStreakDays, 0)],
+      ["主分點", chip.branchMainForceLeader || "n/a"],
+      ["籌碼日期", chip.chipDataDate || "n/a"],
+      ["來源狀態", chip.chipDataSourceStatus || "n/a"],
+      ["主力分點", chip.top10MainForceBrokers || "n/a"],
+    ];
+    node.innerHTML = metrics.map(([label, value]) => `<div class="chip-metric"><b>${escapeHtml(label)}</b><span>${escapeHtml(String(value))}</span></div>`).join("");
+  }
+
+  function formatChipNumber(value, digits = 1) {
+    if (value === null || value === undefined || value === "" || Number.isNaN(Number(value))) return "n/a";
+    return Number(value).toFixed(digits);
+  }
+
   function params() {
     const value = (id) => Number($(id).value);
     return {
@@ -536,6 +568,7 @@ INTERACTIVE_CHART_JS = r"""
     const stock = visibleStocks()[state.stockIndex];
     if (!stock || !stock.bars || stock.bars.length === 0) return;
     highlightActiveStock(stock.symbol);
+    renderChipSnapshot(stock);
     renderStrategyList(stock);
     const ratio = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();

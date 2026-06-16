@@ -192,6 +192,63 @@ class UniverseSelectionTest(unittest.TestCase):
             self.assertEqual(plan.chip_breakout_symbols, ("3333.TW",))
             self.assertEqual(plan.selected_symbols[0], "3333.TW")
 
+    def test_proxy_branch_streak_alone_does_not_trigger_chip_breakout(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            universe_path = base / "universe.csv"
+            ohlcv_path = base / "prices.csv"
+            with universe_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(
+                    handle,
+                    fieldnames=[
+                        "symbol",
+                        "market",
+                        "industry",
+                        "price",
+                        "volume",
+                        "avg_volume_20d",
+                        "revenue_growth_yoy",
+                        "pe_ratio",
+                        "top10_main_force_buy_strength",
+                        "branch_main_force_buy_streak_days_proxy",
+                    ],
+                )
+                writer.writeheader()
+                writer.writerow(
+                    {
+                        "symbol": "5555",
+                        "market": "tse",
+                        "industry": "半導體",
+                        "price": 55,
+                        "volume": 500000,
+                        "avg_volume_20d": 400000,
+                        "revenue_growth_yoy": 12,
+                        "pe_ratio": 20,
+                        "top10_main_force_buy_strength": 70,
+                        "branch_main_force_buy_streak_days_proxy": 4,
+                    }
+                )
+            with ohlcv_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["symbol", "date", "open", "high", "low", "close", "volume"])
+                writer.writeheader()
+                closes = [50, 50.5] * 10 + [56]
+                for idx, close in enumerate(closes):
+                    writer.writerow(
+                        {
+                            "symbol": "5555.TW",
+                            "date": f"2026-05-{idx + 1:02d}",
+                            "open": close,
+                            "high": close + 0.6,
+                            "low": close - 0.6,
+                            "close": close,
+                            "volume": 1000 if idx < 20 else 1600,
+                        }
+                    )
+
+            plan = build_candidate_selection_plan(universe_path, ("2330.TW",), 2, ohlcv_path=ohlcv_path)
+
+            self.assertEqual(plan.chip_breakout_symbols, ())
+
 
 if __name__ == "__main__":
     unittest.main()

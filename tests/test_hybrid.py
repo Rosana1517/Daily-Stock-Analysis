@@ -110,6 +110,8 @@ class HybridTest(unittest.TestCase):
             self.assertNotIn("| 2330.TW | 2330.TW |", report)
             self.assertIn("technical-chart-data", report)
             self.assertIn("選股條件摘要", report)
+            self.assertIn("前十大主力強度", report)
+            self.assertIn("籌碼狀態", report)
             self.assertIn("K值 < 40", report)
             self.assertIn("近 5 日融資增加前 100 大", report)
             self.assertIn("收盤價 20 日均線上升", report)
