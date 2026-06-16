@@ -314,10 +314,12 @@ def hybrid_interactive_markdown_to_html(markdown: str, title: str) -> str:
     .field label, .toggles legend {{ font-size: 12px; font-weight: 700; color: #334155; }}
     .field select, .field input {{ width: 100%; min-height: 36px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 8px; background: white; color: #111827; }}
     .control-note {{ margin: 6px 0 0; color: #64748b; font-size: 12px; line-height: 1.45; }}
-    .stock-filter-row {{ display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }}
-    .stock-filter-toggle {{ display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #1f2937; }}
+    .stock-filter-stack {{ display: grid; gap: 10px; margin-top: 8px; }}
+    .stock-filter-item {{ border: 1px solid #dde5ee; border-radius: 10px; background: #ffffff; padding: 8px 10px; }}
+    .stock-filter-toggle {{ display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #1f2937; font-weight: 700; }}
     .stock-filter-toggle input {{ width: 16px; height: 16px; }}
-    .screening-columns {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }}
+    .stock-filter-brief {{ margin: 6px 0 0 22px; color: #64748b; font-size: 12px; line-height: 1.45; }}
+    .screening-columns {{ display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 10px; }}
     .screening-card {{ border: 1px solid #dde5ee; border-radius: 10px; background: #ffffff; padding: 10px 12px; }}
     .screening-card h3 {{ margin: 0 0 8px; font-size: 13px; color: #0f172a; }}
     .screening-card ul {{ margin: 0; padding-left: 18px; }}
@@ -391,17 +393,32 @@ def _interactive_chart_section() -> str:
           <div class="field">
             <label for="stockSelect">股票</label>
             <select id="stockSelect"></select>
-            <div class="stock-filter-row">
-              <label class="stock-filter-toggle"><input id="revisedOnlyToggle" type="checkbox">只看新版策略</label>
+            <div class="stock-filter-stack">
+              <section class="stock-filter-item">
+                <label class="stock-filter-toggle"><input id="chipRadarToggle" type="checkbox" checked>看籌碼雷達</label>
+                <p class="stock-filter-brief">先用前十大主力強度、外資連買與主分點連買抓出當日雷達名單，適合先看籌碼熱區。</p>
+              </section>
+              <section class="stock-filter-item">
+                <label class="stock-filter-toggle"><input id="newStrategyToggle" type="checkbox" checked>看新版策略</label>
+                <p class="stock-filter-brief">籌碼雷達命中後，再用 MA20 上升、平台突破與融資條件當確認器，只保留較強訊號。</p>
+              </section>
+              <section class="stock-filter-item">
+                <label class="stock-filter-toggle"><input id="legacyStrategyToggle" type="checkbox" checked>看舊版策略</label>
+                <p class="stock-filter-brief">沿用既有流程做觀察補位，保留沒有進籌碼主線、但基本面與流動性仍值得追蹤的標的。</p>
+              </section>
             </div>
             <div class="screening-columns">
               <section class="screening-card">
-                <h3>舊策略股票</h3>
-                <div id="legacyStockList"></div>
+                <h3>籌碼雷達</h3>
+                <div id="chipRadarStockList"></div>
               </section>
               <section class="screening-card">
                 <h3>新版策略股票</h3>
                 <div id="revisedStockList"></div>
+              </section>
+              <section class="screening-card">
+                <h3>舊策略股票</h3>
+                <div id="legacyStockList"></div>
               </section>
             </div>
             <section class="chip-card">
@@ -458,7 +475,7 @@ INTERACTIVE_CHART_JS = r"""
 (function () {
   const data = window.__TECH_DATA__ || {defaults: {}, stocks: []};
   const defaults = data.defaults || {};
-  const state = {stockIndex: 0, revisedOnly: false, layers: {ma: true, bollinger: true, support: true, volume: true, macd: true, rsi: true, markers: false, limitUp: false, monthlyMacd: false, ma20Volume: false}};
+  const state = {stockIndex: 0, filters: {chipRadar: true, newStrategy: true, oldStrategy: true}, layers: {ma: true, bollinger: true, support: true, volume: true, macd: true, rsi: true, markers: false, limitUp: false, monthlyMacd: false, ma20Volume: false}};
   const $ = (id) => document.getElementById(id);
   const canvas = $("technicalChart");
   if (!canvas || !data.stocks || data.stocks.length === 0) return;
@@ -468,8 +485,28 @@ INTERACTIVE_CHART_JS = r"""
   let labelBoxes = [];
   const controls = ["maShort", "maMid", "maLong", "rsiLow", "rsiHigh", "bollingerSigma"];
   const initial = {maShort: 5, maMid: 20, maLong: 60, rsiLow: 20, rsiHigh: 80, bollingerSigma: 2};
+  function isChipRadar(stock) {
+    return stock.screeningBucket === "chip_confirmed" || stock.screeningBucket === "chip_watch";
+  }
+  function isNewStrategy(stock) {
+    return stock.screeningBucket === "chip_confirmed";
+  }
+  function isOldStrategy(stock) {
+    return stock.screeningBucket === "legacy_watch";
+  }
   function visibleStocks() {
-    return state.revisedOnly ? data.stocks.filter((stock) => stock.screeningBucket === "chip_watch" || stock.screeningBucket === "chip_confirmed") : data.stocks;
+    const active = [];
+    if (state.filters.chipRadar) active.push("chipRadar");
+    if (state.filters.newStrategy) active.push("newStrategy");
+    if (state.filters.oldStrategy) active.push("oldStrategy");
+    if (!active.length) return [];
+    return data.stocks.filter((stock) => {
+      return (
+        (state.filters.chipRadar && isChipRadar(stock)) ||
+        (state.filters.newStrategy && isNewStrategy(stock)) ||
+        (state.filters.oldStrategy && isOldStrategy(stock))
+      );
+    });
   }
 
   function init() {
@@ -484,11 +521,13 @@ INTERACTIVE_CHART_JS = r"""
     select.addEventListener("change", () => { state.stockIndex = Number(select.value); render(); });
     populateStockLists();
     syncStockSelect();
-    $("revisedOnlyToggle").addEventListener("change", (event) => {
-      state.revisedOnly = event.target.checked;
-      state.stockIndex = 0;
-      syncStockSelect();
-      render();
+    [["chipRadarToggle", "chipRadar"], ["newStrategyToggle", "newStrategy"], ["legacyStrategyToggle", "oldStrategy"]].forEach(([id, key]) => {
+      $(id).addEventListener("change", (event) => {
+        state.filters[key] = event.target.checked;
+        state.stockIndex = 0;
+        syncStockSelect();
+        render();
+      });
     });
     controls.forEach((id) => $(id).addEventListener("input", render));
     document.querySelectorAll("[data-layer]").forEach((item) => {
@@ -513,8 +552,9 @@ INTERACTIVE_CHART_JS = r"""
   }
 
   function populateStockLists() {
+    renderScreeningList("chipRadarStockList", data.stocks.filter((stock) => isChipRadar(stock)));
     renderScreeningList("legacyStockList", data.stocks.filter((stock) => stock.screeningBucket === "legacy_watch"));
-    renderScreeningList("revisedStockList", data.stocks.filter((stock) => stock.screeningBucket === "chip_watch" || stock.screeningBucket === "chip_confirmed"));
+    renderScreeningList("revisedStockList", data.stocks.filter((stock) => stock.screeningBucket === "chip_confirmed"));
   }
 
   function renderScreeningList(id, stocks) {

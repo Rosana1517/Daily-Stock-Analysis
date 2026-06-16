@@ -6,9 +6,9 @@ import csv
 from pathlib import Path
 
 from quant_research_platform.config import QuantPlatformConfig
-from quant_research_platform.data import fetch_openbb_ohlcv, save_ohlcv_csv
+from quant_research_platform.data import fetch_openbb_ohlcv, fetch_yahoo_ohlcv, load_csv_ohlcv, save_ohlcv_csv
 from quant_research_platform.twse_realtime import poll_realtime_quotes
-from quant_research_platform.universe import select_candidate_symbols
+from quant_research_platform.universe import build_candidate_selection_plan, select_candidate_symbols
 from stock_signal_system.config import AppConfig
 from stock_signal_system.data.rss_sources import fetch_rss_news, save_news_csv
 from stock_signal_system.data.chip_snapshot import build_tw_chip_snapshot_csv
@@ -140,21 +140,55 @@ def handle_refresh_quant_ohlcv(args) -> None:
     config = QuantPlatformConfig.from_file(args.config)
     if not config.ohlcv_path:
         raise SystemExit("ERROR quant config missing ohlcv_path.")
-    symbols = select_candidate_symbols(
+    selection_plan = build_candidate_selection_plan(
         config.universe_path,
         config.symbols,
         config.universe_candidate_limit,
         ohlcv_path=config.ohlcv_path,
     )
+    symbols = selection_plan.selected_symbols
     if not symbols:
         raise SystemExit("ERROR no quant candidate symbols available for OHLCV refresh.")
     with _step_timer("quant_candidate_ohlcv_refresh"):
+        existing_all = load_csv_ohlcv(config.ohlcv_path) if config.ohlcv_path.exists() else {}
+        existing_selected = {symbol: existing_all.get(symbol, []) for symbol in symbols}
         bars_by_symbol = fetch_openbb_ohlcv(symbols, config.openbb_provider, args.period)
-        output = save_ohlcv_csv(config.ohlcv_path, bars_by_symbol)
+        required_bars = max(60, int(config.lookback or 0))
+        missing_symbols = tuple(
+            symbol
+            for symbol in symbols
+            if len(bars_by_symbol.get(symbol, [])) < required_bars
+        )
+        if missing_symbols:
+            retry_bars = fetch_yahoo_ohlcv(missing_symbols, args.period)
+            for symbol in missing_symbols:
+                retried = retry_bars.get(symbol, [])
+                if len(retried) > len(bars_by_symbol.get(symbol, [])):
+                    bars_by_symbol[symbol] = retried
+        unresolved_symbols: list[str] = []
+        for symbol in symbols:
+            current_bars = bars_by_symbol.get(symbol, [])
+            if len(current_bars) >= required_bars:
+                continue
+            fallback_bars = existing_selected.get(symbol, [])
+            if len(fallback_bars) >= required_bars:
+                bars_by_symbol[symbol] = fallback_bars
+            else:
+                unresolved_symbols.append(symbol)
+        merged_bars = dict(existing_all)
+        merged_bars.update(bars_by_symbol)
+        output = save_ohlcv_csv(config.ohlcv_path, merged_bars)
         rows = sum(len(rows) for rows in bars_by_symbol.values())
         print(f"quant_ohlcv_output={output}", flush=True)
         print(f"quant_candidate_symbols={len(symbols)}", flush=True)
         print(f"quant_ohlcv_rows={rows}", flush=True)
+        print(f"quant_chip_radar_symbols={len(selection_plan.chip_radar_symbols)}", flush=True)
+        print(f"quant_chip_breakout_symbols={len(selection_plan.chip_breakout_symbols)}", flush=True)
+        if unresolved_symbols:
+            missing = ", ".join(unresolved_symbols)
+            raise SystemExit(
+                f"ERROR incomplete quant OHLCV coverage; missing >= {required_bars} bars for: {missing}"
+            )
 
 
 def handle_refresh_quant_realtime(args) -> None:
