@@ -105,6 +105,7 @@ def run_tw_hybrid(
     realtime_states = load_latest_realtime_states(realtime_cache)
 
     rows = []
+    chip_breakout_symbols = set(selection_plan.chip_breakout_symbols)
     revised_symbols = set(selection_plan.revised_symbols)
     for signal in kronos_signals:
         symbol = signal.symbol
@@ -128,7 +129,11 @@ def run_tw_hybrid(
                 symbol=symbol,
                 name=stock_name(symbol),
                 industry=industry,
-                screening_bucket="revised" if symbol in revised_symbols else "legacy_watch",
+                screening_bucket=(
+                    "chip_breakout"
+                    if symbol in chip_breakout_symbols
+                    else "revised" if symbol in revised_symbols else "legacy_watch"
+                ),
                 signal_source=signal.source,
                 kronos_return=signal.expected_return,
                 kronos_score=kronos_score,
@@ -295,7 +300,8 @@ def _save_report(
     focus_rows = _portfolio_rows(rows, portfolio_decisions, "include")
     watch_rows = _portfolio_rows(rows, portfolio_decisions, "watch")
     excluded_rows = _portfolio_rows(rows, portfolio_decisions, "exclude")
-    revised_rows = [row for row in rows if row.screening_bucket == "revised"]
+    chip_rows = [row for row in rows if row.screening_bucket == "chip_breakout"]
+    revised_rows = [row for row in rows if row.screening_bucket in {"revised", "chip_breakout"}]
     legacy_watch_rows = [row for row in rows if row.screening_bucket == "legacy_watch"]
 
     lines = [
@@ -341,6 +347,13 @@ def _save_report(
             f"- 收盤價 20 日均線上升",
         ]
     )
+    lines.extend(["", "## 籌碼突破策略", ""])
+    if chip_rows:
+        lines.append("- 條件：前十大主力買氣強 + 外資連買或分點主力連買 + 突破平台整理區。")
+        for row in chip_rows[:8]:
+            lines.append(f"- {row.symbol} {row.name}: 已命中籌碼突破策略，優先納入候選池。")
+    else:
+        lines.append("- 今日候選池未出現同時符合籌碼與平台突破條件的標的。")
     lines.extend(
         [
             "",

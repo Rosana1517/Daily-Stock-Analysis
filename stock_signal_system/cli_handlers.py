@@ -90,8 +90,13 @@ def handle_refresh_data(args) -> None:
             print(f"warning: tpex_refresh_failed={exc}", flush=True)
     if refreshed_paths:
         with _step_timer("combine_tw_market_data"):
+            stock_inputs = [Path("data/twse_stocks.csv"), Path("data/tpex_stocks.csv")]
+            chip_snapshot = Path("data/tw_chip_snapshot.csv")
+            if chip_snapshot.exists():
+                stock_inputs.append(chip_snapshot)
+                print(f"chip_snapshot_input={chip_snapshot}", flush=True)
             combined_stocks = combine_csv_files(
-                [Path("data/twse_stocks.csv"), Path("data/tpex_stocks.csv")],
+                stock_inputs,
                 Path("data/tw_listed_otc_stocks.csv"),
             )
             combined_prices = combine_csv_files(

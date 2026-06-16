@@ -12,6 +12,7 @@ from stock_signal_system.data.csv_sources import load_news
 @dataclass(frozen=True)
 class CandidateSelectionPlan:
     selected_symbols: tuple[str, ...]
+    chip_breakout_symbols: tuple[str, ...]
     revised_symbols: tuple[str, ...]
     legacy_watch_symbols: tuple[str, ...]
 
@@ -36,17 +37,19 @@ def build_candidate_selection_plan(
 ) -> CandidateSelectionPlan:
     if not universe_path or not universe_path.exists():
         selected = fallback_symbols[:limit] if limit > 0 else fallback_symbols
-        return CandidateSelectionPlan(selected, (), selected)
+        return CandidateSelectionPlan(selected, (), (), selected)
     rows = _load_universe_rows(universe_path)
     if not rows:
         selected = fallback_symbols[:limit] if limit > 0 else fallback_symbols
-        return CandidateSelectionPlan(selected, (), selected)
+        return CandidateSelectionPlan(selected, (), (), selected)
     news_terms = _news_terms(news_path)
     bars_by_symbol = _load_price_bars(ohlcv_path)
+    chip_rows = _rank_chip_breakout_rows(rows, news_terms, bars_by_symbol)
     revised_rows = _rank_revised_rows(rows, news_terms, bars_by_symbol)
     legacy_rows = _rank_legacy_rows(rows, news_terms)
 
     selected_symbols: list[str] = []
+    chip_breakout_symbols: list[str] = []
     revised_symbols: list[str] = []
     legacy_watch_symbols: list[str] = []
 
@@ -60,7 +63,9 @@ def build_candidate_selection_plan(
             if limit > 0 and len(selected_symbols) >= limit:
                 break
 
-    add_symbols(revised_rows, revised_symbols)
+    add_symbols(chip_rows, chip_breakout_symbols)
+    if limit <= 0 or len(selected_symbols) < limit:
+        add_symbols(revised_rows, revised_symbols)
     if limit <= 0 or len(selected_symbols) < limit:
         add_symbols(legacy_rows, legacy_watch_symbols)
 
@@ -68,7 +73,12 @@ def build_candidate_selection_plan(
         selected_symbols = list(fallback_symbols[:limit] if limit > 0 else fallback_symbols)
         legacy_watch_symbols = list(selected_symbols)
 
-    return CandidateSelectionPlan(tuple(selected_symbols), tuple(revised_symbols), tuple(legacy_watch_symbols))
+    return CandidateSelectionPlan(
+        tuple(selected_symbols),
+        tuple(chip_breakout_symbols),
+        tuple(revised_symbols),
+        tuple(legacy_watch_symbols),
+    )
 
 
 def _load_price_bars(path: Path | None) -> dict[str, list]:
@@ -107,7 +117,22 @@ def _rank_legacy_rows(rows: list[dict], news_terms: set[str]) -> list[dict]:
     return sorted(rows, key=lambda row: _candidate_score(row, news_terms), reverse=True)
 
 
+def _rank_chip_breakout_rows(rows: list[dict], news_terms: set[str], bars_by_symbol: dict[str, list]) -> list[dict]:
+    filtered = [row for row in rows if _passes_chip_breakout_strategy(row, bars_by_symbol)]
+    return sorted(
+        filtered,
+        key=lambda row: (
+            _chip_breakout_score(row, bars_by_symbol),
+            _candidate_score(row, news_terms),
+        ),
+        reverse=True,
+    )
+
+
 def _rank_candidate_rows(rows: list[dict], news_terms: set[str], bars_by_symbol: dict[str, list]) -> list[dict]:
+    chip_rows = _rank_chip_breakout_rows(rows, news_terms, bars_by_symbol)
+    if chip_rows:
+        return chip_rows
     revised_rows = _rank_revised_rows(rows, news_terms, bars_by_symbol)
     return revised_rows or _rank_legacy_rows(rows, news_terms)
 
@@ -165,6 +190,15 @@ def _passes_revised_strategy(
     return True
 
 
+def _passes_chip_breakout_strategy(row: dict, bars_by_symbol: dict[str, list]) -> bool:
+    bars = _bars_for_row(row, bars_by_symbol)
+    if not _breaks_platform_consolidation(row, bars):
+        return False
+    if not _top10_main_force_strong(row):
+        return False
+    return _foreign_buy_streak_days(row) >= 3 or _branch_buy_streak_days(row) >= 2
+
+
 def _bars_for_row(row: dict, bars_by_symbol: dict[str, list]) -> list:
     symbol = str(row.get("symbol", "")).strip().upper()
     platform_symbol = _platform_symbol(row).upper()
@@ -185,6 +219,15 @@ def _margin_change_5d(row: dict) -> float | None:
     return None
 
 
+def _chip_breakout_score(row: dict, bars_by_symbol: dict[str, list]) -> float:
+    bars = _bars_for_row(row, bars_by_symbol)
+    breakout_strength = _platform_breakout_strength(bars)
+    top10_strength = _top10_main_force_strength(row)
+    foreign_streak = min(10.0, _foreign_buy_streak_days(row)) * 6.0
+    branch_streak = min(10.0, _branch_buy_streak_days(row)) * 7.0
+    return top10_strength + foreign_streak + branch_streak + breakout_strength
+
+
 def _stochastic_k_value(bars: list) -> float | None:
     if len(bars) < 9:
         return None
@@ -203,6 +246,84 @@ def _is_ma20_rising(bars: list) -> bool:
     latest = sum(closes[-20:]) / 20.0
     previous = sum(closes[-21:-1]) / 20.0
     return latest > previous
+
+
+def _breaks_platform_consolidation(row: dict, bars: list) -> bool:
+    explicit = _bool_flag(
+        row,
+        "platform_breakout",
+        "platform_breakout_flag",
+        "breakout_platform",
+        "breakout_of_platform",
+    )
+    if explicit is not None:
+        return explicit
+    return _platform_breakout_strength(bars) >= 18.0
+
+
+def _platform_breakout_strength(bars: list) -> float:
+    if len(bars) < 21:
+        return 0.0
+    setup = bars[-21:-1]
+    latest = bars[-1]
+    base_high = max(bar.high for bar in setup)
+    base_low = min(bar.low for bar in setup)
+    base_avg = sum(bar.close for bar in setup) / len(setup)
+    if base_avg <= 0:
+        return 0.0
+    compression = (base_high - base_low) / base_avg
+    if compression > 0.12:
+        return 0.0
+    breakout_pct = latest.close / max(base_high, 0.01) - 1.0
+    if breakout_pct <= 0.0:
+        return 0.0
+    average_volume = sum(bar.volume for bar in setup) / len(setup)
+    volume_ratio = latest.volume / average_volume if average_volume else 1.0
+    if volume_ratio < 1.1:
+        return 0.0
+    return breakout_pct * 2500.0 + max(0.0, 0.12 - compression) * 250.0 + volume_ratio * 10.0
+
+
+def _top10_main_force_strong(row: dict) -> bool:
+    rank = _optional_float(row, "top10_main_force_buy_rank", "top10_main_force_rank")
+    if rank is not None and rank > 0 and rank <= 10:
+        return True
+    strength = _top10_main_force_strength(row)
+    if strength >= 60.0:
+        return True
+    net_buy = _optional_float(row, "top10_main_force_net_buy", "main_force_top10_net_buy")
+    return net_buy is not None and net_buy > 0
+
+
+def _top10_main_force_strength(row: dict) -> float:
+    score = _optional_float(row, "top10_main_force_buy_strength", "top10_main_force_strength")
+    if score is not None:
+        return score
+    ratio = _optional_float(
+        row,
+        "top10_main_force_buy_ratio",
+        "top10_main_force_ratio",
+        "top10_buy_share_pct",
+        "top10_main_force_share_pct",
+    )
+    if ratio is None:
+        return 0.0
+    normalized = ratio * 100.0 if abs(ratio) <= 1.0 else ratio
+    return max(0.0, min(100.0, normalized * 2.0))
+
+
+def _foreign_buy_streak_days(row: dict) -> float:
+    return _optional_float(row, "foreign_buy_streak_days", "foreign_net_buy_streak_days", "foreign_buy_days") or 0.0
+
+
+def _branch_buy_streak_days(row: dict) -> float:
+    return _optional_float(
+        row,
+        "branch_main_force_buy_streak_days",
+        "main_broker_buy_streak_days",
+        "broker_buy_streak_days",
+        "branch_buy_streak_days",
+    ) or 0.0
 
 
 def _price_bucket_score(price: float) -> float:
@@ -246,3 +367,29 @@ def _float(value) -> float:
         return float(str(value or "0").replace(",", "").strip())
     except ValueError:
         return 0.0
+
+
+def _optional_float(row: dict, *keys: str) -> float | None:
+    for key in keys:
+        value = str(row.get(key, "")).replace(",", "").strip()
+        if not value:
+            continue
+        try:
+            return float(value)
+        except ValueError:
+            continue
+    return None
+
+
+def _bool_flag(row: dict, *keys: str) -> bool | None:
+    truthy = {"1", "true", "yes", "y", "pass", "passed"}
+    falsy = {"0", "false", "no", "n", "fail", "failed"}
+    for key in keys:
+        value = str(row.get(key, "")).strip().lower()
+        if not value:
+            continue
+        if value in truthy:
+            return True
+        if value in falsy:
+            return False
+    return None

@@ -108,6 +108,90 @@ class UniverseSelectionTest(unittest.TestCase):
             self.assertEqual(plan.legacy_watch_symbols, ("2222.TW",))
             self.assertEqual(plan.selected_symbols, ("1111.TW", "2222.TW"))
 
+    def test_selection_plan_prioritizes_chip_breakout_symbols(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            universe_path = base / "universe.csv"
+            ohlcv_path = base / "prices.csv"
+            with universe_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(
+                    handle,
+                    fieldnames=[
+                        "symbol",
+                        "market",
+                        "industry",
+                        "price",
+                        "volume",
+                        "avg_volume_20d",
+                        "revenue_growth_yoy",
+                        "pe_ratio",
+                        "top10_main_force_buy_strength",
+                        "foreign_buy_streak_days",
+                    ],
+                )
+                writer.writeheader()
+                writer.writerow(
+                    {
+                        "symbol": "3333",
+                        "market": "tse",
+                        "industry": "半導體",
+                        "price": 55,
+                        "volume": 500000,
+                        "avg_volume_20d": 400000,
+                        "revenue_growth_yoy": 12,
+                        "pe_ratio": 20,
+                        "top10_main_force_buy_strength": 70,
+                        "foreign_buy_streak_days": 4,
+                    }
+                )
+                writer.writerow(
+                    {
+                        "symbol": "4444",
+                        "market": "tse",
+                        "industry": "半導體",
+                        "price": 80,
+                        "volume": 600000,
+                        "avg_volume_20d": 600000,
+                        "revenue_growth_yoy": 10,
+                        "pe_ratio": 18,
+                        "top10_main_force_buy_strength": 0,
+                        "foreign_buy_streak_days": 0,
+                    }
+                )
+            with ohlcv_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["symbol", "date", "open", "high", "low", "close", "volume"])
+                writer.writeheader()
+                closes = [50, 50.5] * 10 + [56]
+                for idx, close in enumerate(closes):
+                    writer.writerow(
+                        {
+                            "symbol": "3333.TW",
+                            "date": f"2026-05-{idx + 1:02d}",
+                            "open": close,
+                            "high": close + 0.6,
+                            "low": close - 0.6,
+                            "close": close,
+                            "volume": 1000 if idx < 20 else 1600,
+                        }
+                    )
+                for idx, close in enumerate([70 + (idx % 2) for idx in range(21)]):
+                    writer.writerow(
+                        {
+                            "symbol": "4444.TW",
+                            "date": f"2026-05-{idx + 1:02d}",
+                            "open": close,
+                            "high": close + 0.6,
+                            "low": close - 0.6,
+                            "close": close,
+                            "volume": 1000,
+                        }
+                    )
+
+            plan = build_candidate_selection_plan(universe_path, ("2330.TW",), 2, ohlcv_path=ohlcv_path)
+
+            self.assertEqual(plan.chip_breakout_symbols, ("3333.TW",))
+            self.assertEqual(plan.selected_symbols[0], "3333.TW")
+
 
 if __name__ == "__main__":
     unittest.main()

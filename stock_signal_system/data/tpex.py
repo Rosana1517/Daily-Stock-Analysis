@@ -98,7 +98,10 @@ def combine_csv_files(input_paths: list[Path], output_path: Path, key_field: str
             for row in reader:
                 key = str(row.get(key_field, "")).strip()
                 if key:
-                    rows_by_key[key] = row
+                    existing = rows_by_key.get(key, {})
+                    merged = dict(existing)
+                    merged.update({field: value for field, value in row.items() if value not in (None, "")})
+                    rows_by_key[key] = merged
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)

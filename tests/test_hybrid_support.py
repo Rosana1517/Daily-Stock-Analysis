@@ -5,14 +5,16 @@ from datetime import datetime, timedelta
 
 from quant_research_platform.data import Bar
 from quant_research_platform.universe import (
+    _breaks_platform_consolidation,
     _is_ma20_rising,
+    _passes_chip_breakout_strategy,
     _passes_revised_strategy,
     _rank_candidate_rows,
     _stochastic_k_value,
 )
 
 
-def _bar(day_index: int, close: float, high: float | None = None, low: float | None = None) -> Bar:
+def _bar(day_index: int, close: float, high: float | None = None, low: float | None = None, volume: float = 1000) -> Bar:
     return Bar(
         symbol="2330",
         timestamp=datetime(2026, 5, 1) + timedelta(days=day_index),
@@ -20,7 +22,7 @@ def _bar(day_index: int, close: float, high: float | None = None, low: float | N
         high=high if high is not None else close + 1,
         low=low if low is not None else close - 1,
         close=close,
-        volume=1000,
+        volume=volume,
     )
 
 
@@ -58,6 +60,23 @@ class HybridSupportTest(unittest.TestCase):
                 {"2317": bars},
                 require_margin=True,
                 margin_top_100={"2330"},
+            )
+        )
+
+    def test_chip_breakout_strategy_requires_chip_confirmation_and_platform_breakout(self):
+        bars = [_bar(index, close=50 + (index % 2) * 0.5, high=51.0, low=49.5) for index in range(20)]
+        bars.append(_bar(20, close=56, high=56.5, low=54.8, volume=1600))
+        row = {
+            "symbol": "2330",
+            "top10_main_force_buy_strength": 68,
+            "foreign_buy_streak_days": 4,
+        }
+        self.assertTrue(_passes_chip_breakout_strategy(row, {"2330": bars}))
+        self.assertTrue(_breaks_platform_consolidation(row, bars))
+        self.assertFalse(
+            _passes_chip_breakout_strategy(
+                {"symbol": "2330", "top10_main_force_buy_strength": 68, "foreign_buy_streak_days": 1},
+                {"2330": bars},
             )
         )
 
