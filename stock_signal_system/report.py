@@ -350,6 +350,16 @@ def hybrid_interactive_markdown_to_html(markdown: str, title: str) -> str:
     .chip-metric {{ min-width: 0; }}
     .chip-metric b {{ display: block; color: #334155; font-size: 11px; margin-bottom: 2px; }}
     .chip-metric span {{ display: block; color: #111827; font-size: 12px; line-height: 1.4; word-break: break-word; }}
+    .focus-card {{ margin-bottom: 12px; border: 1px solid #dde5ee; border-radius: 10px; background: #ffffff; padding: 10px 12px; }}
+    .focus-card h3 {{ margin: 0 0 8px; font-size: 13px; color: #0f172a; }}
+    .focus-list {{ max-height: 220px; overflow-y: auto; border: 1px solid #e3eaf3; border-radius: 10px; background: linear-gradient(180deg, #fcfeff 0%, #f7fbff 100%); }}
+    .focus-item {{ display: flex; gap: 10px; align-items: flex-start; padding: 10px 10px; border-bottom: 1px solid #e6edf5; }}
+    .focus-item:last-child {{ border-bottom: 0; }}
+    .focus-rank {{ min-width: 30px; height: 30px; border-radius: 999px; background: #0f766e; color: #fff; display: grid; place-items: center; font-size: 12px; font-weight: 800; }}
+    .focus-body {{ min-width: 0; flex: 1; }}
+    .focus-title {{ font-size: 12px; font-weight: 800; color: #0f172a; line-height: 1.35; }}
+    .focus-title span {{ color: #0f766e; }}
+    .focus-note {{ margin-top: 3px; color: #475569; font-size: 11px; line-height: 1.45; }}
     .number-row {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }}
     .control-cell {{ display: grid; gap: 4px; min-width: 0; }}
     .control-cell span {{ color: #334155; font-size: 12px; font-weight: 700; }}
@@ -435,6 +445,10 @@ def _interactive_chart_section() -> str:
           <div class="field">
             <label for="stockSelect">股票</label>
             <select id="stockSelect"></select>
+            <section class="focus-card">
+              <h3>綜合關注榜</h3>
+              <div id="focusWatchlistPanel" class="focus-list"></div>
+            </section>
             <div class="stock-filter-stack">
               <section class="stock-filter-item">
                 <label class="stock-filter-toggle"><input id="chipRadarToggle" type="checkbox" checked>第 1 層：籌碼雷達</label>
@@ -566,6 +580,7 @@ INTERACTIVE_CHART_JS = r"""
       item.addEventListener("change", () => { state.layers[item.dataset.layer] = item.checked; render(); });
     });
     window.addEventListener("resize", render);
+    renderFocusWatchlist();
     render();
   }
 
@@ -581,6 +596,25 @@ INTERACTIVE_CHART_JS = r"""
     });
     if (state.stockIndex >= stocks.length) state.stockIndex = 0;
     select.value = String(state.stockIndex);
+  }
+
+  function renderFocusWatchlist() {
+    const node = $("focusWatchlistPanel");
+    if (!node) return;
+    const items = (data.focusStocks || []).slice(0, 12);
+    if (!items.length) {
+      node.innerHTML = '<div style="padding:10px 8px; color:#64748b; font-size:12px;">目前沒有可列入綜合關注榜的股票。</div>';
+      return;
+    }
+    node.innerHTML = items.map((item) => `
+      <div class="focus-item">
+        <div class="focus-rank">${escapeHtml(String(item.rank || ""))}</div>
+        <div class="focus-body">
+          <div class="focus-title">${escapeHtml(item.symbol || "")} ${escapeHtml(item.name || "")} <span>${escapeHtml(item.label || "")}</span></div>
+          <div class="focus-note">${escapeHtml(item.reason || "")}。${escapeHtml(item.action || "")}。Hybrid ${escapeHtml(formatChipNumber(item.hybridScore, 1))} / 技術 ${escapeHtml(formatChipNumber(item.technicalScore, 1))}</div>
+        </div>
+      </div>
+    `).join("");
   }
 
 

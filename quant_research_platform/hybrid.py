@@ -625,7 +625,7 @@ def _save_report(
     if not news_items:
         lines.append("- \u4eca\u65e5\u6c92\u6709\u53ef\u4f75\u5165\u5831\u544a\u7684 RSS \u65b0\u805e\u3002")
     lines.extend(_candidate_analysis_block(rows, portfolio_decisions, chip_snapshot_by_symbol))
-    lines.extend(["", "```technical-chart-data", json.dumps(_technical_chart_payload(rows, bars_by_symbol, portfolio_decisions), ensure_ascii=False, separators=(",", ":")), "```"])
+    lines.extend(["", "```technical-chart-data", json.dumps(_technical_chart_payload(rows, bars_by_symbol, portfolio_decisions, focus_rows), ensure_ascii=False, separators=(",", ":")), "```"])
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -992,7 +992,12 @@ def _placeholder_row(
     )
 
 
-def _technical_chart_payload(rows: list[HybridRow], bars_by_symbol: dict[str, list[Bar]], decisions: dict) -> dict:
+def _technical_chart_payload(
+    rows: list[HybridRow],
+    bars_by_symbol: dict[str, list[Bar]],
+    decisions: dict,
+    focus_rows: list[HybridRow] | None = None,
+) -> dict:
     return {
         "defaults": {
             "maShort": 5,
@@ -1015,6 +1020,10 @@ def _technical_chart_payload(rows: list[HybridRow], bars_by_symbol: dict[str, li
             "Portfolio_Manager_Agent 只彙整其他 agents，不自行分析股票。",
         ],
         "stocks": [_technical_chart_stock(row, bars_by_symbol.get(row.symbol, []), decisions.get(row.symbol)) for row in rows],
+        "focusStocks": [
+            _technical_chart_focus_stock(row, rank)
+            for rank, row in enumerate(focus_rows or [], start=1)
+        ],
     }
 
 
@@ -1090,6 +1099,25 @@ def _technical_chart_stock(row: HybridRow, bars: list[Bar], decision) -> dict:
             }
             for bar in recent_bars
         ],
+    }
+
+
+def _technical_chart_focus_stock(row: HybridRow, rank: int) -> dict:
+    return {
+        "rank": rank,
+        "symbol": row.symbol,
+        "name": row.name,
+        "industry": row.industry,
+        "label": _overall_focus_label(row),
+        "reason": _overall_focus_reason(row),
+        "action": _overall_focus_action(row),
+        "hybridScore": round(row.hybrid_score, 2),
+        "technicalScore": round(row.technical_score, 2),
+        "chipRadarHit": row.chip_radar_hit,
+        "newStrategyHit": row.new_strategy_hit,
+        "legacyHit": row.legacy_hit,
+        "top10MainForceBuyStrength": row.top10_main_force_buy_strength,
+        "top10MainForceNetBuy": row.top10_main_force_net_buy,
     }
 
 
