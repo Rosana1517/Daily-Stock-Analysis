@@ -5,10 +5,11 @@ import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 from quant_research_platform.config import QuantPlatformConfig
 from quant_research_platform.daily_stock_bridge import load_latest_realtime_states
-from quant_research_platform.hybrid import run_tw_hybrid
+from quant_research_platform.hybrid import _load_bars, run_tw_hybrid
 
 
 class HybridTest(unittest.TestCase):
@@ -121,6 +122,91 @@ class HybridTest(unittest.TestCase):
             self.assertNotIn("籌碼優先流程摘要", report)
             self.assertNotIn("TW_HYBRID_SELECTION_STRATEGY.md", report)
             self.assertNotIn("Model Execution Evidence", report)
+
+    def test_load_bars_backfills_missing_symbols_into_csv(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            price_path = base / "prices.csv"
+            with price_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["symbol", "date", "open", "high", "low", "close", "volume"])
+                writer.writeheader()
+                writer.writerow(
+                    {
+                        "symbol": "2330.TW",
+                        "date": "2026-04-20",
+                        "open": 100,
+                        "high": 102,
+                        "low": 99,
+                        "close": 101,
+                        "volume": 1000,
+                    }
+                )
+
+            config = QuantPlatformConfig(
+                symbols=("2330.TW", "2801.TW"),
+                data_source="csv",
+                ohlcv_path=price_path,
+                openbb_provider=None,
+                interval="1d",
+                lookback=60,
+                prediction_length=2,
+                top_n=1,
+                initial_cash=100000,
+                transaction_cost_bps=10,
+                benchmark_symbol="2330.TW",
+                kronos_repo_path=None,
+                kronos_tokenizer="",
+                kronos_model="",
+                qlib_data_path=None,
+                output_dir=base / "reports",
+                universe_path=None,
+            )
+
+            def fake_fetch(symbols, period):
+                self.assertEqual(symbols, ("2330.TW", "2801.TW"))
+                bars = {}
+                from datetime import datetime, timedelta
+
+                base_date = datetime(2026, 1, 1)
+                for symbol in symbols:
+                    bars[symbol] = [
+                        {
+                            "symbol": symbol,
+                            "date": (base_date + timedelta(days=day - 1)).strftime("%Y-%m-%d"),
+                            "open": 10 + day,
+                            "high": 11 + day,
+                            "low": 9 + day,
+                            "close": 10.5 + day,
+                            "volume": 1000 + day,
+                        }
+                        for day in range(1, 62)
+                    ]
+                from quant_research_platform.data import Bar
+
+                converted = {}
+                for symbol, rows in bars.items():
+                    converted[symbol] = [
+                        Bar(
+                            symbol=symbol,
+                            timestamp=datetime.strptime(row["date"], "%Y-%m-%d"),
+                            open=float(row["open"]),
+                            high=float(row["high"]),
+                            low=float(row["low"]),
+                            close=float(row["close"]),
+                            volume=float(row["volume"]),
+                        )
+                        for row in rows
+                    ]
+                return converted
+
+            with patch("quant_research_platform.hybrid.fetch_yahoo_ohlcv", side_effect=fake_fetch):
+                bars_by_symbol = _load_bars(config)
+
+            self.assertGreaterEqual(len(bars_by_symbol["2330.TW"]), 60)
+            self.assertGreaterEqual(len(bars_by_symbol["2801.TW"]), 60)
+
+            persisted = price_path.read_text(encoding="utf-8-sig")
+            self.assertIn("2801.TW", persisted)
 
 
 if __name__ == "__main__":

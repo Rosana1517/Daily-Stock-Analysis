@@ -28,7 +28,7 @@ from quant_research_platform.daily_stock_bridge import (
     stock_industry,
     stock_name,
 )
-from quant_research_platform.data import Bar, fetch_openbb_ohlcv, load_csv_ohlcv
+from quant_research_platform.data import Bar, fetch_openbb_ohlcv, fetch_yahoo_ohlcv, load_csv_ohlcv, save_ohlcv_csv
 from quant_research_platform.qlib_adapter import (
     build_qlib_signal_backtest_config,
     run_inline_signal_diagnostics,
@@ -268,7 +268,28 @@ def _load_bars(config: QuantPlatformConfig):
         return fetch_openbb_ohlcv(config.symbols, config.openbb_provider)
     if not config.ohlcv_path:
         return {}
-    return load_csv_ohlcv(config.ohlcv_path, config.symbols)
+    bars_by_symbol = load_csv_ohlcv(config.ohlcv_path, config.symbols)
+    required_bars = max(60, int(config.lookback or 0))
+    missing_symbols = tuple(
+        symbol
+        for symbol in config.symbols
+        if len(bars_by_symbol.get(symbol, [])) < required_bars
+    )
+    if not missing_symbols:
+        return bars_by_symbol
+
+    fetched = fetch_yahoo_ohlcv(missing_symbols, "1y")
+    refreshed = False
+    for symbol in missing_symbols:
+        fallback_bars = fetched.get(symbol, [])
+        if len(fallback_bars) >= required_bars:
+            bars_by_symbol[symbol] = fallback_bars
+            refreshed = True
+    if refreshed:
+        existing_all = load_csv_ohlcv(config.ohlcv_path) if config.ohlcv_path.exists() else {}
+        existing_all.update(bars_by_symbol)
+        save_ohlcv_csv(config.ohlcv_path, existing_all)
+    return bars_by_symbol
 
 
 def _load_chip_snapshot_lookup(*paths: Path | None) -> dict[str, dict]:
