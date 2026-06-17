@@ -256,12 +256,24 @@ def _is_supported_html_block(line: str) -> bool:
         "<br",
         "<div",
         "</div",
+        "<section",
+        "</section",
         "<details",
         "</details",
         "<summary",
         "</summary",
         "<article",
         "</article",
+        "<ul",
+        "</ul",
+        "<li",
+        "</li",
+        "<code",
+        "</code",
+        "<h1",
+        "</h1",
+        "<h2",
+        "</h2",
         "<h3",
         "</h3",
         "<p",
@@ -363,6 +375,13 @@ def hybrid_interactive_markdown_to_html(markdown: str, title: str) -> str:
     .rss-signal-card h3 {{ margin: 0 0 8px; font-size: 16px; color: #0f172a; }}
     .rss-signal-card p {{ margin: 4px 0; color: #475569; font-size: 13px; }}
     .rss-signal-card .rss-score {{ color: #0f766e; font-weight: 800; }}
+    .report-grid {{ display: grid; gap: 14px; margin: 18px 0 22px; }}
+    .report-grid--two {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+    .report-card {{ border: 1px solid #dde5ee; border-radius: 14px; background: #ffffff; padding: 14px; overflow: hidden; }}
+    .report-card h2 {{ margin-top: 0; margin-bottom: 10px; border-bottom: 0; padding-bottom: 0; font-size: 19px; }}
+    .report-card .table-wrap {{ margin-bottom: 0; }}
+    .report-card .scroll-box {{ max-height: 380px; overflow-y: auto; border: 1px solid #dbe4ef; border-radius: 12px; background: #f8fbff; padding: 10px 12px; }}
+    .report-card .section-note {{ margin: 0 0 8px; color: #64748b; font-size: 12px; line-height: 1.45; }}
     .candidate-panel {{ margin: 14px 0 22px; border: 1px solid #dde5ee; border-radius: 12px; background: #ffffff; overflow: hidden; }}
     .candidate-panel summary {{ list-style: none; cursor: pointer; padding: 10px 12px; background: linear-gradient(180deg, #f8fafc 0%, #eef3f8 100%); color: #0f172a; font-size: 14px; font-weight: 800; }}
     .candidate-panel summary::-webkit-details-marker {{ display: none; }}
@@ -371,13 +390,15 @@ def hybrid_interactive_markdown_to_html(markdown: str, title: str) -> str:
     .candidate-panel .table-wrap {{ margin: 0; border: 0; border-top: 1px solid #e5e7eb; border-radius: 0; }}
     details > summary {{ cursor: pointer; font-weight: 700; }}
     details[open] > summary {{ margin-bottom: 8px; }}
+    @media (max-width: 900px) {{ .report-grid--two {{ grid-template-columns: 1fr; }} }}
     @media (max-width: 860px) {{ .tech-grid {{ grid-template-columns: 1fr; }} .tech-controls {{ border-right: 0; border-bottom: 1px solid #e4e9f0; }} #technicalChart {{ height: 540px; }} }}
   </style>
 </head>
   <body>
     <main>
-    {"".join(body_lines)}
+    {"".join(body_lines).split('<div id="tech-section-marker"></div>', 1)[0]}
     {chart_section}
+    {"".join(body_lines).split('<div id="tech-section-marker"></div>', 1)[1] if '<div id="tech-section-marker"></div>' in "".join(body_lines) else ""}
     </main>
   <script id="technicalChartData" type="application/json">{chart_json}</script>
   <script>window.__TECH_DATA__ = JSON.parse(document.getElementById("technicalChartData").textContent);</script>

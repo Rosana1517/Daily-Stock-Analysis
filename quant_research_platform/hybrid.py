@@ -527,61 +527,104 @@ def _save_report(
     priority_groups = _screening_priority_groups(priority_rows)
     focus_rows = _overall_focus_rows(priority_rows)
 
-    lines = [f"# Hybrid \u53f0\u80a1\u6bcf\u65e5\u5206\u6790\u5831\u544a - {report_date.isoformat()}", "", "## \u0052\u0053\u0053 \u7522\u696d\u8a0a\u865f", "", '<div class="rss-signal-grid">']
+    priority_rows_html = []
+    for group in priority_groups:
+        priority_rows_html.append(
+            "<tr>"
+            f"<td>{group['priority']}</td>"
+            f"<td>{html.escape(str(group['label']))}</td>"
+            f"<td>{group['count']}</td>"
+            f"<td>{html.escape(str(group['meaning']))}</td>"
+            f"<td>{html.escape(str(group['action']))}</td>"
+            f"<td>{html.escape(str(group['samples']))}</td>"
+            "</tr>"
+        )
+    if not priority_rows_html:
+        priority_rows_html.append(
+            "<tr><td>-</td><td>尚無符合群組</td><td>0</td><td>目前沒有可分類的候選</td><td>等待下一次資料更新</td><td>n/a</td></tr>"
+        )
+
+    focus_items_html = "".join(_overall_focus_scroll_item(rank, row) for rank, row in enumerate(focus_rows, 1))
+    if not focus_items_html:
+        focus_items_html = '<div style="padding: 10px 4px; color: #64748b;">目前沒有可列入綜合關注榜的股票。</div>'
+
+    rss_cards_html = []
     if industry_signals:
         for signal in industry_signals[:8]:
-            catalyst = signal.catalysts[0] if signal.catalysts else "\u66ab\u7121\u660e\u78ba\u50ac\u5316"
-            lines.append(f'<article class="rss-signal-card"><h3>{signal.industry}</h3><p class="rss-score">RSS {signal.score:.1f}</p><p>\u8b49\u64da {signal.evidence_count} \u5247</p><p>{catalyst}</p></article>')
-    else:
-        lines.append('<article class="rss-signal-card"><h3>RSS \u8a0a\u865f\u66ab\u7f3a</h3><p class="rss-score">RSS 50.0</p><p>\u4eca\u65e5\u672a\u53d6\u5f97\u6709\u6548\u7522\u696d\u8a0a\u865f</p></article>')
-    lines.append("</div>")
-    lines.extend([
-        "",
-        "## \u9078\u80a1\u512a\u5148\u9806\u5e8f\u8868",
-        "",
-        "| \u512a\u5148\u7d1a | \u7d44\u5408 | \u6578\u91cf | \u98a8\u683c\u5224\u8b80 | \u5efa\u8b70\u52d5\u4f5c | \u4ee3\u8868\u80a1\u7968 |",
-        "|---|---|---:|---|---|---|",
-    ])
-    if priority_groups:
-        for group in priority_groups:
-            lines.append(
-                f"| {group['priority']} | {group['label']} | {group['count']} | {group['meaning']} | {group['action']} | {group['samples']} |"
+            catalyst = signal.catalysts[0] if signal.catalysts else "暫無明確催化"
+            rss_cards_html.append(
+                f'<article class="rss-signal-card"><h3>{html.escape(signal.industry)}</h3><p class="rss-score">RSS {signal.score:.1f}</p><p>證據 {signal.evidence_count} 則</p><p>{html.escape(catalyst)}</p></article>'
             )
     else:
-        lines.append("| - | 尚無符合群組 | 0 | 目前沒有可分類的候選 | 等待下一次資料更新 | n/a |")
-    lines.extend([
-        "",
-        "- 優先順序：`三者全中` > `舊版 + 籌碼雷達` > `舊版 + 新版` > `新版 + 籌碼雷達` > `單策略命中`。",
-        "- 單策略命中仍會保留在報表內，方便你分別看出每一條線各自抓到哪些股票。",
-        "",
-        "## \u7d9c\u5408\u95dc\u6ce8\u699c",
-        "",
-        "- 這是獨立的捲動切片，按照「三者全中」、「舊版 + 籌碼雷達」、「舊版 + 新版」、「新版 + 籌碼雷達」、「單策略」的優先順序排列，直接看最值得關注的股票。",
-        '<div style="max-height: 360px; overflow-y: auto; border: 1px solid #dbe4ef; border-radius: 12px; background: #f8fbff; padding: 10px 12px;">',
-    ])
-    if focus_rows:
-        for rank, row in enumerate(focus_rows, 1):
-            lines.append(_overall_focus_scroll_item(rank, row))
-    else:
-        lines.append('<div style="padding: 10px 4px; color: #64748b;">目前沒有可列入綜合關注榜的股票。</div>')
-    lines.append('</div>')
-    lines.extend(_candidate_analysis_block(rows, portfolio_decisions, chip_snapshot_by_symbol))
-    lines.extend([
-        "",
-        "## \u5206\u5c64\u8aaa\u660e",
-        "",
-        "- \u7b2c 1 \u5c64\uff1a\u7c4c\u78bc\u96f7\u9054\u3002\u5148\u627e\u4e3b\u529b\u3001\u5916\u8cc7\u3001\u5206\u9ede\u7e8c\u8cb7\u7684\u80a1\u7968\uff0c\u4f5c\u70ba\u5148\u63a2\u62a5\u8b66\u3002",
-        "- \u7b2c 2 \u5c64\uff1a\u65b0\u7248\u7b56\u7565\u3002\u5728\u7c4c\u78bc\u96f7\u9054\u6216\u820a\u7248\u6bcd\u6c60\u4e0a\uff0c\u518d\u6aa2\u67e5 K \u503c < 40\u3001MA20 \u4e0a\u5347\u3001\u878d\u8cc7\u589e\u52a0\uff0c\u627e\u51fa\u767c\u52d5\u9ede\u3002",
-        "- \u7b2c 3 \u5c64\uff1a\u820a\u7248\u7b56\u7565\u3002\u5b83\u662f\u54c1\u8cea\u5e95\u5c64\u8207\u5019\u9078\u6bcd\u6c60\uff0c\u7528\u4f86\u78ba\u8a8d\u6210\u9577\u57fa\u790e\u3001\u6d41\u52d5\u6027\u8207\u6a23\u5f0f\u7bc9\u78bc\uff0c\u4e0d\u662f\u8207\u524d\u5169\u5c64\u4e26\u5217\u7684\u540c\u6027\u7b56\u7565\u3002",
-        "",
-        "<details>",
-        "<summary>\u7814\u7a76\u89c0\u5bdf</summary>",
-    ])
+        rss_cards_html.append('<article class="rss-signal-card"><h3>RSS 訊號暫缺</h3><p class="rss-score">RSS 50.0</p><p>今日未取得有效產業訊號</p></article>')
+
+    data_limited_html = []
     if data_limited_rows:
-        lines.extend(["", "## \u8cc7\u6599\u5f85\u88dc\u6e05\u55ae", ""])
         for row in data_limited_rows[:12]:
-            lines.append(f"- {row.symbol} {row.name}: \u7f3a\u5c11\u5b8c\u6574 OHLCV / \u6280\u8853\u8cc7\u6599\uff0c\u5df2\u4fdd\u7559\u5728\u5831\u8868\u4e26\u6a19\u793a\u70ba\u8cc7\u6599\u5f85\u88dc\u3002")
-    lines.extend(["", "## \u6295\u7d44\u6a21\u64ec", "", f"- \u7c97\u4f30\u5831\u916c\u7387\uff1a{backtest.gross_expected_return:.2%}", f"- \u6263\u6210\u672c\u5f8c\u5831\u916c\u7387\uff1a{backtest.net_expected_return:.2%}", f"- \u9810\u4f30\u640d\u76ca\uff1a{backtest.estimated_pnl:,.2f}", "", "## \u53ef\u91cd\u7b97\u9a57\u8b49\u6307\u6a19", "", f"- \u9a57\u8b49\u6a23\u672c\u6578\uff1a{getattr(getattr(backtest, 'validation', None), 'sample_count', 0)}", f"- \u52dd\u7387\uff1a{_format_rate(getattr(getattr(backtest, 'validation', None), 'win_rate', None))}", f"- False positive rate\uff1a{_format_rate(getattr(getattr(backtest, 'validation', None), 'false_positive_rate', None))}", f"- \u5e73\u5747\u5be6\u73fe\u5831\u916c\uff1a{_format_rate(getattr(getattr(backtest, 'validation', None), 'average_realized_return', None))}"])
+            data_limited_html.append(
+                f"<li>{html.escape(row.symbol)} {html.escape(row.name)}: 缺少完整 OHLCV / 技術資料，已保留在報表並標示為資料待補。</li>"
+            )
+    else:
+        data_limited_html.append("<li>目前沒有資料待補股票。</li>")
+
+    lines = [
+        f"# Hybrid \u53f0\u80a1\u6bcf\u65e5\u5206\u6790\u5831\u544a - {report_date.isoformat()}",
+        "",
+        '<div class="report-grid report-grid--two">',
+        '<section class="report-card">',
+        "<h2>綜合關注榜</h2>",
+        '<div class="scroll-box">',
+        '<p class="section-note">按照「三者全中」、「舊版 + 籌碼雷達」、「舊版 + 新版」、「新版 + 籌碼雷達」、「單策略」的優先順序排列。</p>',
+        focus_items_html,
+        "</div>",
+        "</section>",
+        '<section class="report-card">',
+        "<h2>選股優先順序表</h2>",
+        '<div class="table-wrap"><table><thead><tr><th>優先級</th><th>組合</th><th>數量</th><th>風格判讀</th><th>建議動作</th><th>代表股票</th></tr></thead><tbody>',
+        "".join(priority_rows_html),
+        "</tbody></table></div>",
+        '<p class="section-note">優先順序：<code>三者全中</code> &gt; <code>舊版 + 籌碼雷達</code> &gt; <code>舊版 + 新版</code> &gt; <code>新版 + 籌碼雷達</code> &gt; <code>單策略命中</code>。</p>',
+        "</section>",
+        "</div>",
+        '<div id="tech-section-marker"></div>',
+        "## \u0052\u0053\u0053 \u7522\u696d\u8a0a\u865f",
+        "",
+        '<div class="rss-signal-grid">',
+        "".join(rss_cards_html),
+        "</div>",
+        "",
+        "## \u8cc7\u6599\u5f85\u88dc\u6e05\u55ae",
+        "",
+        "<ul>",
+        "".join(data_limited_html),
+        "</ul>",
+        "",
+        "## \u6295\u7d44\u6a21\u64ec",
+        "",
+        f"- \u7c97\u4f30\u5831\u916c\u7387\uff1a{backtest.gross_expected_return:.2%}",
+        f"- \u6263\u6210\u672c\u5f8c\u5831\u916c\u7387\uff1a{backtest.net_expected_return:.2%}",
+        f"- \u9810\u4f30\u640d\u76ca\uff1a{backtest.estimated_pnl:,.2f}",
+        "",
+        "## \u53ef\u91cd\u7b97\u9a57\u8b49\u6307\u6a19",
+        "",
+        f"- \u9a57\u8b49\u6a23\u672c\u6578\uff1a{getattr(getattr(backtest, 'validation', None), 'sample_count', 0)}",
+        f"- \u52dd\u7387\uff1a{_format_rate(getattr(getattr(backtest, 'validation', None), 'win_rate', None))}",
+        f"- False positive rate\uff1a{_format_rate(getattr(getattr(backtest, 'validation', None), 'false_positive_rate', None))}",
+        f"- \u5e73\u5747\u5be6\u73fe\u5831\u916c\uff1a{_format_rate(getattr(getattr(backtest, 'validation', None), 'average_realized_return', None))}",
+    ]
+    if backtest.benchmark_return is not None:
+        lines.append(f"- \u57fa\u6e96\u5831\u916c\uff1a{backtest.benchmark_return:.2%}")
+    lines.extend([
+        "",
+        "## \u65b0\u805e\u5feb\u8a0a",
+        "",
+    ])
+    for item in news_items[:6]:
+        industries = ", ".join(item.industries) if item.industries else "\u7d9c\u5408"
+        lines.append(f"- [{industries}] {item.title}?{item.source}, {item.date.isoformat()}?")
+    if not news_items:
+        lines.append("- \u4eca\u65e5\u6c92\u6709\u53ef\u4f75\u5165\u5831\u544a\u7684 RSS \u65b0\u805e\u3002")
+    lines.extend(_candidate_analysis_block(rows, portfolio_decisions, chip_snapshot_by_symbol))
     if backtest.benchmark_return is not None:
         lines.append(f"- \u57fa\u6e96\u5831\u916c\uff1a{backtest.benchmark_return:.2%}")
     lines.extend(["", "## \u65b0\u805e\u5feb\u8a0a", ""])
