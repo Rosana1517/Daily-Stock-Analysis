@@ -8,10 +8,10 @@ from stock_signal_system.report import markdown_to_html, public_report_url
 
 class ReportHtmlTest(unittest.TestCase):
     def test_markdown_to_html_contains_readable_structure(self):
-        html = markdown_to_html("# 標題\n\n## 小節\n- **重點** 說明", "摘要")
+        html = markdown_to_html("# 報告標題\n\n## 摘要\n- **重點** 內容", "測試報告")
 
-        self.assertIn("<h1>標題</h1>", html)
-        self.assertIn("<h2>小節</h2>", html)
+        self.assertIn("<h1>報告標題</h1>", html)
+        self.assertIn("<h2>摘要</h2>", html)
         self.assertIn("<strong>重點</strong>", html)
 
     def test_public_report_url_uses_report_filename(self):
@@ -20,9 +20,9 @@ class ReportHtmlTest(unittest.TestCase):
         self.assertEqual(url, "https://example.com/reports/stock_signals_2026-04-27.html")
 
     def test_markdown_to_html_keeps_supported_raw_html_blocks(self):
-        markdown = """# 標題
+        markdown = """# 報告標題
 
-## 雙欄
+## 雙欄清單
 
 <table>
 <tr>
@@ -32,7 +32,7 @@ class ReportHtmlTest(unittest.TestCase):
 </table>
 """
 
-        html = markdown_to_html(markdown, "標題")
+        html = markdown_to_html(markdown, "報告標題")
 
         self.assertIn("<table>", html)
         self.assertIn("<strong>新版主清單</strong><br>1. 2330.TW 台積電", html)
@@ -41,13 +41,7 @@ class ReportHtmlTest(unittest.TestCase):
     def test_hybrid_chinese_report_renders_interactive_technical_chart(self):
         markdown = """# Hybrid 量化每日選股報告 - 2026-05-13
 
-## 選股條件摘要
-
-- K值 < 40
-- 近 5 日融資增加前 100 大
-- 收盤價 20 日均線上升
-
-## 候選全覽
+## 候選股票分析
 
 | 股票 | 名稱 |
 |---|---|
@@ -63,10 +57,6 @@ class ReportHtmlTest(unittest.TestCase):
         self.assertIn("互動技術分析", html)
         self.assertIn("technicalChart", html)
         self.assertIn("均線、趨勢與支撐壓力", html)
-        self.assertIn("選股條件摘要", html)
-        self.assertIn("K值 &lt; 40", html)
-        self.assertIn("近 5 日融資增加前 100 大", html)
-        self.assertIn("收盤價 20 日均線上升", html)
         self.assertIn('data-layer="markers">', html)
         self.assertIn('data-layer="limitUp">', html)
         self.assertIn('data-layer="monthlyMacd">', html)
@@ -81,12 +71,12 @@ class ReportHtmlTest(unittest.TestCase):
         self.assertIn('id="chipRadarToggle"', html)
         self.assertIn('id="newStrategyToggle"', html)
         self.assertIn('id="legacyStrategyToggle"', html)
-        self.assertIn("前十大主力強度、外資連買與主分點連買抓出當日雷達名單", html)
-        self.assertIn("以籌碼雷達命中股為母群，再用 MA20 上升、平台突破與融資條件", html)
-        self.assertIn("流動性、成交量、20 日均量、營收成長、本益比與產業新聞關聯", html)
-        self.assertIn('id="chipRadarStockList"', html)
-        self.assertIn('id="legacyStockList"', html)
-        self.assertIn('id="revisedStockList"', html)
+        self.assertIn("先看前十大主力、外資連買與主分點連買", html)
+        self.assertIn("以舊版母池加上籌碼雷達股為母群", html)
+        self.assertIn("先用流動性、成交量、均量、營收成長、本益比與產業新聞建立大母池", html)
+        self.assertNotIn('id="chipRadarStockList"', html)
+        self.assertNotIn('id="legacyStockList"', html)
+        self.assertNotIn('id="revisedStockList"', html)
         self.assertIn('id="chipSnapshotPanel"', html)
         self.assertIn("screeningFlags(stock)", html)
         self.assertIn("checks.every(Boolean)", html)
@@ -94,7 +84,8 @@ class ReportHtmlTest(unittest.TestCase):
         self.assertIn("renderChipSnapshot(stock)", html)
         self.assertIn("official+broker", html)
         self.assertIn("repeat(auto-fit, minmax(240px, 1fr))", html)
-        self.assertIn('summary>策略條件摘要</summary>', html)
+        self.assertIn("filter-tip", html)
+        self.assertIn("<summary>策略條件摘要</summary>", html)
         self.assertNotIn("technical-chart-data", html)
 
 

@@ -41,6 +41,7 @@ class HybridTest(unittest.TestCase):
             base = Path(tmp_dir)
             price_path = base / "prices.csv"
             universe_path = base / "universe.csv"
+
             with universe_path.open("w", encoding="utf-8", newline="") as handle:
                 writer = csv.DictWriter(handle, fieldnames=["symbol", "market", "name", "industry", "price", "volume"])
                 writer.writeheader()
@@ -54,6 +55,7 @@ class HybridTest(unittest.TestCase):
                         "volume": 1000,
                     }
                 )
+
             with price_path.open("w", encoding="utf-8", newline="") as handle:
                 writer = csv.DictWriter(handle, fieldnames=["symbol", "date", "open", "high", "low", "close", "volume"])
                 writer.writeheader()
@@ -103,26 +105,21 @@ class HybridTest(unittest.TestCase):
             self.assertEqual(notification, "disabled")
 
             report = report_path.read_text(encoding="utf-8")
-            self.assertIn("\u7c4c\u78bc\u512a\u5148\u96d9\u968e\u6bb5\u8f38\u51fa", report)
-            self.assertIn("\u7c4c\u78bc\u512a\u5148\u6d41\u7a0b\u6458\u8981", report)
-            self.assertIn("\u7c4c\u78bc\u89c0\u5bdf\u6e05\u55ae", report)
-            self.assertIn("\u820a\u7248\u89c0\u5bdf\u6e05\u55ae", report)
-            self.assertIn("<table>", report)
-            self.assertIn("\u7c4c\u78bc\u7a81\u7834\u4e3b\u6e05\u55ae", report)
-            self.assertIn("\u7c4c\u78bc\u7a81\u7834", report)
             self.assertNotIn("| 2330.TW | 2330.TW |", report)
-            self.assertIn("technical-chart-data", report)
-            self.assertIn("K值 < 40", report)
-            self.assertIn("近 5 日融資增加前 100 大", report)
-            self.assertIn("收盤價 20 日均線上升", report)
+            self.assertIn("候選股票分析", report)
             self.assertIn("互動技術分析策略", report)
-            self.assertIn("均線、趨勢與支撐壓力", report)
-            self.assertIn("動能與波動", report)
-            self.assertIn("型態、量價與突破確認", report)
-            self.assertNotIn("舊版參數備查", report)
+            self.assertIn("RSS 產業訊號", report)
+            self.assertIn("<details>", report)
+            self.assertIn("technical-chart-data", report)
+            self.assertIn("投組模擬", report)
+            self.assertIn("新聞快訊", report)
+            self.assertIn("研究觀察", report)
+            self.assertIn("可重算驗證指標", report)
+            self.assertNotIn("每日研究名單", report)
+            self.assertNotIn("候選全覽", report)
+            self.assertNotIn("選股條件摘要", report)
+            self.assertNotIn("籌碼優先流程摘要", report)
             self.assertNotIn("TW_HYBRID_SELECTION_STRATEGY.md", report)
-            self.assertNotIn("五代理決策看板", report)
-            self.assertNotIn("產出檔案", report)
             self.assertNotIn("Model Execution Evidence", report)
 
 

@@ -146,7 +146,7 @@ def handle_refresh_quant_ohlcv(args) -> None:
         config.universe_candidate_limit,
         ohlcv_path=config.ohlcv_path,
     )
-    symbols = selection_plan.selected_symbols
+    symbols = selection_plan.analysis_symbols or selection_plan.selected_symbols
     if not symbols:
         raise SystemExit("ERROR no quant candidate symbols available for OHLCV refresh.")
     with _step_timer("quant_candidate_ohlcv_refresh"):
@@ -182,6 +182,7 @@ def handle_refresh_quant_ohlcv(args) -> None:
         print(f"quant_ohlcv_output={output}", flush=True)
         print(f"quant_candidate_symbols={len(symbols)}", flush=True)
         print(f"quant_ohlcv_rows={rows}", flush=True)
+        print(f"quant_legacy_pool_symbols={len(selection_plan.legacy_pool_symbols)}", flush=True)
         print(f"quant_chip_radar_symbols={len(selection_plan.chip_radar_symbols)}", flush=True)
         print(f"quant_chip_breakout_symbols={len(selection_plan.chip_breakout_symbols)}", flush=True)
         if unresolved_symbols:
@@ -193,12 +194,13 @@ def handle_refresh_quant_ohlcv(args) -> None:
 
 def handle_refresh_quant_realtime(args) -> None:
     config = QuantPlatformConfig.from_file(args.config)
-    symbols = select_candidate_symbols(
+    plan = build_candidate_selection_plan(
         config.universe_path,
         config.symbols,
         config.universe_candidate_limit,
         ohlcv_path=config.ohlcv_path,
     )
+    symbols = plan.analysis_symbols or plan.selected_symbols
     if not symbols:
         raise SystemExit("ERROR no quant candidate symbols available for realtime refresh.")
     channels = [_symbol_to_realtime_channel(symbol) for symbol in symbols]

@@ -8,6 +8,7 @@ from datetime import date
 from pathlib import Path
 
 from quant_research_platform.agent_workflow import (
+    AgentDecision,
     portfolio_decision_bucket,
     portfolio_decision_label,
     portfolio_decision_map,
@@ -93,8 +94,8 @@ def run_tw_hybrid(
         news_path,
         config.ohlcv_path,
     )
-    selected_symbols = selection_plan.selected_symbols
-    config = replace(config, symbols=selected_symbols)
+    analysis_symbols = selection_plan.analysis_symbols or selection_plan.selected_symbols
+    config = replace(config, symbols=analysis_symbols)
     load_stock_profiles(config.universe_path, stock_snapshot_path)
     bars_by_symbol = _load_bars(config)
     structure_history = load_intraday_history(price_1h_path) if price_1h_path and price_1h_path.exists() else {}
@@ -177,7 +178,7 @@ def run_tw_hybrid(
             technical_evidence=_technical_evidence(symbol, tech, bars_by_symbol.get(symbol, [])),
         )
     report_symbols = []
-    for symbol in (*selection_plan.legacy_pool_symbols, *selection_plan.chip_radar_symbols, *selection_plan.selected_symbols):
+    for symbol in (*analysis_symbols, *selection_plan.selected_symbols):
         if symbol not in report_symbols:
             report_symbols.append(symbol)
     for symbol in report_symbols:
@@ -212,8 +213,12 @@ def run_tw_hybrid(
         config.initial_cash,
         config.transaction_cost_bps,
     )
-    agent_workflow = run_five_agent_workflow(rows)
+    analyzed_rows = [row for row in rows if row.signal_source != "data-limited"]
+    agent_workflow = run_five_agent_workflow(analyzed_rows)
     portfolio_decisions = portfolio_decision_map(agent_workflow)
+    for row in rows:
+        if row.symbol not in portfolio_decisions:
+            portfolio_decisions[row.symbol] = _data_insufficient_decision(row)
     report_rows = _portfolio_rows(rows, portfolio_decisions, "include")
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
@@ -238,7 +243,7 @@ def run_tw_hybrid(
         backtest,
         industry_signals,
         news_items,
-        agent_workflow,
+        portfolio_decisions,
         bars_by_symbol,
         qlib_metrics,
         qlib_engine,
@@ -379,164 +384,70 @@ def _save_report(
     qlib_engine,
     config: QuantPlatformConfig,
 ) -> None:
-    portfolio_decisions = portfolio_decision_map(agent_workflow)
+    portfolio_decisions = agent_workflow
     focus_rows = _portfolio_rows(rows, portfolio_decisions, "include")
     watch_rows = _portfolio_rows(rows, portfolio_decisions, "watch")
     excluded_rows = _portfolio_rows(rows, portfolio_decisions, "exclude")
-    chip_rows = [row for row in rows if row.screening_bucket == "chip_confirmed"]
-    revised_rows = [row for row in rows if row.screening_bucket in {"chip_confirmed", "chip_watch"}]
-    chip_watch_rows = [row for row in rows if row.screening_bucket == "chip_watch"]
-    legacy_watch_rows = [row for row in rows if row.screening_bucket == "legacy_watch"]
+    data_limited_rows = [row for row in rows if row.signal_source == "data-limited"]
 
-    lines = [
-        f"# Hybrid 量化每日選股報告 - {report_date.isoformat()}",
-        "",
-        "## 每日研究名單",
-        "",
-        "| 排名 | 股票 | 名稱 | 產業 | Hybrid | 前十大主力強度 | 前十大主力淨買超 | 外資連買 | 主分點連買 | 主分點 | 籌碼日期 | 籌碼狀態 | 組合決策 |",
-        "|---:|---|---|---|---:|---:|---:|---:|---:|---|---|---|---|",
-    ]
-    lines[2:2] = [
-        "## \u7c4c\u78bc\u512a\u5148\u96d9\u968e\u6bb5\u8f38\u51fa",
-        "",
-        *_screening_triple_column_block(chip_rows, chip_watch_rows, legacy_watch_rows, portfolio_decisions),
-        "",
-    ]
-    if focus_rows:
-        for rank, row in enumerate(focus_rows, start=1):
-            decision = portfolio_decisions.get(row.symbol)
-            lines.append(
-                f"| {rank} | {row.symbol} | {row.name} | {row.industry} | {row.hybrid_score:.1f} | "
-                f"{_chip_value(row.top10_main_force_buy_strength)} | {_chip_value(row.top10_main_force_net_buy, digits=0)} | "
-                f"{_chip_value(row.foreign_buy_streak_days, digits=0)} | {_chip_value(row.branch_main_force_buy_streak_days, digits=0)} | "
-                f"{row.branch_main_force_leader or 'n/a'} | {row.chip_data_date or 'n/a'} | {row.chip_data_source_status or 'n/a'} | "
-                f"{portfolio_decision_label(decision)} |"
-            )
+    lines = [f"# Hybrid \u53f0\u80a1\u6bcf\u65e5\u5206\u6790\u5831\u544a - {report_date.isoformat()}", "", "## \u0052\u0053\u0053 \u7522\u696d\u8a0a\u865f", "", '<div class="rss-signal-grid">']
+    if industry_signals:
+        for signal in industry_signals[:8]:
+            catalyst = signal.catalysts[0] if signal.catalysts else "\u66ab\u7121\u660e\u78ba\u50ac\u5316"
+            lines.append(f'<article class="rss-signal-card"><h3>{signal.industry}</h3><p class="rss-score">RSS {signal.score:.1f}</p><p>\u8b49\u64da {signal.evidence_count} \u5247</p><p>{catalyst}</p></article>')
     else:
-        lines.append("| - | - | - | - | - | - | - | - | - | - | - | - | 本次無符合條件標的 |")
-
-    lines.extend(["", "## 候選全覽", "", "| 股票 | 名稱 | 產業 | Hybrid | 前十大主力強度 | 外資連買 | 主分點連買 | 主分點 | 籌碼日期 | 籌碼狀態 | 組合決策 | 風險註記 |", "|---|---|---|---:|---:|---:|---:|---|---|---|---|---|"])
+        lines.append('<article class="rss-signal-card"><h3>RSS \u8a0a\u865f\u66ab\u7f3a</h3><p class="rss-score">RSS 50.0</p><p>\u4eca\u65e5\u672a\u53d6\u5f97\u6709\u6548\u7522\u696d\u8a0a\u865f</p></article>')
+    lines.extend(["</div>", "", "## \u5019\u9078\u80a1\u7968\u5206\u6790", "", "| \u80a1\u7968 | \u540d\u7a31 | \u7522\u696d | Hybrid | \u820a\u7248 | \u65b0\u7248 | \u7c4c\u78bc\u96f7\u9054 | \u524d\u5341\u5927\u4e3b\u529b\u5f37\u5ea6 | \u524d\u5341\u5927\u4e3b\u529b\u6de8\u8cb7\u8d85 | \u5916\u8cc7\u9023\u8cb7 | \u4e3b\u5206\u9ede\u9023\u8cb7 | \u4e3b\u5206\u9ede | \u7c4c\u78bc\u65e5\u671f | \u7c4c\u78bc\u72c0\u614b | \u7d44\u5408\u6c7a\u7b56 | \u98a8\u96aa\u8a3b\u8a18 |", "|---|---|---|---:|---|---|---|---:|---:|---:|---:|---|---|---|---|---|"])
     for row in rows:
         decision = portfolio_decisions.get(row.symbol)
-        lines.append(
-            f"| {row.symbol} | {row.name} | {row.industry} | {row.hybrid_score:.1f} | "
-            f"{_chip_value(row.top10_main_force_buy_strength)} | {_chip_value(row.foreign_buy_streak_days, digits=0)} | "
-            f"{_chip_value(row.branch_main_force_buy_streak_days, digits=0)} | {row.branch_main_force_leader or 'n/a'} | "
-            f"{row.chip_data_date or 'n/a'} | {row.chip_data_source_status or 'n/a'} | "
-            f"{portfolio_decision_label(decision)} | {row.risk_note} |"
-        )
-
-    lines.extend(
-        [
-            "",
-            "## 選股條件摘要",
-            "",
-            f"- K值 < 40",
-            f"- 近 5 日融資增加前 100 大",
-            f"- 收盤價 20 日均線上升",
-        ]
-    )
-    lines.extend(["", "## \u7c4c\u78bc\u512a\u5148\u6d41\u7a0b\u6458\u8981", ""])
-    lines.append("- \u7b2c\u4e00\u5c64\uff1a\u4ee5\u7c4c\u78bc\u5feb\u7167\u7576\u524d\u7f6e\u96f7\u9054\uff0c\u5148\u6490\u51fa\u4e3b\u529b\u8207\u6cd5\u4eba\u6301\u7e8c\u505a\u591a\u7684\u5019\u9078\u6c60\u3002")
-    lines.append("- \u7b2c\u4e8c\u5c64\uff1a\u4ee5\u65e2\u6709\u50f9\u91cf\u6d41\u7a0b\u7576\u78ba\u8a8d\u5668\uff0c\u8981\u6c42 MA20 \u4e0a\u5347\u3001\u7a81\u7834\u5e73\u53f0\u8207\u878d\u8cc7\u689d\u4ef6\u901a\u904e\u3002")
-    lines.append("- \u7b2c\u4e09\u5c64\uff1a\u4f9d\u78ba\u8a8d\u5f37\u5ea6\u5206\u7d1a\u8f38\u51fa\u70ba\u300c\u7c4c\u78bc\u7a81\u7834\u4e3b\u6e05\u55ae\u300d\u300c\u7c4c\u78bc\u89c0\u5bdf\u6e05\u55ae\u300d\u8207\u300c\u820a\u7248\u89c0\u5bdf\u6e05\u55ae\u300d\u3002")
-    lines.append(f"- \u7c4c\u78bc\u7a81\u7834\u4e3b\u6e05\u55ae\uff1a{len(chip_rows)} \u6a94")
-    lines.append(f"- \u7c4c\u78bc\u89c0\u5bdf\u6e05\u55ae\uff1a{len(chip_watch_rows)} \u6a94")
-    lines.append(f"- \u820a\u7248\u89c0\u5bdf\u6e05\u55ae\uff1a{len(legacy_watch_rows)} \u6a94")
-    lines.extend(["", "## \u7c4c\u78bc\u89c0\u5bdf\u6e05\u55ae", ""])
-    if chip_watch_rows:
-        for row in chip_watch_rows[:8]:
-            lines.append(f"- {row.symbol} {row.name}: \u7c4c\u78bc\u96f7\u9054\u5df2\u89f8\u767c\uff0c\u4f46\u5c1a\u672a\u901a\u904e\u5b8c\u6574\u6280\u8853\u8207\u878d\u8cc7\u78ba\u8a8d\u3002")
-    else:
-        lines.append("- \u672c\u6b21\u7121\u9700\u7368\u7acb\u8ffd\u8e64\u7684\u7c4c\u78bc\u89c0\u5bdf\u6a19\u7684\u3002")
-    lines.extend(["", "## \u820a\u7248\u89c0\u5bdf\u6e05\u55ae", ""])
-    if legacy_watch_rows:
-        for row in legacy_watch_rows[:8]:
-            lines.append(f"- {row.symbol} {row.name}: \u901a\u904e\u65e2\u6709\u6d41\u7a0b\u689d\u4ef6\uff0c\u4f46\u7576\u65e5\u7c4c\u78bc\u96f7\u9054\u672a\u9054\u512a\u5148\u7b49\u7d1a\u3002")
-    else:
-        lines.append("- \u672c\u6b21\u7121\u50c5\u7531\u820a\u7248\u6d41\u7a0b\u652f\u6490\u7684\u89c0\u5bdf\u6a19\u7684\u3002")
-    lines.extend(
-        [
-            "",
-            "## 互動技術分析策略",
-            "",
-            "| 策略 | 圖上位置 | 採用角色 | 用途邊界 |",
-            "|---|---|---|---|",
-            "| 均線、趨勢與支撐壓力 | 主 K 線區，MA5/MA20/MA60 與近 60 根高低點 | Technical、Quant、Portfolio | 先確認方向、站位與關鍵價位，再決定是否列入研究重點 |",
-            "| 動能與波動 | MACD、RSI、布林通道 | Technical、Quant、Devil | 觀察動能延續、過熱回落與波動擴張，不單靠單一指標下結論 |",
-            "| 型態、量價與突破確認 | K 線標記、成交量、副圖突破訊號 | Technical、Quant、Devil | 只把有量能配合的型態與突破列為證據，低量或未站穩一律降權 |",
-            "| 近 10 日漲停排除 3 連漲 | 策略摘要與標記區 | Quant、Devil | 找短線強勢但排除過熱連續鎖漲停 |",
-            "| 月均線 MACD 金叉向上 | 策略摘要 | Technical、Quant | 以月線級別確認中期動能，樣本不足時只列觀察 |",
-        ]
-    )
-    lines.extend(["", "## RSS 產業訊號", "", "| 產業 | RSS 分數 | 證據數 | 主要催化 |", "|---|---:|---:|---|"])
-    for signal in industry_signals[:8]:
-        catalyst = signal.catalysts[0] if signal.catalysts else "無新的催化訊號"
-        lines.append(f"| {signal.industry} | {signal.score:.1f} | {signal.evidence_count} | {catalyst} |")
-    if not industry_signals:
-        lines.append("| 市場觀察 | 50.0 | 0 | RSS 暫時不可用，使用中性新聞分數。 |")
-
-    lines.extend(["", "## 產業分組", "", "| 產業 | 股票 | 平均 Hybrid | 偏向 |", "|---|---|---:|---|"])
-    for industry, group in _group_rows_by_industry(rows).items():
-        symbols = ", ".join(f"{row.symbol} {row.name}" for row in group[:4])
-        average = sum(row.hybrid_score for row in group) / len(group)
-        lines.append(f"| {industry} | {symbols} | {average:.1f} | {_industry_bias(average)} |")
-
-    lines.extend(["", "## 研究觀察", ""])
+        legacy_label = "\u662f" if row.legacy_hit else "\u5426"
+        new_label = "\u662f" if row.new_strategy_hit else "\u5426"
+        chip_label = "\u662f" if row.chip_radar_hit else "\u5426"
+        lines.append(f"| {row.symbol} | {row.name} | {row.industry} | {row.hybrid_score:.1f} | {legacy_label} | {new_label} | {chip_label} | {_chip_value(row.top10_main_force_buy_strength)} | {_chip_value(row.top10_main_force_net_buy, digits=0)} | {_chip_value(row.foreign_buy_streak_days, digits=0)} | {_chip_value(row.branch_main_force_buy_streak_days, digits=0)} | {row.branch_main_force_leader or 'n/a'} | {row.chip_data_date or 'n/a'} | {row.chip_data_source_status or 'n/a'} | {portfolio_decision_label(decision)} | {row.risk_note} |")
+    lines.extend(["", "## \u4e92\u52d5\u6280\u8853\u5206\u6790\u7b56\u7565", "", "- \u770b\u7c4c\u78bc\u96f7\u9054\uff1a\u4ee5\u524d\u5341\u5927\u4e3b\u529b\u3001\u5916\u8cc7\u9023\u8cb7\u3001\u4e3b\u5206\u9ede\u9023\u8cb7\u7576\u524d\u7f6e\u96f7\u9054\uff0c\u5148\u627e\u8fd1\u671f\u6709\u4e3b\u529b\u6301\u7e8c\u9032\u5834\u7684\u80a1\u7968\u3002", "- \u770b\u65b0\u7248\u7b56\u7565\uff1a\u4ee5\u820a\u7248\u7b56\u7565\u8207\u7c4c\u78bc\u96f7\u9054\u5171\u540c\u6bcd\u6c60\uff0c\u518d\u6aa2\u67e5 K \u503c < 40\u3001\u8fd1 5 \u65e5\u878d\u8cc7\u589e\u52a0\u524d\u6bb5\u3001MA20 \u4e0a\u5347\u7b49\u689d\u4ef6\u3002", "- \u770b\u820a\u7248\u7b56\u7565\uff1a\u4ee5\u65e2\u6709\u50f9\u91cf\u3001\u5747\u7dda\u3001\u578b\u614b\u3001\u652f\u6490\u58d3\u529b\u8207\u5373\u6642\u76e4\u52e2\u5b8c\u6574\u8dd1\u4e00\u6b21\uff0c\u4e0d\u56e0\u65b0\u7248\u689d\u4ef6\u800c\u7e2e\u5c0f\u80a1\u7968\u6c60\u3002", "", "<details>", "<summary>\u7814\u7a76\u89c0\u5bdf</summary>"])
     if focus_rows:
-        lines.extend(_research_observation(row, "研究重點") for row in focus_rows[:5])
+        lines.extend(_research_observation(row, "\u7814\u7a76\u89c0\u5bdf") for row in focus_rows[:8])
     else:
-        lines.append("- 本次沒有 Portfolio_Manager_Agent 核准進入每日研究名單的標的。")
-
-    lines.extend(["", "## 觀察名單", ""])
+        lines.append("- \u672c\u6b21\u6c92\u6709\u901a\u904e\u5b8c\u6574\u78ba\u8a8d\u800c\u5217\u5165\u7814\u7a76\u89c0\u5bdf\u7684\u80a1\u7968\u3002")
+    lines.extend(["</details>", "", "<details>", "<summary>\u89c0\u5bdf\u540d\u55ae</summary>"])
     if watch_rows:
-        lines.extend(_research_observation(row, "觀察") for row in watch_rows[:5])
+        lines.extend(_research_observation(row, "\u89c0\u5bdf\u540d\u55ae") for row in watch_rows[:8])
     else:
-        lines.append("- 本次沒有 watch_only 標的。")
-
+        lines.append("- \u672c\u6b21\u6c92\u6709\u843d\u5728\u7d14\u89c0\u5bdf\u540d\u55ae\u7684\u80a1\u7968\u3002")
+    lines.extend(["</details>", "", "<details>", "<summary>\u6392\u9664\u539f\u56e0</summary>"])
     if excluded_rows:
-        lines.extend(["", "## 排除原因", ""])
-        for row in excluded_rows[:8]:
+        for row in excluded_rows[:12]:
             decision = portfolio_decisions.get(row.symbol)
-            lines.append(f"- {row.symbol} {row.name}: {portfolio_decision_label(decision)}；原因：{row.risk_note}。")
-
-    lines.extend(
-        [
-            "",
-            "## 投組模擬",
-            "",
-            f"- 毛預期報酬：{backtest.gross_expected_return:.2%}",
-            f"- 扣除成本後預期報酬：{backtest.net_expected_return:.2%}",
-            f"- 預估損益：{backtest.estimated_pnl:,.2f}",
-            "",
-            "## 可重算驗證指標",
-            "",
-            "- 說明：此區是以現有樣本做保守、可重算的觀察驗證，尚不等同完整樣本外回測。",
-            f"- 樣本數：{getattr(getattr(backtest, 'validation', None), 'sample_count', 0)}",
-            f"- 勝率：{_format_rate(getattr(getattr(backtest, 'validation', None), 'win_rate', None))}",
-            f"- False positive rate：{_format_rate(getattr(getattr(backtest, 'validation', None), 'false_positive_rate', None))}",
-            f"- 平均觀察報酬：{_format_rate(getattr(getattr(backtest, 'validation', None), 'average_realized_return', None))}",
-        ]
-    )
+            lines.append(f"- {row.symbol} {row.name}: {portfolio_decision_label(decision)}?{row.risk_note}")
+    else:
+        lines.append("- \u672c\u6b21\u6c92\u6709\u660e\u78ba\u6392\u9664\u7684\u80a1\u7968\u3002")
+    lines.extend(["</details>"])
+    if data_limited_rows:
+        lines.extend(["", "## \u8cc7\u6599\u5f85\u88dc\u6e05\u55ae", ""])
+        for row in data_limited_rows[:12]:
+            lines.append(f"- {row.symbol} {row.name}: \u7f3a\u5c11\u5b8c\u6574 OHLCV / \u6280\u8853\u8cc7\u6599\uff0c\u5df2\u4fdd\u7559\u5728\u5831\u8868\u4e26\u6a19\u793a\u70ba\u8cc7\u6599\u5f85\u88dc\u3002")
+    lines.extend(["", "## \u6295\u7d44\u6a21\u64ec", "", f"- \u7c97\u4f30\u5831\u916c\u7387\uff1a{backtest.gross_expected_return:.2%}", f"- \u6263\u6210\u672c\u5f8c\u5831\u916c\u7387\uff1a{backtest.net_expected_return:.2%}", f"- \u9810\u4f30\u640d\u76ca\uff1a{backtest.estimated_pnl:,.2f}", "", "## \u53ef\u91cd\u7b97\u9a57\u8b49\u6307\u6a19", "", f"- \u9a57\u8b49\u6a23\u672c\u6578\uff1a{getattr(getattr(backtest, 'validation', None), 'sample_count', 0)}", f"- \u52dd\u7387\uff1a{_format_rate(getattr(getattr(backtest, 'validation', None), 'win_rate', None))}", f"- False positive rate\uff1a{_format_rate(getattr(getattr(backtest, 'validation', None), 'false_positive_rate', None))}", f"- \u5e73\u5747\u5be6\u73fe\u5831\u916c\uff1a{_format_rate(getattr(getattr(backtest, 'validation', None), 'average_realized_return', None))}"])
     if backtest.benchmark_return is not None:
-        lines.append(f"- 基準回看報酬：{backtest.benchmark_return:.2%}")
-
-    lines.extend(["", "## 新聞快訊", ""])
+        lines.append(f"- \u57fa\u6e96\u5831\u916c\uff1a{backtest.benchmark_return:.2%}")
+    lines.extend(["", "## \u65b0\u805e\u5feb\u8a0a", ""])
     for item in news_items[:6]:
-        industries = ", ".join(item.industries) if item.industries else "市場"
-        lines.append(f"- [{industries}] {item.title}（{item.source}, {item.date.isoformat()}）")
+        industries = ", ".join(item.industries) if item.industries else "\u7d9c\u5408"
+        lines.append(f"- [{industries}] {item.title}?{item.source}, {item.date.isoformat()}?")
     if not news_items:
-        lines.append("- 本次 RSS 不可用；報告使用快取市場資料與中性 RSS 分數。")
-    lines.extend(
-        [
-            "",
-            "```technical-chart-data",
-            json.dumps(_technical_chart_payload(rows, bars_by_symbol, portfolio_decisions), ensure_ascii=False, separators=(",", ":")),
-            "```",
-        ]
-    )
+        lines.append("- \u4eca\u65e5\u6c92\u6709\u53ef\u4f75\u5165\u5831\u544a\u7684 RSS \u65b0\u805e\u3002")
+    lines.extend(["", "```technical-chart-data", json.dumps(_technical_chart_payload(rows, bars_by_symbol, portfolio_decisions), ensure_ascii=False, separators=(",", ":")), "```"])
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
+
+def _data_insufficient_decision(row: HybridRow) -> AgentDecision:
+    return AgentDecision(
+        agent="Portfolio_Manager_Agent",
+        symbol=row.symbol,
+        score=0.0,
+        stance="exclude_data_insufficient",
+        evidence=("data_insufficient=true", f"signal_source={row.signal_source}"),
+        veto=False,
+    )
 
 def _group_rows_by_industry(rows: list[HybridRow]) -> dict[str, list[HybridRow]]:
     groups: dict[str, list[HybridRow]] = {}
@@ -569,11 +480,11 @@ def _portfolio_rows(rows: list[HybridRow], decisions: dict, bucket: str) -> list
 def _research_observation(row: HybridRow, label: str) -> str:
     risk_low, risk_high = _risk_range(row)
     return (
-        f"- {row.symbol} {row.name}: {label}；目前價格 {row.current_close:.2f}，"
-        f"Kronos 觀察價 {row.predicted_close:.2f}，Hybrid {row.hybrid_score:.1f}。"
-        f"風險區間 {risk_low:.2f} 至 {risk_high:.2f}；"
-        f"失效條件：{_invalidation_condition(row, risk_low)}；"
-        f"風險註記：{row.risk_note}。"
+        f"- {row.symbol} {row.name}: {label}?\u73fe\u50f9 {row.current_close:.2f}?"
+        f"Kronos \u9810\u4f30 {row.predicted_close:.2f}?Hybrid {row.hybrid_score:.1f}?"
+        f"\u98a8\u96aa\u5340\u9593 {risk_low:.2f} ~ {risk_high:.2f}?"
+        f"\u5931\u6548\u689d\u4ef6 {_invalidation_condition(row, risk_low)}?"
+        f"\u98a8\u96aa\u8a3b\u8a18 {row.risk_note}"
     )
 
 
@@ -585,11 +496,11 @@ def _risk_range(row: HybridRow) -> tuple[float, float]:
 
 def _invalidation_condition(row: HybridRow, risk_low: float) -> str:
     checks = (
-        (row.kronos_return <= 0, "Kronos 預期報酬轉負"),
-        (row.technical_score < 50, "技術分數低於 50"),
-        (row.realtime_score < 50, "即時盤分數低於 50"),
+        (row.kronos_return <= 0, "Kronos \u9810\u4f30\u8f49\u5f31"),
+        (row.technical_score < 50, "\u6280\u8853\u5206\u6578\u4f4e\u65bc 50"),
+        (row.realtime_score < 50, "\u5373\u6642\u5206\u6578\u4f4e\u65bc 50"),
     )
-    return next((message for matched, message in checks if matched), f"跌破風險區間下緣 {risk_low:.2f}")
+    return next((message for matched, message in checks if matched), f"\u8dcc\u7834\u98a8\u96aa\u4e0b\u7de3 {risk_low:.2f}")
 
 
 def _technical_evidence(symbol: str, tech, bars: list[Bar]) -> tuple[str, ...]:

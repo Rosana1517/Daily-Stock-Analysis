@@ -12,6 +12,7 @@ from stock_signal_system.data.csv_sources import load_news
 @dataclass(frozen=True)
 class CandidateSelectionPlan:
     selected_symbols: tuple[str, ...]
+    analysis_symbols: tuple[str, ...]
     chip_radar_symbols: tuple[str, ...]
     chip_breakout_symbols: tuple[str, ...]
     revised_symbols: tuple[str, ...]
@@ -39,11 +40,11 @@ def build_candidate_selection_plan(
 ) -> CandidateSelectionPlan:
     if not universe_path or not universe_path.exists():
         selected = fallback_symbols[:limit] if limit > 0 else fallback_symbols
-        return CandidateSelectionPlan(selected, (), (), (), selected, selected)
+        return CandidateSelectionPlan(selected, selected, (), (), (), selected, selected)
     rows = _load_universe_rows(universe_path)
     if not rows:
         selected = fallback_symbols[:limit] if limit > 0 else fallback_symbols
-        return CandidateSelectionPlan(selected, (), (), (), selected, selected)
+        return CandidateSelectionPlan(selected, selected, (), (), (), selected, selected)
     news_terms = _news_terms(news_path)
     bars_by_symbol = _load_price_bars(ohlcv_path)
     margin_ready = [row for row in rows if _margin_change_5d(row) is not None]
@@ -64,7 +65,19 @@ def build_candidate_selection_plan(
         )
     ]
     chip_watch_rows = [row for row in chip_radar_rows if row not in chip_rows]
-    revised_rows = _rank_revised_rows(rows, news_terms, bars_by_symbol)
+    legacy_pool_rows = _rank_legacy_rows(rows, news_terms)
+    mother_symbols = {
+        str(row.get("symbol", "")).strip().upper()
+        for row in legacy_pool_rows
+    } | {
+        str(row.get("symbol", "")).strip().upper()
+        for row in chip_radar_rows
+    }
+    revised_rows = _rank_revised_rows(
+        [row for row in rows if str(row.get("symbol", "")).strip().upper() in mother_symbols],
+        news_terms,
+        bars_by_symbol,
+    )
     radar_symbols = {
         str(row.get("symbol", "")).strip().upper()
         for row in chip_radar_rows
@@ -74,9 +87,8 @@ def build_candidate_selection_plan(
         for row in _rank_legacy_rows(rows, news_terms)
         if str(row.get("symbol", "")).strip().upper() not in radar_symbols
     ]
-    legacy_pool_rows = _rank_legacy_rows(rows, news_terms)
-
     selected_symbols: list[str] = []
+    analysis_symbols: list[str] = []
     chip_radar_symbols: list[str] = []
     chip_breakout_symbols: list[str] = []
     revised_symbols: list[str] = []
@@ -110,13 +122,19 @@ def build_candidate_selection_plan(
         if limit > 0 and len(legacy_pool_symbols) >= limit:
             break
 
+    for symbol in (*legacy_pool_symbols, *chip_radar_symbols):
+        if symbol and symbol not in analysis_symbols:
+            analysis_symbols.append(symbol)
+
     if not selected_symbols:
         selected_symbols = list(fallback_symbols[:limit] if limit > 0 else fallback_symbols)
         legacy_watch_symbols = list(selected_symbols)
         legacy_pool_symbols = list(selected_symbols)
+        analysis_symbols = list(selected_symbols)
 
     return CandidateSelectionPlan(
         tuple(selected_symbols),
+        tuple(analysis_symbols),
         tuple(chip_radar_symbols),
         tuple(chip_breakout_symbols),
         tuple(revised_symbols),

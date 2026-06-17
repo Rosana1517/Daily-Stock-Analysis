@@ -115,7 +115,7 @@ def _prune_generated_report_html(report_dir: Path, keep_latest: int = 3) -> None
 def markdown_to_html(markdown: str, title: str) -> str:
     if markdown.startswith("# Hybrid Quant Daily Stock Report"):
         return hybrid_markdown_to_html(markdown, title)
-    if markdown.startswith("# Hybrid 量化每日選股報告"):
+    if markdown.startswith("# Hybrid 量化每日選股報告") or markdown.startswith("# Hybrid 台股每日分析報告"):
         return hybrid_interactive_markdown_to_html(markdown, title)
 
     body_lines = _render_markdown_body(markdown)
@@ -254,6 +254,18 @@ def _is_supported_html_block(line: str) -> bool:
         "<strong",
         "</strong",
         "<br",
+        "<div",
+        "</div",
+        "<details",
+        "</details",
+        "<summary",
+        "</summary",
+        "<article",
+        "</article",
+        "<h3",
+        "</h3",
+        "<p",
+        "</p",
     )
     return normalized.startswith(allowed_prefixes)
 
@@ -319,13 +331,7 @@ def hybrid_interactive_markdown_to_html(markdown: str, title: str) -> str:
     .stock-filter-toggle {{ display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #1f2937; font-weight: 700; }}
     .stock-filter-toggle input {{ width: 16px; height: 16px; }}
     .stock-filter-brief {{ margin: 6px 0 0 22px; color: #64748b; font-size: 12px; line-height: 1.45; }}
-    .screening-columns {{ display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 10px; }}
-    .screening-card {{ border: 1px solid #dde5ee; border-radius: 10px; background: #ffffff; padding: 10px 12px; }}
-    .screening-card h3 {{ margin: 0 0 8px; font-size: 13px; color: #0f172a; }}
-    .screening-card ul {{ margin: 0; padding-left: 18px; }}
-    .screening-card li {{ margin: 4px 0; font-size: 12px; color: #334155; }}
-    .screening-card li.active {{ color: #0f766e; font-weight: 700; }}
-    .screening-empty {{ margin: 0; font-size: 12px; color: #64748b; }}
+    .filter-tip {{ margin: 10px 0 0; padding: 10px 12px; border: 1px dashed #cbd5e1; border-radius: 10px; color: #475569; font-size: 12px; line-height: 1.55; background: #f8fafc; }}
     .chip-card {{ margin-top: 12px; border: 1px solid #dde5ee; border-radius: 10px; background: #ffffff; padding: 10px 12px; }}
     .chip-card h3 {{ margin: 0 0 8px; font-size: 13px; color: #0f172a; }}
     .chip-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }}
@@ -351,7 +357,15 @@ def hybrid_interactive_markdown_to_html(markdown: str, title: str) -> str:
     .chart-wrap {{ padding: 16px; min-width: 0; }}
     #technicalChart {{ width: 100%; height: 620px; display: block; border: 1px solid #d8e0ea; border-radius: 6px; background: #ffffff; }}
     .chart-note {{ margin: 10px 0 0; color: #64748b; font-size: 13px; }}
-    @media (max-width: 860px) {{ .tech-grid {{ grid-template-columns: 1fr; }} .tech-controls {{ border-right: 0; border-bottom: 1px solid #e4e9f0; }} .screening-columns {{ grid-template-columns: 1fr; }} #technicalChart {{ height: 540px; }} }}
+    .chart-empty {{ display: grid; place-items: center; height: 100%; color: #64748b; font-size: 14px; }}
+    .rss-signal-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 10px 0 18px; }}
+    .rss-signal-card {{ border: 1px solid #dbe4ee; border-radius: 12px; background: #fbfdff; padding: 14px; }}
+    .rss-signal-card h3 {{ margin: 0 0 8px; font-size: 16px; color: #0f172a; }}
+    .rss-signal-card p {{ margin: 4px 0; color: #475569; font-size: 13px; }}
+    .rss-signal-card .rss-score {{ color: #0f766e; font-weight: 800; }}
+    details > summary {{ cursor: pointer; font-weight: 700; }}
+    details[open] > summary {{ margin-bottom: 8px; }}
+    @media (max-width: 860px) {{ .tech-grid {{ grid-template-columns: 1fr; }} .tech-controls {{ border-right: 0; border-bottom: 1px solid #e4e9f0; }} #technicalChart {{ height: 540px; }} }}
   </style>
 </head>
 <body>
@@ -359,7 +373,8 @@ def hybrid_interactive_markdown_to_html(markdown: str, title: str) -> str:
     {chart_section}
     {"".join(body_lines)}
   </main>
-  <script>window.__TECH_DATA__ = {chart_json};</script>
+  <script id="technicalChartData" type="application/json">{chart_json}</script>
+  <script>window.__TECH_DATA__ = JSON.parse(document.getElementById("technicalChartData").textContent);</script>
   <script>{INTERACTIVE_CHART_JS}</script>
 </body>
 </html>
@@ -396,31 +411,18 @@ def _interactive_chart_section() -> str:
             <div class="stock-filter-stack">
               <section class="stock-filter-item">
                 <label class="stock-filter-toggle"><input id="chipRadarToggle" type="checkbox" checked>看籌碼雷達</label>
-                <p class="stock-filter-brief">先用前十大主力強度、外資連買與主分點連買抓出當日雷達名單；單獨勾選看雷達熱區，和其他條件同時勾選時則顯示交集。</p>
+                <p class="stock-filter-brief">先看前十大主力、外資連買與主分點連買，作為主力正在進場的前置雷達。</p>
               </section>
               <section class="stock-filter-item">
                 <label class="stock-filter-toggle"><input id="newStrategyToggle" type="checkbox" checked>看新版策略</label>
-                <p class="stock-filter-brief">以籌碼雷達命中股為母群，再用 MA20 上升、平台突破與融資條件當確認器；和其他條件同勾時顯示交集。</p>
+                <p class="stock-filter-brief">以舊版母池加上籌碼雷達股為母群，再檢查 K 值 &lt; 40、近 5 日融資增加前段、MA20 上升與突破確認。</p>
               </section>
               <section class="stock-filter-item">
                 <label class="stock-filter-toggle"><input id="legacyStrategyToggle" type="checkbox" checked>看舊版策略</label>
-                <p class="stock-filter-brief">舊版以流動性、成交量、20 日均量、營收成長、本益比與產業新聞關聯做較大股票池初篩；單獨勾選看母池，和其他條件同勾時顯示交集。</p>
+                <p class="stock-filter-brief">先用流動性、成交量、均量、營收成長、本益比與產業新聞建立大母池，再跑完整技術面確認。</p>
               </section>
             </div>
-            <div class="screening-columns">
-              <section class="screening-card">
-                <h3>籌碼雷達</h3>
-                <div id="chipRadarStockList"></div>
-              </section>
-              <section class="screening-card">
-                <h3>新版策略股票</h3>
-                <div id="revisedStockList"></div>
-              </section>
-              <section class="screening-card">
-                <h3>舊策略股票</h3>
-                <div id="legacyStockList"></div>
-              </section>
-            </div>
+            <p class="filter-tip">勾選任一策略可單獨查看；勾選任兩個或三個策略時，畫面會自動顯示交集結果，避免候選被單一路徑吃掉。</p>
             <section class="chip-card">
               <h3>籌碼快照</h3>
               <div id="chipSnapshotPanel" class="chip-grid"></div>
@@ -438,11 +440,11 @@ def _interactive_chart_section() -> str:
           <div class="field">
             <label>RSI / 布林</label>
             <div class="number-row">
-              <label class="control-cell" for="rsiLow"><span>RSI 低檔線</span><input id="rsiLow" type="number" min="1" max="50" title="RSI 低檔線"><small>20 以下標示低檔或弱勢鈍化。</small></label>
-              <label class="control-cell" for="rsiHigh"><span>RSI 過熱線</span><input id="rsiHigh" type="number" min="50" max="99" title="RSI 過熱線"><small>80 以上標示過熱與追高風險。</small></label>
-              <label class="control-cell" for="bollingerSigma"><span>布林倍數</span><input id="bollingerSigma" type="number" min="1" max="4" step="0.5" title="布林標準差"><small>2 代表上下緣約 2 倍標準差。</small></label>
+              <label class="control-cell" for="rsiLow"><span>RSI 低檔線</span><input id="rsiLow" type="number" min="1" max="50" title="RSI 低檔線"><small>20 以下偏弱勢鈝化。</small></label>
+              <label class="control-cell" for="rsiHigh"><span>RSI 過熱線</span><input id="rsiHigh" type="number" min="50" max="99" title="RSI 過熱線"><small>80 以上偏過熱追高風險。</small></label>
+              <label class="control-cell" for="bollingerSigma"><span>布林倍數</span><input id="bollingerSigma" type="number" min="1" max="4" step="0.5" title="布林倍數"><small>2 代表上下線約 2 倍標準差。</small></label>
             </div>
-            <p class="control-note">RSI 低檔線用來看低檔鈍化，過熱線用來看追高風險；布林倍數越大，突破門檻越嚴格。</p>
+            <p class="control-note">RSI 低檔線用來看低檔鈝化，過熱線用來看追高風險；布林倍數越大，突破門檻越嚴格。</p>
           </div>
           <fieldset class="toggles">
             <legend>顯示策略</legend>
@@ -452,7 +454,7 @@ def _interactive_chart_section() -> str:
             <label><input type="checkbox" data-layer="volume" checked> 成交量</label>
             <label><input type="checkbox" data-layer="macd" checked> MACD</label>
             <label><input type="checkbox" data-layer="rsi" checked> RSI</label>
-            <label><input type="checkbox" data-layer="markers"> 精簡 K 線/三線標記</label>
+            <label><input type="checkbox" data-layer="markers"> 轉折 K 線/三線標記</label>
             <label><input type="checkbox" data-layer="limitUp"> 近 10 日漲停</label>
             <label><input type="checkbox" data-layer="monthlyMacd"> 月均線 MACD 金叉</label>
             <label><input type="checkbox" data-layer="ma20Volume"> 日均線 20 均線放量陽線</label>
@@ -460,7 +462,7 @@ def _interactive_chart_section() -> str:
         </aside>
         <div class="chart-wrap">
           <canvas id="technicalChart" width="1120" height="620"></canvas>
-          <p class="chart-note">圖表僅呈現可重算的研究條件；Devil veto、資料不足或低量突破不會被視為每日重點依據。</p>
+          <p class="chart-note">圖表僅呈現可重算的研究條件；若顯示資料不足，代表該股缺少完整 OHLCV 或技術資料。</p>
           <details class="strategy-panel">
             <summary>策略條件摘要</summary>
             <div id="strategyList" class="strategy-list"></div>
@@ -469,7 +471,6 @@ def _interactive_chart_section() -> str:
       </div>
     </section>
     """
-
 
 INTERACTIVE_CHART_JS = r"""
 (function () {
@@ -522,7 +523,6 @@ INTERACTIVE_CHART_JS = r"""
     });
     Object.keys(initial).forEach((key) => { $(key).value = defaults[key] || initial[key]; });
     select.addEventListener("change", () => { state.stockIndex = Number(select.value); render(); });
-    populateStockLists();
     syncStockSelect();
     [["chipRadarToggle", "chipRadar"], ["newStrategyToggle", "newStrategy"], ["legacyStrategyToggle", "oldStrategy"]].forEach(([id, key]) => {
       $(id).addEventListener("change", (event) => {
@@ -554,27 +554,7 @@ INTERACTIVE_CHART_JS = r"""
     select.value = String(state.stockIndex);
   }
 
-  function populateStockLists() {
-    renderScreeningList("chipRadarStockList", data.stocks.filter((stock) => isChipRadar(stock)));
-    renderScreeningList("legacyStockList", data.stocks.filter((stock) => isOldStrategy(stock)));
-    renderScreeningList("revisedStockList", data.stocks.filter((stock) => isNewStrategy(stock)));
-  }
 
-  function renderScreeningList(id, stocks) {
-    const node = $(id);
-    if (!node) return;
-    if (!stocks.length) {
-      node.innerHTML = '<p class="screening-empty">目前沒有股票。</p>';
-      return;
-    }
-    node.innerHTML = `<ul>${stocks.map((stock) => `<li data-symbol="${escapeHtml(stock.symbol)}">${escapeHtml(stock.symbol)} ${escapeHtml(stock.name)}</li>`).join("")}</ul>`;
-  }
-
-  function highlightActiveStock(symbol) {
-    document.querySelectorAll(".screening-card li").forEach((item) => {
-      item.classList.toggle("active", item.dataset.symbol === symbol);
-    });
-  }
 
   function renderChipSnapshot(stock) {
     const node = $("chipSnapshotPanel");
@@ -637,8 +617,16 @@ INTERACTIVE_CHART_JS = r"""
 
   function render() {
     const stock = visibleStocks()[state.stockIndex];
-    if (!stock || !stock.bars || stock.bars.length === 0) return;
-    highlightActiveStock(stock.symbol);
+    if (!stock) {
+      drawEmptyState("\u76ee\u524d\u6c92\u6709\u7b26\u5408\u52fe\u9078\u689d\u4ef6\u7684\u80a1\u7968");
+      return;
+    }
+    renderChipSnapshot(stock);
+    renderStrategyList(stock);
+    if (!stock.bars || stock.bars.length === 0) {
+      drawEmptyState(`${stock.symbol} \u7f3a\u5c11\u5b8c\u6574 OHLCV / \u6280\u8853\u8cc7\u6599`);
+      return;
+    }
     renderChipSnapshot(stock);
     renderStrategyList(stock);
     const ratio = window.devicePixelRatio || 1;
@@ -679,6 +667,22 @@ INTERACTIVE_CHART_JS = r"""
     ];
     const found = map.find(([name]) => strategy === name);
     return found ? state.layers[found[1]] : true;
+  }
+
+  function drawEmptyState(message) {
+    const ratio = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.max(720, Math.floor(rect.width * ratio));
+    canvas.height = Math.floor(rect.height * ratio);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, rect.width, rect.height);
+    ctx.fillStyle = "#64748b";
+    ctx.font = "14px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(message, rect.width / 2, rect.height / 2);
+    ctx.textAlign = "left";
   }
 
   function draw(stock, p, width, height) {
