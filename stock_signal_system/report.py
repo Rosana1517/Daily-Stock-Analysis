@@ -363,16 +363,22 @@ def hybrid_interactive_markdown_to_html(markdown: str, title: str) -> str:
     .rss-signal-card h3 {{ margin: 0 0 8px; font-size: 16px; color: #0f172a; }}
     .rss-signal-card p {{ margin: 4px 0; color: #475569; font-size: 13px; }}
     .rss-signal-card .rss-score {{ color: #0f766e; font-weight: 800; }}
+    .candidate-panel {{ margin: 14px 0 22px; border: 1px solid #dde5ee; border-radius: 12px; background: #ffffff; overflow: hidden; }}
+    .candidate-panel summary {{ list-style: none; cursor: pointer; padding: 10px 12px; background: linear-gradient(180deg, #f8fafc 0%, #eef3f8 100%); color: #0f172a; font-size: 14px; font-weight: 800; }}
+    .candidate-panel summary::-webkit-details-marker {{ display: none; }}
+    .candidate-panel summary::after {{ content: "\u5c55\u958b"; float: right; color: #64748b; font-weight: 600; }}
+    .candidate-panel[open] summary::after {{ content: "\u6536\u5408"; }}
+    .candidate-panel .table-wrap {{ margin: 0; border: 0; border-top: 1px solid #e5e7eb; border-radius: 0; }}
     details > summary {{ cursor: pointer; font-weight: 700; }}
     details[open] > summary {{ margin-bottom: 8px; }}
     @media (max-width: 860px) {{ .tech-grid {{ grid-template-columns: 1fr; }} .tech-controls {{ border-right: 0; border-bottom: 1px solid #e4e9f0; }} #technicalChart {{ height: 540px; }} }}
   </style>
 </head>
-<body>
-  <main>
-    {chart_section}
+  <body>
+    <main>
     {"".join(body_lines)}
-  </main>
+    {chart_section}
+    </main>
   <script id="technicalChartData" type="application/json">{chart_json}</script>
   <script>window.__TECH_DATA__ = JSON.parse(document.getElementById("technicalChartData").textContent);</script>
   <script>{INTERACTIVE_CHART_JS}</script>

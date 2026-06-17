@@ -534,76 +534,49 @@ def _save_report(
             lines.append(f'<article class="rss-signal-card"><h3>{signal.industry}</h3><p class="rss-score">RSS {signal.score:.1f}</p><p>\u8b49\u64da {signal.evidence_count} \u5247</p><p>{catalyst}</p></article>')
     else:
         lines.append('<article class="rss-signal-card"><h3>RSS \u8a0a\u865f\u66ab\u7f3a</h3><p class="rss-score">RSS 50.0</p><p>\u4eca\u65e5\u672a\u53d6\u5f97\u6709\u6548\u7522\u696d\u8a0a\u865f</p></article>')
-    lines.extend(["</div>", "", "## \u5019\u9078\u80a1\u7968\u5206\u6790", "", "| \u80a1\u7968 | \u540d\u7a31 | \u7522\u696d | Hybrid | \u820a\u7248 | \u65b0\u7248 | \u7c4c\u78bc\u96f7\u9054 | \u524d\u5341\u5927\u4e3b\u529b\u5f37\u5ea6 | \u524d\u5341\u5927\u4e3b\u529b\u6de8\u8cb7\u8d85 | \u5916\u8cc7\u9023\u8cb7 | \u4e3b\u5206\u9ede\u9023\u8cb7 | \u4e3b\u5206\u9ede | \u7c4c\u78bc\u65e5\u671f | \u7c4c\u78bc\u72c0\u614b | \u7d44\u5408\u6c7a\u7b56 | \u98a8\u96aa\u8a3b\u8a18 |", "|---|---|---|---:|---|---|---|---:|---:|---:|---:|---|---|---|---|---|"])
-    for row in rows:
-        decision = portfolio_decisions.get(row.symbol)
-        snapshot = chip_snapshot_by_symbol.get(row.symbol, {})
-        top10_main_force_buy_strength = _optional_float(snapshot, "top10_main_force_buy_strength", "top10_main_force_buy_strength_proxy")
-        top10_main_force_net_buy = _optional_float(snapshot, "top10_main_force_net_buy")
-        foreign_buy_streak_days = _optional_float(snapshot, "foreign_buy_streak_days")
-        branch_main_force_buy_streak_days = _optional_float(snapshot, "branch_main_force_buy_streak_days")
-        branch_main_force_leader = str(snapshot.get("branch_main_force_leader", "")).strip() or row.branch_main_force_leader
-        chip_data_date = str(snapshot.get("chip_data_date", "")).strip() or row.chip_data_date
-        chip_data_source_status = str(snapshot.get("chip_data_source_status", "")).strip() or row.chip_data_source_status
-        legacy_label = "\u662f" if row.legacy_hit else "\u5426"
-        new_label = "\u662f" if row.new_strategy_hit else "\u5426"
-        chip_label = "\u662f" if row.chip_radar_hit else "\u5426"
-        lines.append(f"| {row.symbol} | {row.name} | {row.industry} | {row.hybrid_score:.1f} | {legacy_label} | {new_label} | {chip_label} | {_chip_value(top10_main_force_buy_strength)} | {_chip_value(top10_main_force_net_buy, digits=0)} | {_chip_value(foreign_buy_streak_days, digits=0)} | {_chip_value(branch_main_force_buy_streak_days, digits=0)} | {branch_main_force_leader or 'n/a'} | {chip_data_date or 'n/a'} | {chip_data_source_status or 'n/a'} | {portfolio_decision_label(decision)} | {row.risk_note} |")
+    lines.append("</div>")
     lines.extend([
         "",
-        "## \u5206\u5c64\u8aaa\u660e",
+        "## \u9078\u80a1\u512a\u5148\u9806\u5e8f\u8868",
         "",
-        "- \u7b2c 1 \u5c64\uff1a\u7c4c\u78bc\u96f7\u9054\u3002\u5148\u627e\u4e3b\u529b\u3001\u5916\u8cc7\u3001\u5206\u9ede\u7e8c\u8cb7\u7684\u80a1\u7968\uff0c\u4f5c\u70ba\u5148\u63a2\u62a5\u8b66\u3002",
-        "- \u7b2c 2 \u5c64\uff1a\u65b0\u7248\u7b56\u7565\u3002\u5728\u7c4c\u78bc\u96f7\u9054\u6216\u820a\u7248\u6bcd\u6c60\u4e0a\uff0c\u518d\u6aa2\u67e5 K \u503c < 40\u3001MA20 \u4e0a\u5347\u3001\u878d\u8cc7\u589e\u52a0\uff0c\u627e\u51fa\u767c\u52d5\u9ede\u3002",
-        "- \u7b2c 3 \u5c64：\u820a\u7248\u7b56\u7565\u3002\u5b83\u662f\u54c1\u8cea\u5e95\u5c64\u8207\u5019\u9078\u6bcd\u6c60\uff0c\u7528\u4f86\u78ba\u8a8d\u6210\u9577\u57fa\u790e\u3001\u6d41\u52d5\u6027\u8207\u6a23\u5f0f\u7bc9\u78bc\uff0c\u4e0d\u662f\u8207\u524d\u5169\u5c64\u4e26\u5217\u7684\u540c\u6027\u7b56\u7565\u3002",
-        "",
-        "<details>",
-        "<summary>\u7814\u7a76\u89c0\u5bdf</summary>",
+        "| \u512a\u5148\u7d1a | \u7d44\u5408 | \u6578\u91cf | \u98a8\u683c\u5224\u8b80 | \u5efa\u8b70\u52d5\u4f5c | \u4ee3\u8868\u80a1\u7968 |",
+        "|---|---|---:|---|---|---|",
     ])
-
-    if focus_rows:
-        lines.extend(_research_observation(row, "\u7814\u7a76\u89c0\u5bdf") for row in focus_rows[:8])
-    else:
-        lines.append("- \u672c\u6b21\u6c92\u6709\u901a\u904e\u5b8c\u6574\u78ba\u8a8d\u800c\u5217\u5165\u7814\u7a76\u89c0\u5bdf\u7684\u80a1\u7968\u3002")
-    lines.extend(["</details>", "", "<details>", "<summary>\u89c0\u5bdf\u540d\u55ae</summary>"])
-    if watch_rows:
-        lines.extend(_research_observation(row, "\u89c0\u5bdf\u540d\u55ae") for row in watch_rows[:8])
-    else:
-        lines.append("- \u672c\u6b21\u6c92\u6709\u843d\u5728\u7d14\u89c0\u5bdf\u540d\u55ae\u7684\u80a1\u7968\u3002")
-    lines.extend(["</details>", "", "<details>", "<summary>\u6392\u9664\u539f\u56e0</summary>"])
-    if excluded_rows:
-        for row in excluded_rows[:12]:
-            decision = portfolio_decisions.get(row.symbol)
-            lines.append(f"- {row.symbol} {row.name}: {portfolio_decision_label(decision)}?{row.risk_note}")
-    else:
-        lines.append("- \u672c\u6b21\u6c92\u6709\u660e\u78ba\u6392\u9664\u7684\u80a1\u7968\u3002")
-    lines.extend(["</details>"])
-    lines.extend(["", "## \u9078\u80a1\u512a\u5148\u9806\u5e8f\u8868", "", "| \u512a\u5148\u7d1a | \u7d44\u5408 | \u6578\u91cf | \u98a8\u683c\u5224\u8b80 | \u5efa\u8b70\u52d5\u4f5c | \u4ee3\u8868\u80a1\u7968 |", "|---|---|---:|---|---|---|"])
     if priority_groups:
         for group in priority_groups:
             lines.append(
                 f"| {group['priority']} | {group['label']} | {group['count']} | {group['meaning']} | {group['action']} | {group['samples']} |"
             )
     else:
-        lines.append("| - | 目前沒有可歸類股票 | 0 | 資料不足或條件尚未命中 | 先保留觀察 | n/a |")
+        lines.append("| - | 尚無符合群組 | 0 | 目前沒有可分類的候選 | 等待下一次資料更新 | n/a |")
     lines.extend([
         "",
         "- 優先順序：`三者全中` > `舊版 + 籌碼雷達` > `舊版 + 新版` > `新版 + 籌碼雷達` > `單策略命中`。",
         "- 單策略命中仍會保留在報表內，方便你分別看出每一條線各自抓到哪些股票。",
-    ])
-    lines.extend([
         "",
         "## \u7d9c\u5408\u95dc\u6ce8\u699c",
         "",
+        "- 這是獨立的捲動切片，按照「三者全中」、「舊版 + 籌碼雷達」、「舊版 + 新版」、「新版 + 籌碼雷達」、「單策略」的優先順序排列，直接看最值得關注的股票。",
         '<div style="max-height: 360px; overflow-y: auto; border: 1px solid #dbe4ef; border-radius: 12px; background: #f8fbff; padding: 10px 12px;">',
     ])
     if focus_rows:
         for rank, row in enumerate(focus_rows, 1):
             lines.append(_overall_focus_scroll_item(rank, row))
     else:
-        lines.append('<div style="padding: 10px 4px; color: #64748b;">\u76ee\u524d\u6c92\u6709\u53ef\u5217\u5165\u7d9c\u5408\u95dc\u6ce8\u699c\u7684\u80a1\u7968\u3002</div>')
-    lines.append("</div>")
-
+        lines.append('<div style="padding: 10px 4px; color: #64748b;">目前沒有可列入綜合關注榜的股票。</div>')
+    lines.append('</div>')
+    lines.extend(_candidate_analysis_block(rows, portfolio_decisions, chip_snapshot_by_symbol))
+    lines.extend([
+        "",
+        "## \u5206\u5c64\u8aaa\u660e",
+        "",
+        "- \u7b2c 1 \u5c64\uff1a\u7c4c\u78bc\u96f7\u9054\u3002\u5148\u627e\u4e3b\u529b\u3001\u5916\u8cc7\u3001\u5206\u9ede\u7e8c\u8cb7\u7684\u80a1\u7968\uff0c\u4f5c\u70ba\u5148\u63a2\u62a5\u8b66\u3002",
+        "- \u7b2c 2 \u5c64\uff1a\u65b0\u7248\u7b56\u7565\u3002\u5728\u7c4c\u78bc\u96f7\u9054\u6216\u820a\u7248\u6bcd\u6c60\u4e0a\uff0c\u518d\u6aa2\u67e5 K \u503c < 40\u3001MA20 \u4e0a\u5347\u3001\u878d\u8cc7\u589e\u52a0\uff0c\u627e\u51fa\u767c\u52d5\u9ede\u3002",
+        "- \u7b2c 3 \u5c64\uff1a\u820a\u7248\u7b56\u7565\u3002\u5b83\u662f\u54c1\u8cea\u5e95\u5c64\u8207\u5019\u9078\u6bcd\u6c60\uff0c\u7528\u4f86\u78ba\u8a8d\u6210\u9577\u57fa\u790e\u3001\u6d41\u52d5\u6027\u8207\u6a23\u5f0f\u7bc9\u78bc\uff0c\u4e0d\u662f\u8207\u524d\u5169\u5c64\u4e26\u5217\u7684\u540c\u6027\u7b56\u7565\u3002",
+        "",
+        "<details>",
+        "<summary>\u7814\u7a76\u89c0\u5bdf</summary>",
+    ])
     if data_limited_rows:
         lines.extend(["", "## \u8cc7\u6599\u5f85\u88dc\u6e05\u55ae", ""])
         for row in data_limited_rows[:12]:
@@ -746,6 +719,36 @@ def _priority_samples(rows: list[HybridRow], limit: int = 4) -> str:
     return "、".join(samples)
 
 
+def _candidate_analysis_block(
+    rows: list[HybridRow],
+    portfolio_decisions: dict[str, AgentDecision],
+    chip_snapshot_by_symbol: dict[str, dict[str, object]],
+) -> list[str]:
+    lines = [
+        '<details class="candidate-panel">',
+        '<summary>候選股票分析</summary>',
+        '<div class="table-wrap"><table>',
+        '<thead><tr><th>股票</th><th>名稱</th><th>產業</th><th>Hybrid</th><th>舊版</th><th>新版</th><th>籌碼雷達</th><th>前十大主力強度</th><th>前十大主力淨買超</th><th>外資連買</th><th>主分點連買</th><th>主分點</th><th>籌碼日期</th><th>籌碼狀態</th><th>組合決策</th><th>風險註記</th></tr></thead>',
+        '<tbody>',
+    ]
+    for row in rows:
+        decision = portfolio_decisions.get(row.symbol)
+        snapshot = chip_snapshot_by_symbol.get(row.symbol, {})
+        top10_main_force_buy_strength = _optional_float(snapshot, "top10_main_force_buy_strength", "top10_main_force_buy_strength_proxy")
+        top10_main_force_net_buy = _optional_float(snapshot, "top10_main_force_net_buy")
+        foreign_buy_streak_days = _optional_float(snapshot, "foreign_buy_streak_days")
+        branch_main_force_buy_streak_days = _optional_float(snapshot, "branch_main_force_buy_streak_days")
+        branch_main_force_leader = str(snapshot.get("branch_main_force_leader", "")).strip() or row.branch_main_force_leader
+        chip_data_date = str(snapshot.get("chip_data_date", "")).strip() or row.chip_data_date
+        chip_data_source_status = str(snapshot.get("chip_data_source_status", "")).strip() or row.chip_data_source_status
+        legacy_label = "\u662f" if row.legacy_hit else "\u5426"
+        new_label = "\u662f" if row.new_strategy_hit else "\u5426"
+        chip_label = "\u662f" if row.chip_radar_hit else "\u5426"
+        lines.append(
+            f"<tr><td>{html.escape(row.symbol)}</td><td>{html.escape(row.name)}</td><td>{html.escape(row.industry)}</td><td>{row.hybrid_score:.1f}</td><td>{legacy_label}</td><td>{new_label}</td><td>{chip_label}</td><td>{_chip_value(top10_main_force_buy_strength)}</td><td>{_chip_value(top10_main_force_net_buy, digits=0)}</td><td>{_chip_value(foreign_buy_streak_days, digits=0)}</td><td>{_chip_value(branch_main_force_buy_streak_days, digits=0)}</td><td>{html.escape(branch_main_force_leader or 'n/a')}</td><td>{html.escape(chip_data_date or 'n/a')}</td><td>{html.escape(chip_data_source_status or 'n/a')}</td><td>{html.escape(portfolio_decision_label(decision))}</td><td>{html.escape(row.risk_note)}</td></tr>"
+        )
+    lines.extend(['</tbody>', '</table></div>', '</details>'])
+    return lines
 
 
 def _overall_focus_rows(rows: list[HybridRow], limit: int = 20) -> list[HybridRow]:
