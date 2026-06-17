@@ -48,8 +48,10 @@
     .focus-card { margin-bottom: 12px; border: 1px solid #dde5ee; border-radius: 10px; background: #ffffff; padding: 10px 12px; }
     .focus-card h3 { margin: 0 0 8px; font-size: 13px; color: #0f172a; }
     .focus-list { max-height: 220px; overflow-y: auto; border: 1px solid #e3eaf3; border-radius: 10px; background: linear-gradient(180deg, #fcfeff 0%, #f7fbff 100%); }
-    .focus-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 10px; border-bottom: 1px solid #e6edf5; }
+    .focus-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 10px; border-bottom: 1px solid #e6edf5; width: 100%; text-align: left; background: transparent; border-left: 0; border-right: 0; border-top: 0; appearance: none; cursor: pointer; }
     .focus-item:last-child { border-bottom: 0; }
+    .focus-item:hover { background: #eef7ff; }
+    .focus-item.is-active { background: #d9f0ff; }
     .focus-rank { min-width: 30px; height: 30px; border-radius: 999px; background: #0f766e; color: #fff; display: grid; place-items: center; font-size: 12px; font-weight: 800; }
     .focus-body { min-width: 0; flex: 1; }
     .focus-title { font-size: 12px; font-weight: 800; color: #0f172a; line-height: 1.35; }
@@ -189,7 +191,7 @@
 (function () {
   const data = window.__TECH_DATA__ || {defaults: {}, stocks: []};
   const defaults = data.defaults || {};
-  const state = {stockIndex: 0, filters: {chipRadar: true, newStrategy: true, oldStrategy: true}, layers: {ma: true, bollinger: true, support: true, volume: true, macd: true, rsi: true, markers: false, limitUp: false, monthlyMacd: false, ma20Volume: false}};
+  const state = {stockIndex: 0, activeSymbol: null, filters: {chipRadar: true, newStrategy: true, oldStrategy: true}, layers: {ma: true, bollinger: true, support: true, volume: true, macd: true, rsi: true, markers: false, limitUp: false, monthlyMacd: false, ma20Volume: false}};
   const $ = (id) => document.getElementById(id);
   const canvas = $("technicalChart");
   if (!canvas || !data.stocks || data.stocks.length === 0) return;
@@ -227,6 +229,10 @@
     });
   }
 
+  function stockBySymbol(symbol) {
+    return (data.stocks || []).find((stock) => stock.symbol === symbol) || null;
+  }
+
   function init() {
     const select = $("stockSelect");
     data.stocks.forEach((stock, index) => {
@@ -236,7 +242,7 @@
       select.appendChild(option);
     });
     Object.keys(initial).forEach((key) => { $(key).value = defaults[key] || initial[key]; });
-    select.addEventListener("change", () => { state.stockIndex = Number(select.value); render(); });
+    select.addEventListener("change", () => { state.activeSymbol = null; state.stockIndex = Number(select.value); render(); });
     syncStockSelect();
     [["chipRadarToggle", "chipRadar"], ["newStrategyToggle", "newStrategy"], ["legacyStrategyToggle", "oldStrategy"]].forEach(([id, key]) => {
       $(id).addEventListener("change", (event) => {
@@ -265,8 +271,13 @@
       option.textContent = `${stock.symbol} ${stock.name} | ${stock.decision}`;
       select.appendChild(option);
     });
+    const activeStock = state.activeSymbol ? stockBySymbol(state.activeSymbol) : null;
+    if (activeStock) {
+      const activeIndex = stocks.findIndex((stock) => stock.symbol === activeStock.symbol);
+      if (activeIndex >= 0) state.stockIndex = activeIndex;
+    }
     if (state.stockIndex >= stocks.length) state.stockIndex = 0;
-    select.value = String(state.stockIndex);
+    select.value = stocks.length ? String(state.stockIndex) : "";
   }
 
   function renderFocusWatchlist() {
@@ -278,14 +289,28 @@
       return;
     }
     node.innerHTML = items.map((item) => `
-      <div class="focus-item">
+      <button type="button" class="focus-item${state.activeSymbol === item.symbol ? " is-active" : ""}" data-symbol="${escapeHtml(item.symbol || "")}">
         <div class="focus-rank">${escapeHtml(String(item.rank || ""))}</div>
         <div class="focus-body">
           <div class="focus-title">${escapeHtml(item.symbol || "")} ${escapeHtml(item.name || "")} <span>${escapeHtml(item.label || "")}</span></div>
           <div class="focus-note">${escapeHtml(item.reason || "")}。${escapeHtml(item.action || "")}。Hybrid ${escapeHtml(formatChipNumber(item.hybridScore, 1))} / 技術 ${escapeHtml(formatChipNumber(item.technicalScore, 1))}</div>
         </div>
-      </div>
+      </button>
     `).join("");
+    node.querySelectorAll("[data-symbol]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.activeSymbol = button.dataset.symbol || null;
+        const stocks = visibleStocks();
+        const visibleIndex = stocks.findIndex((stock) => stock.symbol === state.activeSymbol);
+        if (visibleIndex >= 0) {
+          state.stockIndex = visibleIndex;
+          const select = $("stockSelect");
+          if (select) select.value = String(visibleIndex);
+        }
+        renderFocusWatchlist();
+        render();
+      });
+    });
   }
 
 
@@ -451,11 +476,12 @@
   }
 
   function render() {
-    const stock = visibleStocks()[state.stockIndex];
+    const stock = state.activeSymbol ? stockBySymbol(state.activeSymbol) : visibleStocks()[state.stockIndex];
     if (!stock) {
       drawEmptyState("目前沒有符合勾選條件的股票");
       return;
     }
+    renderFocusWatchlist();
     renderChipSnapshot(stock);
     renderStrategyContext(stock);
     renderStrategyList(stock);
