@@ -64,16 +64,15 @@ def build_candidate_selection_plan(
             margin_top_100=margin_top_100,
         )
     ]
-    chip_watch_rows = [row for row in chip_radar_rows if row not in chip_rows]
     legacy_ranked_rows = _rank_legacy_rows(rows, news_terms)
     legacy_pool_rows = legacy_ranked_rows[:limit] if limit > 0 else legacy_ranked_rows
-    chip_radar_pool_rows = (chip_rows + chip_watch_rows)[:limit] if limit > 0 else (chip_rows + chip_watch_rows)
+    chip_watch_rows = [row for row in chip_radar_rows if row not in chip_rows]
     mother_symbols = {
         str(row.get("symbol", "")).strip().upper()
-        for row in legacy_pool_rows
+        for row in legacy_ranked_rows
     } | {
         str(row.get("symbol", "")).strip().upper()
-        for row in chip_radar_pool_rows
+        for row in chip_radar_rows
     }
     revised_rows = _rank_revised_rows(
         [row for row in rows if str(row.get("symbol", "")).strip().upper() in mother_symbols],
@@ -109,12 +108,20 @@ def build_candidate_selection_plan(
 
     add_symbols(chip_rows, chip_breakout_symbols)
     if limit <= 0 or len(selected_symbols) < limit:
-        add_symbols(chip_watch_rows, revised_symbols)
+        add_symbols(revised_rows, revised_symbols)
+    if limit <= 0 or len(selected_symbols) < limit:
+        add_symbols(chip_watch_rows, chip_radar_symbols)
     if limit <= 0 or len(selected_symbols) < limit:
         add_symbols(legacy_rows, legacy_watch_symbols)
 
-    chip_radar_symbols.extend(chip_breakout_symbols)
-    chip_radar_symbols.extend(revised_symbols)
+    for row in chip_radar_rows:
+        symbol = _platform_symbol(row)
+        if symbol and symbol not in chip_radar_symbols:
+            chip_radar_symbols.append(symbol)
+    for row in revised_rows:
+        symbol = _platform_symbol(row)
+        if symbol and symbol not in revised_symbols:
+            revised_symbols.append(symbol)
 
     for row in legacy_pool_rows:
         symbol = _platform_symbol(row)
@@ -124,7 +131,7 @@ def build_candidate_selection_plan(
         if limit > 0 and len(legacy_pool_symbols) >= limit:
             break
 
-    for symbol in (*legacy_pool_symbols, *chip_radar_symbols):
+    for symbol in (*legacy_pool_symbols, *chip_radar_symbols, *revised_symbols):
         if symbol and symbol not in analysis_symbols:
             analysis_symbols.append(symbol)
 

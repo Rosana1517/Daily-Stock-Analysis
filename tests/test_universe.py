@@ -105,9 +105,9 @@ class UniverseSelectionTest(unittest.TestCase):
             plan = build_candidate_selection_plan(universe_path, ("2330.TW",), 2, ohlcv_path=ohlcv_path)
 
             self.assertEqual(plan.chip_radar_symbols, ())
-            self.assertEqual(plan.revised_symbols, ())
-            self.assertEqual(plan.legacy_watch_symbols, ("2222.TW", "1111.TW"))
-            self.assertEqual(plan.selected_symbols, ("2222.TW", "1111.TW"))
+            self.assertEqual(plan.revised_symbols, ("1111.TW",))
+            self.assertEqual(plan.legacy_watch_symbols, ("2222.TW",))
+            self.assertEqual(plan.selected_symbols, ("1111.TW", "2222.TW"))
 
     def test_selection_plan_prioritizes_chip_breakout_symbols(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -192,6 +192,95 @@ class UniverseSelectionTest(unittest.TestCase):
 
             self.assertEqual(plan.chip_breakout_symbols, ("3333.TW",))
             self.assertEqual(plan.selected_symbols[0], "3333.TW")
+
+    def test_selection_plan_keeps_revised_pool_independent_from_chip_radar(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            universe_path = base / "universe.csv"
+            ohlcv_path = base / "prices.csv"
+            with universe_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(
+                    handle,
+                    fieldnames=[
+                        "symbol",
+                        "market",
+                        "industry",
+                        "price",
+                        "volume",
+                        "avg_volume_20d",
+                        "revenue_growth_yoy",
+                        "pe_ratio",
+                        "margin_financing_change_5d",
+                        "top10_main_force_buy_strength",
+                        "foreign_buy_streak_days",
+                    ],
+                )
+                writer.writeheader()
+                writer.writerow(
+                    {
+                        "symbol": "6666",
+                        "market": "tse",
+                        "industry": "??擃?",
+                        "price": 80,
+                        "volume": 200000,
+                        "avg_volume_20d": 180000,
+                        "revenue_growth_yoy": 24,
+                        "pe_ratio": 19,
+                        "margin_financing_change_5d": 6000,
+                        "top10_main_force_buy_strength": 0,
+                        "foreign_buy_streak_days": 0,
+                    }
+                )
+                writer.writerow(
+                    {
+                        "symbol": "7777",
+                        "market": "tse",
+                        "industry": "??擃?",
+                        "price": 40,
+                        "volume": 9000000,
+                        "avg_volume_20d": 8500000,
+                        "revenue_growth_yoy": 8,
+                        "pe_ratio": 15,
+                        "margin_financing_change_5d": 0,
+                        "top10_main_force_buy_strength": 72,
+                        "foreign_buy_streak_days": 4,
+                    }
+                )
+            with ohlcv_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["symbol", "date", "open", "high", "low", "close", "volume"])
+                writer.writeheader()
+                revised_closes = [100 + index for index in range(20)] + [105]
+                chip_closes = [50 + (index % 2) * 0.5 for index in range(20)] + [56]
+                for idx, close in enumerate(revised_closes):
+                    writer.writerow(
+                        {
+                            "symbol": "6666.TW",
+                            "date": f"2026-05-{idx + 1:02d}",
+                            "open": close,
+                            "high": close + 1,
+                            "low": close - 1,
+                            "close": close,
+                            "volume": 1000,
+                        }
+                    )
+                for idx, close in enumerate(chip_closes):
+                    writer.writerow(
+                        {
+                            "symbol": "7777.TW",
+                            "date": f"2026-05-{idx + 1:02d}",
+                            "open": close,
+                            "high": close + 1,
+                            "low": close - 1,
+                            "close": close,
+                            "volume": 1000 if idx < 20 else 1600,
+                        }
+                    )
+
+            plan = build_candidate_selection_plan(universe_path, ("2330.TW",), 2, ohlcv_path=ohlcv_path)
+
+            self.assertIn("6666.TW", plan.revised_symbols)
+            self.assertIn("7777.TW", plan.chip_radar_symbols)
+            self.assertNotEqual(plan.revised_symbols, plan.chip_radar_symbols)
 
     def test_proxy_branch_streak_alone_does_not_trigger_chip_breakout(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -152,7 +152,7 @@ def run_tw_hybrid(
                 else "chip_watch" if symbol in revised_symbols or symbol in chip_radar_symbols else "legacy_watch"
             ),
             legacy_hit=symbol in legacy_pool_symbols,
-            new_strategy_hit=symbol in chip_breakout_symbols or symbol in revised_symbols,
+            new_strategy_hit=symbol in revised_symbols,
             chip_radar_hit=symbol in chip_radar_symbols,
             signal_source=signal.source,
             kronos_return=signal.expected_return,
