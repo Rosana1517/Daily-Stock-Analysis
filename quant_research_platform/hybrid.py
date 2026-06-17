@@ -625,15 +625,6 @@ def _save_report(
     if not news_items:
         lines.append("- \u4eca\u65e5\u6c92\u6709\u53ef\u4f75\u5165\u5831\u544a\u7684 RSS \u65b0\u805e\u3002")
     lines.extend(_candidate_analysis_block(rows, portfolio_decisions, chip_snapshot_by_symbol))
-    if backtest.benchmark_return is not None:
-        lines.append(f"- \u57fa\u6e96\u5831\u916c\uff1a{backtest.benchmark_return:.2%}")
-    lines.extend(["", "## \u65b0\u805e\u5feb\u8a0a", ""])
-    for item in news_items[:6]:
-        industries = ", ".join(item.industries) if item.industries else "\u7d9c\u5408"
-
-        lines.append(f"- [{industries}] {item.title}?{item.source}, {item.date.isoformat()}?")
-    if not news_items:
-        lines.append("- \u4eca\u65e5\u6c92\u6709\u53ef\u4f75\u5165\u5831\u544a\u7684 RSS \u65b0\u805e\u3002")
     lines.extend(["", "```technical-chart-data", json.dumps(_technical_chart_payload(rows, bars_by_symbol, portfolio_decisions), ensure_ascii=False, separators=(",", ":")), "```"])
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
