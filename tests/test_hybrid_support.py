@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime, timedelta
 
 from quant_research_platform.data import Bar
-from quant_research_platform.hybrid import HybridRow, _has_real_broker_snapshot, _screening_priority_groups
+from quant_research_platform.hybrid import HybridRow, _has_real_broker_snapshot, _overall_focus_rows, _screening_priority_groups
 from quant_research_platform.universe import (
     _breaks_platform_consolidation,
     _is_ma20_rising,
@@ -190,6 +190,17 @@ class HybridSupportTest(unittest.TestCase):
         self.assertEqual(groups[0]["count"], 1)
         self.assertIn("2330.TW", groups[0]["samples"])
         self.assertIn("2887.TW", next(group for group in groups if group["label"] == "舊版 + 籌碼雷達")["samples"])
+
+    def test_overall_focus_rows_prioritize_all_three_first(self):
+        rows = [
+            _hybrid_row("2603.TW", legacy=True, new=False, chip=True, score=80.0),
+            _hybrid_row("2330.TW", legacy=True, new=True, chip=True, score=95.0),
+            _hybrid_row("2609.TW", legacy=False, new=True, chip=False, score=70.0),
+        ]
+
+        ranked = _overall_focus_rows(rows)
+
+        self.assertEqual([row.symbol for row in ranked[:3]], ["2330.TW", "2603.TW", "2609.TW"])
 
 
 if __name__ == "__main__":

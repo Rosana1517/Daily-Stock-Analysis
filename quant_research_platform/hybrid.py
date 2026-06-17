@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import csv
 import json
 from dataclasses import dataclass
@@ -524,6 +525,7 @@ def _save_report(
     data_limited_rows = [row for row in rows if row.signal_source == "data-limited"]
     priority_rows = [row for row in rows if row.signal_source != "data-limited"] or rows
     priority_groups = _screening_priority_groups(priority_rows)
+    focus_rows = _overall_focus_rows(priority_rows)
 
     lines = [f"# Hybrid \u53f0\u80a1\u6bcf\u65e5\u5206\u6790\u5831\u544a - {report_date.isoformat()}", "", "## \u0052\u0053\u0053 \u7522\u696d\u8a0a\u865f", "", '<div class="rss-signal-grid">']
     if industry_signals:
@@ -553,11 +555,12 @@ def _save_report(
         "",
         "- \u7b2c 1 \u5c64\uff1a\u7c4c\u78bc\u96f7\u9054\u3002\u5148\u627e\u4e3b\u529b\u3001\u5916\u8cc7\u3001\u5206\u9ede\u7e8c\u8cb7\u7684\u80a1\u7968\uff0c\u4f5c\u70ba\u5148\u63a2\u62a5\u8b66\u3002",
         "- \u7b2c 2 \u5c64\uff1a\u65b0\u7248\u7b56\u7565\u3002\u5728\u7c4c\u78bc\u96f7\u9054\u6216\u820a\u7248\u6bcd\u6c60\u4e0a\uff0c\u518d\u6aa2\u67e5 K \u503c < 40\u3001MA20 \u4e0a\u5347\u3001\u878d\u8cc7\u589e\u52a0\uff0c\u627e\u51fa\u767c\u52d5\u9ede\u3002",
-        "- \u7b2c 3 \u5c64\uff1a\u820a\u7248\u7b56\u7565\u3002\u5b8c\u6574\u8dd1\u6d41\u52d5\u6027\u3001\u50f9\u91cf\u3001\u578b\u614b\u3001\u652f\u6490\u58d3\u529b\u548c\u5373\u6642\u76e4\u52e2\uff0c\u4fdd\u7559\u98a8\u96aa\u63a7\u5236\u8207\u57fa\u672c\u8cea\u91cf\u3002",
+        "- \u7b2c 3 \u5c64：\u820a\u7248\u7b56\u7565\u3002\u5b83\u662f\u54c1\u8cea\u5e95\u5c64\u8207\u5019\u9078\u6bcd\u6c60\uff0c\u7528\u4f86\u78ba\u8a8d\u6210\u9577\u57fa\u790e\u3001\u6d41\u52d5\u6027\u8207\u6a23\u5f0f\u7bc9\u78bc\uff0c\u4e0d\u662f\u8207\u524d\u5169\u5c64\u4e26\u5217\u7684\u540c\u6027\u7b56\u7565\u3002",
         "",
         "<details>",
         "<summary>\u7814\u7a76\u89c0\u5bdf</summary>",
     ])
+
     if focus_rows:
         lines.extend(_research_observation(row, "\u7814\u7a76\u89c0\u5bdf") for row in focus_rows[:8])
     else:
@@ -588,6 +591,19 @@ def _save_report(
         "- 優先順序：`三者全中` > `舊版 + 籌碼雷達` > `舊版 + 新版` > `新版 + 籌碼雷達` > `單策略命中`。",
         "- 單策略命中仍會保留在報表內，方便你分別看出每一條線各自抓到哪些股票。",
     ])
+    lines.extend([
+        "",
+        "## \u7d9c\u5408\u95dc\u6ce8\u699c",
+        "",
+        '<div style="max-height: 360px; overflow-y: auto; border: 1px solid #dbe4ef; border-radius: 12px; background: #f8fbff; padding: 10px 12px;">',
+    ])
+    if focus_rows:
+        for rank, row in enumerate(focus_rows, 1):
+            lines.append(_overall_focus_scroll_item(rank, row))
+    else:
+        lines.append('<div style="padding: 10px 4px; color: #64748b;">\u76ee\u524d\u6c92\u6709\u53ef\u5217\u5165\u7d9c\u5408\u95dc\u6ce8\u699c\u7684\u80a1\u7968\u3002</div>')
+    lines.append("</div>")
+
     if data_limited_rows:
         lines.extend(["", "## \u8cc7\u6599\u5f85\u88dc\u6e05\u55ae", ""])
         for row in data_limited_rows[:12]:
@@ -598,6 +614,7 @@ def _save_report(
     lines.extend(["", "## \u65b0\u805e\u5feb\u8a0a", ""])
     for item in news_items[:6]:
         industries = ", ".join(item.industries) if item.industries else "\u7d9c\u5408"
+
         lines.append(f"- [{industries}] {item.title}?{item.source}, {item.date.isoformat()}?")
     if not news_items:
         lines.append("- \u4eca\u65e5\u6c92\u6709\u53ef\u4f75\u5165\u5831\u544a\u7684 RSS \u65b0\u805e\u3002")
@@ -729,6 +746,110 @@ def _priority_samples(rows: list[HybridRow], limit: int = 4) -> str:
     return "、".join(samples)
 
 
+
+
+def _overall_focus_rows(rows: list[HybridRow], limit: int = 20) -> list[HybridRow]:
+    ranked = sorted(
+        rows,
+        key=lambda row: (
+            _overall_focus_priority(row),
+            -(row.hybrid_score or 0.0),
+            -(row.technical_score or 0.0),
+            -float(row.top10_main_force_buy_strength or 0.0),
+            -float(row.top10_main_force_net_buy or 0.0),
+        ),
+    )
+    return ranked[:limit]
+
+
+def _overall_focus_priority(row: HybridRow) -> int:
+    if row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit:
+        return 1
+    if row.legacy_hit and row.chip_radar_hit and not row.new_strategy_hit:
+        return 2
+    if row.legacy_hit and row.new_strategy_hit and not row.chip_radar_hit:
+        return 3
+    if row.new_strategy_hit and row.chip_radar_hit and not row.legacy_hit:
+        return 4
+    if row.new_strategy_hit and not row.legacy_hit and not row.chip_radar_hit:
+        return 5
+    if row.chip_radar_hit and not row.legacy_hit and not row.new_strategy_hit:
+        return 6
+    if row.legacy_hit and not row.new_strategy_hit and not row.chip_radar_hit:
+        return 7
+    return 8
+
+
+def _overall_focus_label(row: HybridRow) -> str:
+    if row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit:
+        return '三者全中'
+    if row.legacy_hit and row.chip_radar_hit and not row.new_strategy_hit:
+        return '舊版 + 籌碼雷達'
+    if row.legacy_hit and row.new_strategy_hit and not row.chip_radar_hit:
+        return '舊版 + 新版'
+    if row.new_strategy_hit and row.chip_radar_hit and not row.legacy_hit:
+        return '新版 + 籌碼雷達'
+    if row.new_strategy_hit and not row.legacy_hit and not row.chip_radar_hit:
+        return '單獨命中新版'
+    if row.chip_radar_hit and not row.legacy_hit and not row.new_strategy_hit:
+        return '單獨命中籌碼雷達'
+    if row.legacy_hit and not row.new_strategy_hit and not row.chip_radar_hit:
+        return '單獨命中舊版'
+    return '未命中'
+
+
+def _overall_focus_reason(row: HybridRow) -> str:
+    if row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit:
+        return '品質、籌碼、發動點三者都成立'
+    if row.legacy_hit and row.chip_radar_hit and not row.new_strategy_hit:
+        return '有基本品質，也有主力照顧，但發動未必完整'
+    if row.legacy_hit and row.new_strategy_hit and not row.chip_radar_hit:
+        return '有品質，也有技術發動，但籌碼支持不一定強'
+    if row.new_strategy_hit and row.chip_radar_hit and not row.legacy_hit:
+        return '有籌碼與發動，但品質底未必最完整'
+    if row.new_strategy_hit and not row.legacy_hit and not row.chip_radar_hit:
+        return '只有發動條件，不一定有籌碼與品質底'
+    if row.chip_radar_hit and not row.legacy_hit and not row.new_strategy_hit:
+        return '有主力照顧，但尚未確認發動'
+    if row.legacy_hit and not row.new_strategy_hit and not row.chip_radar_hit:
+        return '只有品質底，但尚未看到籌碼或發動'
+    return '暫不列入綜合關注'
+
+
+def _overall_focus_action(row: HybridRow) -> str:
+    if row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit:
+        return '主清單，優先看'
+    if row.legacy_hit and row.chip_radar_hit and not row.new_strategy_hit:
+        return '次主清單，持續觀察'
+    if row.legacy_hit and row.new_strategy_hit and not row.chip_radar_hit:
+        return '可看，但風險高於第 2 類'
+    if row.new_strategy_hit and row.chip_radar_hit and not row.legacy_hit:
+        return '當機會股，不當第一順位'
+    if row.new_strategy_hit and not row.legacy_hit and not row.chip_radar_hit:
+        return '只留觀察，不列主清單'
+    if row.chip_radar_hit and not row.legacy_hit and not row.new_strategy_hit:
+        return '先觀察，等新版確認'
+    if row.legacy_hit and not row.new_strategy_hit and not row.chip_radar_hit:
+        return '放觀察名單'
+    return '暫不納入'
+
+
+def _overall_focus_scroll_item(rank: int, row: HybridRow) -> str:
+    top10_strength = row.top10_main_force_buy_strength or 0.0
+    net_buy = row.top10_main_force_net_buy or 0.0
+    label = _overall_focus_label(row)
+    reason = _overall_focus_reason(row)
+    action = _overall_focus_action(row)
+    return (
+        '<div style="display:flex; gap:10px; align-items:flex-start; padding:10px 8px; border-bottom:1px solid #e6edf5;">'
+        f'<div style="min-width:34px; height:34px; border-radius:999px; background:#0f766e; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:13px;">{rank}</div>'
+        '<div style="flex:1; min-width:0;">'
+        f'<div style="font-weight:800; color:#0f172a; margin-bottom:4px;">{html.escape(row.symbol)} {html.escape(row.name)} <span style="color:#0f766e;">{html.escape(label)}</span></div>'
+        f'<div style="color:#475569; font-size:12px; line-height:1.45;">{html.escape(reason)} · {html.escape(action)}</div>'
+        f'<div style="color:#64748b; font-size:11px; margin-top:4px;">Hybrid {row.hybrid_score:.1f} / 技術 {row.technical_score:.1f} / 前十大主力強度 {_chip_value(top10_strength)} / 前十大主力淨買超 {_chip_value(net_buy, digits=0)}</div>'
+        '</div>'
+        '</div>'
+    )
 def _research_observation(row: HybridRow, label: str) -> str:
     risk_low, risk_high = _risk_range(row)
     return (

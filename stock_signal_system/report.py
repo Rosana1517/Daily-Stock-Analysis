@@ -419,7 +419,7 @@ def _interactive_chart_section() -> str:
               </section>
               <section class="stock-filter-item">
                 <label class="stock-filter-toggle"><input id="legacyStrategyToggle" type="checkbox" checked>第 3 層：舊版策略</label>
-                <p class="stock-filter-brief">先用流動性、成交量、均量、營收成長、本益比與產業新聞建立大母池，再做完整技術面確認。</p>
+                <p class="stock-filter-brief">作為品質底層與候選母池，先用流動性、成交量、均量、營收成長、本益比與產業新聞做完整確認，不是和前兩層並列的同類策略。</p>
               </section>
             </div>
             <p class="filter-tip">可單獨查看任一策略；同時勾選兩個或三個策略時，畫面會自動顯示交集結果，方便找出同時成立的股票。</p>
@@ -597,10 +597,10 @@ INTERACTIVE_CHART_JS = r"""
     const comboMap = {
       chip: ["單看第 1 層", "只看籌碼雷達的前置雷達。"],
       new: ["單看第 2 層", "只看新版策略的發動確認。"],
-      legacy: ["單看第 3 層", "只看舊版策略的品質與風控。"],
+      legacy: ["單看第 3 層", "只看舊版策略的品質底與候選母池。"],
       "chip+new": ["第 1 層 + 第 2 層", "先看籌碼支撐，再看技術發動，這是最像「有照顧也有啟動」的組合。"],
-      "chip+legacy": ["第 1 層 + 第 3 層", "先看籌碼照顧，再確認舊版流程的品質底。"],
-      "new+legacy": ["第 2 層 + 第 3 層", "看得到發動，也看得到品質，但籌碼支持未必最強。"],
+      "chip+legacy": ["第 1 層 + 第 3 層", "先看籌碼照顧，再確認舊版流程的品質底，是最穩的一組。"],
+      "new+legacy": ["第 2 層 + 第 3 層", "看得到發動，也看得到品質，但還沒有籌碼支撐時，會比交集組合更積極。"],
       "chip+new+legacy": ["三層全中", "籌碼、技術、舊版品質底三者都成立。"],
       none: ["目前沒有勾選策略", "請至少勾選一個策略來查看。"],
     };
@@ -672,7 +672,7 @@ INTERACTIVE_CHART_JS = r"""
       blocks.push(`
         <div class="strategy-mini-card">
           <b>第 3 層：舊版策略</b>
-          <span>這一層看的是完整品質底：均線位置、支撐壓力、量價結構與風險控管，不和新版重複。</span>
+          <span>這一層是品質底與候選母池，先確認流動性、成交量、均量、營收成長、本益比與產業新聞，再拿去和前兩層做交集比較。</span>
         </div>
       `);
       oldItems.slice(0, 2).forEach((item) => {

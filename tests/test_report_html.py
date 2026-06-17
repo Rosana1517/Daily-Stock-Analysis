@@ -73,7 +73,7 @@ class ReportHtmlTest(unittest.TestCase):
         self.assertIn('id="legacyStrategyToggle"', html)
         self.assertIn("第 1 層：籌碼雷達", html)
         self.assertIn("在舊版母池與籌碼雷達基礎上", html)
-        self.assertIn("先用流動性、成交量、均量、營收成長、本益比與產業新聞建立大母池", html)
+        self.assertIn("作為品質底層與候選母池", html)
         self.assertNotIn('id="chipRadarStockList"', html)
         self.assertNotIn('id="legacyStockList"', html)
         self.assertNotIn('id="revisedStockList"', html)
@@ -88,6 +88,7 @@ class ReportHtmlTest(unittest.TestCase):
         self.assertIn("filter-tip", html)
         self.assertIn("<summary>策略層摘要</summary>", html)
         self.assertIn('id="strategyContext"', html)
+        self.assertIn("品質底層與候選母池", html)
         self.assertNotIn("technical-chart-data", html)
 
 
