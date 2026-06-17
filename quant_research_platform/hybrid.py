@@ -544,10 +544,6 @@ def _save_report(
             "<tr><td>-</td><td>尚無符合群組</td><td>0</td><td>目前沒有可分類的候選</td><td>等待下一次資料更新</td><td>n/a</td></tr>"
         )
 
-    focus_items_html = "".join(_overall_focus_scroll_item(rank, row) for rank, row in enumerate(focus_rows, 1))
-    if not focus_items_html:
-        focus_items_html = '<div style="padding: 10px 4px; color: #64748b;">目前沒有可列入綜合關注榜的股票。</div>'
-
     rss_cards_html = []
     if industry_signals:
         for signal in industry_signals[:8]:
@@ -570,14 +566,6 @@ def _save_report(
     lines = [
         f"# Hybrid \u53f0\u80a1\u6bcf\u65e5\u5206\u6790\u5831\u544a - {report_date.isoformat()}",
         "",
-        '<div class="report-grid report-grid--two">',
-        '<section class="report-card">',
-        "<h2>綜合關注榜</h2>",
-        '<div class="scroll-box">',
-        '<p class="section-note">按照「三者全中」、「舊版 + 籌碼雷達」、「舊版 + 新版」、「新版 + 籌碼雷達」、「單策略」的優先順序排列。</p>',
-        focus_items_html,
-        "</div>",
-        "</section>",
         '<section class="report-card">',
         "<h2>選股優先順序表</h2>",
         '<div class="table-wrap"><table><thead><tr><th>優先級</th><th>組合</th><th>數量</th><th>風格判讀</th><th>建議動作</th><th>代表股票</th></tr></thead><tbody>',
@@ -585,7 +573,6 @@ def _save_report(
         "</tbody></table></div>",
         '<p class="section-note">優先順序：<code>三者全中</code> &gt; <code>舊版 + 籌碼雷達</code> &gt; <code>舊版 + 新版</code> &gt; <code>新版 + 籌碼雷達</code> &gt; <code>單策略命中</code>。</p>',
         "</section>",
-        "</div>",
         '<div id="tech-section-marker"></div>',
         "## \u0052\u0053\u0053 \u7522\u696d\u8a0a\u865f",
         "",
