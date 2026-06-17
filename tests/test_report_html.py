@@ -86,7 +86,8 @@ class ReportHtmlTest(unittest.TestCase):
         self.assertIn("official+broker", html)
         self.assertIn("repeat(auto-fit, minmax(240px, 1fr))", html)
         self.assertIn("filter-tip", html)
-        self.assertIn("<summary>策略條件摘要</summary>", html)
+        self.assertIn("<summary>策略層摘要</summary>", html)
+        self.assertIn('id="strategyContext"', html)
         self.assertNotIn("technical-chart-data", html)
 
 

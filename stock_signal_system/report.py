@@ -464,7 +464,8 @@ def _interactive_chart_section() -> str:
           <canvas id="technicalChart" width="1120" height="620"></canvas>
           <p class="chart-note">圖表僅呈現可重算的研究條件；若顯示資料不足，代表該股缺少完整 OHLCV 或技術資料。</p>
           <details class="strategy-panel">
-            <summary>策略條件摘要</summary>
+            <summary>策略層摘要</summary>
+            <div id="strategyContext" class="strategy-context"></div>
             <div id="strategyList" class="strategy-list"></div>
           </details>
         </div>
@@ -568,10 +569,138 @@ INTERACTIVE_CHART_JS = r"""
       ["主分點連買天數", formatChipNumber(chip.branchMainForceBuyStreakDays, 0)],
       ["主分點", chip.branchMainForceLeader || "n/a"],
       ["籌碼日期", chip.chipDataDate || "n/a"],
-      ["來源狀態", chip.chipDataSourceStatus || "n/a"],
-      ["主力分點", chip.top10MainForceBrokers || "n/a"],
+      ["籌碼狀態", chip.chipDataSourceStatus || "n/a"],
+      ["前十大主力券商", chip.top10MainForceBrokers || "n/a"],
     ];
     node.innerHTML = metrics.map(([label, value]) => `<div class="chip-metric"><b>${escapeHtml(label)}</b><span>${escapeHtml(String(value))}</span></div>`).join("");
+  }
+
+  function activeFilterLabels() {
+    const labels = [];
+    if (state.filters.chipRadar) labels.push("第 1 層：籌碼雷達");
+    if (state.filters.newStrategy) labels.push("第 2 層：新版策略");
+    if (state.filters.oldStrategy) labels.push("第 3 層：舊版策略");
+    return labels;
+  }
+
+  function modeKey() {
+    const labels = [];
+    if (state.filters.chipRadar) labels.push("chip");
+    if (state.filters.newStrategy) labels.push("new");
+    if (state.filters.oldStrategy) labels.push("legacy");
+    return labels.join("+") || "none";
+  }
+
+  function layerHeader(stock) {
+    const flags = screeningFlags(stock);
+    const activeText = activeFilterLabels().join(" + ") || "未勾選任何策略";
+    const comboMap = {
+      chip: ["單看第 1 層", "只看籌碼雷達的前置雷達。"],
+      new: ["單看第 2 層", "只看新版策略的發動確認。"],
+      legacy: ["單看第 3 層", "只看舊版策略的品質與風控。"],
+      "chip+new": ["第 1 層 + 第 2 層", "先看籌碼支撐，再看技術發動，這是最像「有照顧也有啟動」的組合。"],
+      "chip+legacy": ["第 1 層 + 第 3 層", "先看籌碼照顧，再確認舊版流程的品質底。"],
+      "new+legacy": ["第 2 層 + 第 3 層", "看得到發動，也看得到品質，但籌碼支持未必最強。"],
+      "chip+new+legacy": ["三層全中", "籌碼、技術、舊版品質底三者都成立。"],
+      none: ["目前沒有勾選策略", "請至少勾選一個策略來查看。"],
+    };
+    const [title, note] = comboMap[modeKey()] || comboMap.none;
+    const hitLabels = [];
+    if (flags.chipRadar) hitLabels.push("籌碼雷達命中");
+    if (flags.newStrategy) hitLabels.push("新版策略命中");
+    if (flags.legacyMotherPoolHit ?? flags.legacy) hitLabels.push("舊版策略命中");
+    const hitText = hitLabels.length ? hitLabels.join("、") : "目前股票沒有對應到已勾選的策略";
+    return `
+      <div class="strategy-context-head">
+        <span class="strategy-mode-badge">${escapeHtml(title)}</span>
+        <span class="strategy-mode-note">${escapeHtml(activeText)}，${escapeHtml(hitText)}</span>
+      </div>
+      <div class="strategy-mode-note">${escapeHtml(note)}</div>
+    `;
+  }
+
+  function renderStrategyContext(stock) {
+    const node = $("strategyContext");
+    if (!node) return;
+    const chip = stock.chipSnapshot || {};
+    const flags = screeningFlags(stock);
+    const summaryItems = (stock.strategySummary || []).filter((item) => strategyVisible(item.strategy));
+    const newItems = summaryItems.filter((item) => /均線|量價|突破|MACD|RSI|波動/.test(String(item.strategy || "")));
+    const oldItems = summaryItems.filter((item) => /支撐|壓力|趨勢|漲停|月均線/.test(String(item.strategy || "")));
+    const blocks = [];
+    blocks.push(`
+      <div class="strategy-mini-grid">
+        <div class="strategy-mini-card">
+          <b>目前顯示模式</b>
+          <span>${escapeHtml(activeFilterLabels().join(" + ") || "未勾選")}</span>
+        </div>
+        <div class="strategy-mini-card">
+          <b>命中狀態</b>
+          <span>${escapeHtml([
+            flags.chipRadar ? "籌碼雷達" : "籌碼雷達未命中",
+            flags.newStrategy ? "新版策略" : "新版策略未命中",
+            (flags.legacyMotherPoolHit ?? flags.legacy) ? "舊版策略" : "舊版策略未命中",
+          ].join("｜"))}</span>
+        </div>
+      </div>
+    `);
+    if (state.filters.chipRadar) {
+      blocks.push(`
+        <div class="strategy-mini-card">
+          <b>第 1 層：籌碼雷達</b>
+          <span>前十大主力淨買超 ${escapeHtml(formatChipNumber(chip.top10MainForceNetBuy, 0))}、主分點 ${escapeHtml(chip.branchMainForceLeader || "n/a")}、主分點連買 ${escapeHtml(formatChipNumber(chip.branchMainForceBuyStreakDays, 0))} 日。</span>
+        </div>
+      `);
+    }
+    if (state.filters.newStrategy) {
+      blocks.push(`
+        <div class="strategy-mini-card">
+          <b>${state.filters.chipRadar ? "第 2 層：新版策略（交集確認）" : "第 2 層：新版策略（單獨查看）"}</b>
+          <span>這一層只負責確認「有沒有發動」：K 值 &lt; 40、MA20 上升、融資增加與突破確認。</span>
+        </div>
+      `);
+      newItems.slice(0, 2).forEach((item) => {
+        blocks.push(`
+          <div class="strategy-mini-card">
+            <b>${escapeHtml(item.strategy)} | ${escapeHtml(item.status)}</b>
+            <span>${escapeHtml(item.use)}</span>
+          </div>
+        `);
+      });
+    }
+    if (state.filters.oldStrategy) {
+      blocks.push(`
+        <div class="strategy-mini-card">
+          <b>第 3 層：舊版策略</b>
+          <span>這一層看的是完整品質底：均線位置、支撐壓力、量價結構與風險控管，不和新版重複。</span>
+        </div>
+      `);
+      oldItems.slice(0, 2).forEach((item) => {
+        blocks.push(`
+          <div class="strategy-mini-card">
+            <b>${escapeHtml(item.strategy)} | ${escapeHtml(item.status)}</b>
+            <span>${escapeHtml(item.use)}</span>
+          </div>
+        `);
+      });
+    }
+    if (state.filters.chipRadar && state.filters.newStrategy) {
+      blocks.push(`
+        <div class="strategy-mini-card">
+          <b>交集判讀</b>
+          <span>這組代表「有主力照顧，也有技術發動」。和單看第 2 層相比，這裡會額外顯示籌碼支撐；和單看第 1 層相比，這裡會額外顯示發動確認。</span>
+        </div>
+      `);
+    }
+    if (state.filters.newStrategy && !state.filters.chipRadar) {
+      blocks.push(`
+        <div class="strategy-mini-card">
+          <b>單看第 2 層時的重點</b>
+          <span>這裡只看技術確認，不代表已有主力照顧；若沒有籌碼雷達一起成立，風險會比交集組合更高。</span>
+        </div>
+      `);
+    }
+    node.innerHTML = `<div class="strategy-context">${layerHeader(stock)}${blocks.join("")}</div>`;
   }
 
   function formatChipNumber(value, digits = 1) {
@@ -589,47 +718,19 @@ INTERACTIVE_CHART_JS = r"""
     };
   }
 
-  function renderStrategyList(stock) {
-    const list = $("strategyList");
-    if (!list) return;
-    list.innerHTML = "";
-    (stock.strategySummary || [])
-      .filter((item) => strategyVisible(item.strategy))
-      .slice(0, 2)
-      .forEach((item) => {
-        const node = document.createElement("div");
-        node.className = "strategy-item";
-        node.innerHTML = `<b>${escapeHtml(item.strategy)} | ${escapeHtml(item.status)}</b><span>${escapeHtml(item.use)}</span>`;
-        list.appendChild(node);
-      });
-  }
-
-  function strategyVisible(strategy) {
-    const map = new Map([
-      ["近 10 日漲停排除 3 連漲", "limitUp"],
-      ["月均線 MACD 金叉向上", "monthlyMacd"],
-      ["均線、趨勢與支撐壓力", "ma"],
-      ["動能與波動", "rsi"],
-      ["型態、量價與突破確認", "markers"],
-    ]);
-    const layer = map.get(strategy);
-    return layer ? state.layers[layer] : true;
-  }
-
   function render() {
     const stock = visibleStocks()[state.stockIndex];
     if (!stock) {
-      drawEmptyState("\u76ee\u524d\u6c92\u6709\u7b26\u5408\u52fe\u9078\u689d\u4ef6\u7684\u80a1\u7968");
+      drawEmptyState("目前沒有符合勾選條件的股票");
       return;
     }
     renderChipSnapshot(stock);
+    renderStrategyContext(stock);
     renderStrategyList(stock);
     if (!stock.bars || stock.bars.length === 0) {
-      drawEmptyState(`${stock.symbol} \u7f3a\u5c11\u5b8c\u6574 OHLCV / \u6280\u8853\u8cc7\u6599`);
+      drawEmptyState(`${stock.symbol} 缺少完整 OHLCV / 技術資料`);
       return;
     }
-    renderChipSnapshot(stock);
-    renderStrategyList(stock);
     const ratio = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
     chartWidth = rect.width;
@@ -643,31 +744,37 @@ INTERACTIVE_CHART_JS = r"""
 
   function renderStrategyList(stock) {
     const list = $("strategyList");
+    if (!list) return;
+    const items = (stock.strategySummary || []).filter((item) => strategyVisible(item.strategy));
+    const visibleItems = items.slice(0, 3);
     list.innerHTML = "";
-    (stock.strategySummary || []).filter((item) => strategyVisible(item.strategy)).slice(0, 3).forEach((item) => {
+    if (!visibleItems.length) {
       const node = document.createElement("div");
       node.className = "strategy-item";
-      node.innerHTML = `<b>${escapeHtml(item.strategy)}｜${escapeHtml(item.status)}</b><span>${escapeHtml(item.agent)}：${escapeHtml(item.use)}</span>`;
+      node.innerHTML = "<b>目前沒有對應的策略細項</b><span>這代表此層的勾選條件下，沒有可展開的技術摘要，或資料不足。</span>";
+      list.appendChild(node);
+      return;
+    }
+    visibleItems.forEach((item) => {
+      const node = document.createElement("div");
+      node.className = "strategy-item";
+      node.innerHTML = `<b>${escapeHtml(item.strategy)} | ${escapeHtml(item.status)}</b><span>${escapeHtml(item.agent)}?${escapeHtml(item.use)}</span>`;
       list.appendChild(node);
     });
   }
 
   function strategyVisible(strategy) {
-    const map = [
-      ["近 10 日漲停排除 3 連漲", "limitUp"],
-      ["月均線 MACD 金叉向上", "monthlyMacd"],
-      ["日均線股價在 20 均線附近且放量陽線", "ma20Volume"],
-      ["黃金交叉 / 死亡交叉", "ma"],
-      ["MA20 風險線", "ma"],
-      ["布林通道", "bollinger"],
-      ["RSI", "rsi"],
-      ["量價確認", "volume"],
-      ["三線突破", "markers"],
-      ["支撐壓力", "support"],
-      ["當日 K 線", "markers"]
-    ];
-    const found = map.find(([name]) => strategy === name);
-    return found ? state.layers[found[1]] : true;
+    const normalized = String(strategy || "");
+    if (normalized.includes("??")) return state.layers.limitUp;
+    if (normalized.includes("???") || normalized.includes("MACD")) return state.layers.monthlyMacd;
+    if (normalized.includes("??") || normalized.includes("??")) return state.layers.ma20Volume;
+    if (normalized.includes("??") || normalized.includes("??") || normalized.includes("??")) return state.layers.ma;
+    if (normalized.includes("RSI") || normalized.includes("??")) return state.layers.rsi;
+    if (normalized.includes("??") || normalized.includes("??")) return state.layers.bollinger;
+    if (normalized.includes("??")) return state.layers.volume;
+    if (normalized.includes("??") || normalized.includes("??")) return state.layers.support;
+    if (normalized.includes("??") || normalized.includes("K 線") || normalized.includes("K線")) return state.layers.markers;
+    return true;
   }
 
   function drawEmptyState(message) {
