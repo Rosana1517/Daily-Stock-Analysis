@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime, timedelta
 
 from quant_research_platform.data import Bar
-from quant_research_platform.hybrid import HybridRow, _screening_priority_groups
+from quant_research_platform.hybrid import HybridRow, _has_real_broker_snapshot, _screening_priority_groups
 from quant_research_platform.universe import (
     _breaks_platform_consolidation,
     _is_ma20_rising,
@@ -119,6 +119,28 @@ class HybridSupportTest(unittest.TestCase):
             _passes_chip_breakout_strategy(
                 {"symbol": "2330", "top10_main_force_buy_strength": 68, "foreign_buy_streak_days": 1},
                 {"2330": bars},
+            )
+        )
+
+    def test_real_broker_snapshot_requires_broker_fields(self):
+        self.assertTrue(
+            _has_real_broker_snapshot(
+                {
+                    "chip_data_source_status": "official+broker|rank=1",
+                    "top10_main_force_net_buy": "52306",
+                    "branch_main_force_buy_streak_days": "2",
+                    "branch_main_force_leader": "台灣摩根士丹利",
+                }
+            )
+        )
+        self.assertFalse(
+            _has_real_broker_snapshot(
+                {
+                    "chip_data_source_status": "official-only",
+                    "top10_main_force_net_buy": "",
+                    "branch_main_force_buy_streak_days": "",
+                    "branch_main_force_leader": "",
+                }
             )
         )
 

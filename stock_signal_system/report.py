@@ -410,19 +410,19 @@ def _interactive_chart_section() -> str:
             <select id="stockSelect"></select>
             <div class="stock-filter-stack">
               <section class="stock-filter-item">
-                <label class="stock-filter-toggle"><input id="chipRadarToggle" type="checkbox" checked>看籌碼雷達</label>
-                <p class="stock-filter-brief">先看前十大主力、外資連買與主分點連買，作為主力正在進場的前置雷達。</p>
+                <label class="stock-filter-toggle"><input id="chipRadarToggle" type="checkbox" checked>第 1 層：籌碼雷達</label>
+                <p class="stock-filter-brief">先看前十大主力淨買超、主分點連買與外資連買，找出主力正在照顧、但還沒完全發動的股票。</p>
               </section>
               <section class="stock-filter-item">
-                <label class="stock-filter-toggle"><input id="newStrategyToggle" type="checkbox" checked>看新版策略</label>
-                <p class="stock-filter-brief">以舊版母池加上籌碼雷達股為母群，再檢查 K 值 &lt; 40、近 5 日融資增加前段、MA20 上升與突破確認。</p>
+                <label class="stock-filter-toggle"><input id="newStrategyToggle" type="checkbox" checked>第 2 層：新版策略</label>
+                <p class="stock-filter-brief">在舊版母池與籌碼雷達基礎上，再檢查 K 值 &lt; 40、近 5 日融資增加、MA20 上升與突破確認。</p>
               </section>
               <section class="stock-filter-item">
-                <label class="stock-filter-toggle"><input id="legacyStrategyToggle" type="checkbox" checked>看舊版策略</label>
-                <p class="stock-filter-brief">先用流動性、成交量、均量、營收成長、本益比與產業新聞建立大母池，再跑完整技術面確認。</p>
+                <label class="stock-filter-toggle"><input id="legacyStrategyToggle" type="checkbox" checked>第 3 層：舊版策略</label>
+                <p class="stock-filter-brief">先用流動性、成交量、均量、營收成長、本益比與產業新聞建立大母池，再做完整技術面確認。</p>
               </section>
             </div>
-            <p class="filter-tip">勾選任一策略可單獨查看；勾選任兩個或三個策略時，畫面會自動顯示交集結果，避免候選被單一路徑吃掉。</p>
+            <p class="filter-tip">可單獨查看任一策略；同時勾選兩個或三個策略時，畫面會自動顯示交集結果，方便找出同時成立的股票。</p>
             <section class="chip-card">
               <h3>籌碼快照</h3>
               <div id="chipSnapshotPanel" class="chip-grid"></div>

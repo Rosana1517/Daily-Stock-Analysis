@@ -36,6 +36,7 @@ from quant_research_platform.qlib_adapter import (
 )
 from quant_research_platform.signals import build_signals
 from quant_research_platform.universe import build_candidate_selection_plan
+from stock_signal_system.data.chip_snapshot import load_histock_broker_summaries, load_recent_twse_institutional_days
 from stock_signal_system.data.csv_sources import load_intraday_history, load_news
 
 
@@ -202,6 +203,25 @@ def run_tw_hybrid(
             rank_map.get(item.symbol, 9999),
         ),
     )
+    chip_snapshot_by_symbol = _enrich_report_chip_snapshots(
+        rows,
+        chip_snapshot_by_symbol,
+        bars_by_symbol,
+        report_date,
+        cache_dir=Path(".cache"),
+        enrich_limit=24,
+    )
+    rows_by_symbol = _apply_chip_snapshot_enrichment(rows_by_symbol, chip_snapshot_by_symbol)
+    rows = sorted(
+        rows_by_symbol.values(),
+        key=lambda item: (
+            not item.new_strategy_hit,
+            not item.chip_radar_hit,
+            not item.legacy_hit,
+            -item.hybrid_score,
+            rank_map.get(item.symbol, 9999),
+        ),
+    )
     qlib_metrics = run_inline_signal_diagnostics(kronos_signals, bars_by_symbol, config.top_n)
     qlib_engine = run_qlib_engine_portfolio_backtest(
         kronos_signals,
@@ -248,6 +268,7 @@ def run_tw_hybrid(
         qlib_metrics,
         qlib_engine,
         config,
+        chip_snapshot_by_symbol,
     )
     build_qlib_signal_backtest_config(csv_path, "custom_tw", config.benchmark_symbol or "2330.TW", qlib_path, config.top_n, 1)
 
@@ -310,6 +331,96 @@ def _load_chip_snapshot_lookup(*paths: Path | None) -> dict[str, dict]:
         except OSError:
             continue
     return lookup
+
+
+def _enrich_report_chip_snapshots(
+    rows: list[HybridRow],
+    chip_snapshot_by_symbol: dict[str, dict],
+    bars_by_symbol: dict[str, list[Bar]],
+    report_date: date,
+    *,
+    cache_dir: Path,
+    enrich_limit: int = 24,
+) -> dict[str, dict]:
+    missing_symbols: list[str] = []
+    for row in rows[:enrich_limit]:
+        snapshot = chip_snapshot_by_symbol.get(row.symbol, {})
+        if _has_real_broker_snapshot(snapshot):
+            continue
+        if row.symbol not in missing_symbols:
+            missing_symbols.append(row.symbol)
+    if not missing_symbols:
+        return chip_snapshot_by_symbol
+
+    latest_volume_by_symbol: dict[str, int] = {}
+    for row in rows[:enrich_limit]:
+        if row.symbol not in missing_symbols:
+            continue
+        bars = bars_by_symbol.get(row.symbol, [])
+        latest_volume_by_symbol[row.symbol] = int(bars[-1].volume) if bars else 0
+
+    try:
+        twse_days = load_recent_twse_institutional_days(cache_dir, as_of=report_date, lookback_sessions=3)
+        if not twse_days:
+            return chip_snapshot_by_symbol
+        broker_summaries = load_histock_broker_summaries(
+            cache_dir,
+            twse_days,
+            tuple(missing_symbols),
+            latest_volume_by_symbol,
+            broker_lookback_sessions=min(3, len(twse_days)),
+        )
+    except Exception:
+        return chip_snapshot_by_symbol
+
+    for symbol, summary in broker_summaries.items():
+        full_symbol = f"{symbol}.TW"
+        merged_snapshot = {
+            **chip_snapshot_by_symbol.get(full_symbol, chip_snapshot_by_symbol.get(symbol, {})),
+            "top10_main_force_buy_strength": f"{summary.top10_main_force_buy_strength:.1f}",
+            "top10_main_force_net_buy": str(summary.top10_main_force_net_buy),
+            "branch_main_force_buy_streak_days": str(summary.branch_main_force_buy_streak_days),
+            "branch_main_force_leader": summary.branch_main_force_leader,
+            "chip_data_date": summary.chip_data_date,
+            "chip_data_source": summary.chip_data_source,
+            "chip_data_source_status": summary.chip_data_source_status,
+            "top10_main_force_brokers": summary.top10_main_force_brokers,
+        }
+        chip_snapshot_by_symbol[full_symbol] = merged_snapshot
+        chip_snapshot_by_symbol[symbol] = merged_snapshot
+    return chip_snapshot_by_symbol
+
+
+def _has_real_broker_snapshot(snapshot: dict) -> bool:
+    status = str(snapshot.get("chip_data_source_status", "")).strip().lower()
+    return status.startswith("official+broker") and any(
+        str(snapshot.get(key, "")).strip()
+        for key in ("top10_main_force_net_buy", "branch_main_force_buy_streak_days", "branch_main_force_leader")
+    )
+
+
+def _apply_chip_snapshot_enrichment(
+    rows_by_symbol: dict[str, HybridRow],
+    chip_snapshot_by_symbol: dict[str, dict],
+) -> dict[str, HybridRow]:
+    enriched: dict[str, HybridRow] = {}
+    for symbol, row in rows_by_symbol.items():
+        snapshot = chip_snapshot_by_symbol.get(symbol)
+        if not snapshot or not _has_real_broker_snapshot(snapshot):
+            enriched[symbol] = row
+            continue
+        enriched[symbol] = replace(
+            row,
+            top10_main_force_buy_strength=_optional_float(snapshot, "top10_main_force_buy_strength", "top10_main_force_buy_strength_proxy"),
+            top10_main_force_net_buy=_optional_float(snapshot, "top10_main_force_net_buy"),
+            branch_main_force_buy_streak_days=_optional_float(snapshot, "branch_main_force_buy_streak_days"),
+            branch_main_force_leader=str(snapshot.get("branch_main_force_leader", "")).strip(),
+            chip_data_date=str(snapshot.get("chip_data_date", "")).strip(),
+            chip_data_source=str(snapshot.get("chip_data_source", "")).strip(),
+            chip_data_source_status=str(snapshot.get("chip_data_source_status", "")).strip(),
+            top10_main_force_brokers=str(snapshot.get("top10_main_force_brokers", "")).strip(),
+        )
+    return enriched
 
 
 def _optional_float(row: dict, *keys: str) -> float | None:
@@ -404,6 +515,7 @@ def _save_report(
     qlib_metrics,
     qlib_engine,
     config: QuantPlatformConfig,
+    chip_snapshot_by_symbol: dict[str, dict],
 ) -> None:
     portfolio_decisions = agent_workflow
     focus_rows = _portfolio_rows(rows, portfolio_decisions, "include")
@@ -423,11 +535,29 @@ def _save_report(
     lines.extend(["</div>", "", "## \u5019\u9078\u80a1\u7968\u5206\u6790", "", "| \u80a1\u7968 | \u540d\u7a31 | \u7522\u696d | Hybrid | \u820a\u7248 | \u65b0\u7248 | \u7c4c\u78bc\u96f7\u9054 | \u524d\u5341\u5927\u4e3b\u529b\u5f37\u5ea6 | \u524d\u5341\u5927\u4e3b\u529b\u6de8\u8cb7\u8d85 | \u5916\u8cc7\u9023\u8cb7 | \u4e3b\u5206\u9ede\u9023\u8cb7 | \u4e3b\u5206\u9ede | \u7c4c\u78bc\u65e5\u671f | \u7c4c\u78bc\u72c0\u614b | \u7d44\u5408\u6c7a\u7b56 | \u98a8\u96aa\u8a3b\u8a18 |", "|---|---|---|---:|---|---|---|---:|---:|---:|---:|---|---|---|---|---|"])
     for row in rows:
         decision = portfolio_decisions.get(row.symbol)
+        snapshot = chip_snapshot_by_symbol.get(row.symbol, {})
+        top10_main_force_buy_strength = _optional_float(snapshot, "top10_main_force_buy_strength", "top10_main_force_buy_strength_proxy")
+        top10_main_force_net_buy = _optional_float(snapshot, "top10_main_force_net_buy")
+        foreign_buy_streak_days = _optional_float(snapshot, "foreign_buy_streak_days")
+        branch_main_force_buy_streak_days = _optional_float(snapshot, "branch_main_force_buy_streak_days")
+        branch_main_force_leader = str(snapshot.get("branch_main_force_leader", "")).strip() or row.branch_main_force_leader
+        chip_data_date = str(snapshot.get("chip_data_date", "")).strip() or row.chip_data_date
+        chip_data_source_status = str(snapshot.get("chip_data_source_status", "")).strip() or row.chip_data_source_status
         legacy_label = "\u662f" if row.legacy_hit else "\u5426"
         new_label = "\u662f" if row.new_strategy_hit else "\u5426"
         chip_label = "\u662f" if row.chip_radar_hit else "\u5426"
-        lines.append(f"| {row.symbol} | {row.name} | {row.industry} | {row.hybrid_score:.1f} | {legacy_label} | {new_label} | {chip_label} | {_chip_value(row.top10_main_force_buy_strength)} | {_chip_value(row.top10_main_force_net_buy, digits=0)} | {_chip_value(row.foreign_buy_streak_days, digits=0)} | {_chip_value(row.branch_main_force_buy_streak_days, digits=0)} | {row.branch_main_force_leader or 'n/a'} | {row.chip_data_date or 'n/a'} | {row.chip_data_source_status or 'n/a'} | {portfolio_decision_label(decision)} | {row.risk_note} |")
-    lines.extend(["", "## \u4e92\u52d5\u6280\u8853\u5206\u6790\u7b56\u7565", "", "- \u770b\u7c4c\u78bc\u96f7\u9054\uff1a\u4ee5\u524d\u5341\u5927\u4e3b\u529b\u3001\u5916\u8cc7\u9023\u8cb7\u3001\u4e3b\u5206\u9ede\u9023\u8cb7\u7576\u524d\u7f6e\u96f7\u9054\uff0c\u5148\u627e\u8fd1\u671f\u6709\u4e3b\u529b\u6301\u7e8c\u9032\u5834\u7684\u80a1\u7968\u3002", "- \u770b\u65b0\u7248\u7b56\u7565\uff1a\u4ee5\u820a\u7248\u7b56\u7565\u8207\u7c4c\u78bc\u96f7\u9054\u5171\u540c\u6bcd\u6c60\uff0c\u518d\u6aa2\u67e5 K \u503c < 40\u3001\u8fd1 5 \u65e5\u878d\u8cc7\u589e\u52a0\u524d\u6bb5\u3001MA20 \u4e0a\u5347\u7b49\u689d\u4ef6\u3002", "- \u770b\u820a\u7248\u7b56\u7565\uff1a\u4ee5\u65e2\u6709\u50f9\u91cf\u3001\u5747\u7dda\u3001\u578b\u614b\u3001\u652f\u6490\u58d3\u529b\u8207\u5373\u6642\u76e4\u52e2\u5b8c\u6574\u8dd1\u4e00\u6b21\uff0c\u4e0d\u56e0\u65b0\u7248\u689d\u4ef6\u800c\u7e2e\u5c0f\u80a1\u7968\u6c60\u3002", "", "<details>", "<summary>\u7814\u7a76\u89c0\u5bdf</summary>"])
+        lines.append(f"| {row.symbol} | {row.name} | {row.industry} | {row.hybrid_score:.1f} | {legacy_label} | {new_label} | {chip_label} | {_chip_value(top10_main_force_buy_strength)} | {_chip_value(top10_main_force_net_buy, digits=0)} | {_chip_value(foreign_buy_streak_days, digits=0)} | {_chip_value(branch_main_force_buy_streak_days, digits=0)} | {branch_main_force_leader or 'n/a'} | {chip_data_date or 'n/a'} | {chip_data_source_status or 'n/a'} | {portfolio_decision_label(decision)} | {row.risk_note} |")
+    lines.extend([
+        "",
+        "## \u5206\u5c64\u8aaa\u660e",
+        "",
+        "- \u7b2c 1 \u5c64\uff1a\u7c4c\u78bc\u96f7\u9054\u3002\u5148\u627e\u4e3b\u529b\u3001\u5916\u8cc7\u3001\u5206\u9ede\u7e8c\u8cb7\u7684\u80a1\u7968\uff0c\u4f5c\u70ba\u5148\u63a2\u62a5\u8b66\u3002",
+        "- \u7b2c 2 \u5c64\uff1a\u65b0\u7248\u7b56\u7565\u3002\u5728\u7c4c\u78bc\u96f7\u9054\u6216\u820a\u7248\u6bcd\u6c60\u4e0a\uff0c\u518d\u6aa2\u67e5 K \u503c < 40\u3001MA20 \u4e0a\u5347\u3001\u878d\u8cc7\u589e\u52a0\uff0c\u627e\u51fa\u767c\u52d5\u9ede\u3002",
+        "- \u7b2c 3 \u5c64\uff1a\u820a\u7248\u7b56\u7565\u3002\u5b8c\u6574\u8dd1\u6d41\u52d5\u6027\u3001\u50f9\u91cf\u3001\u578b\u614b\u3001\u652f\u6490\u58d3\u529b\u548c\u5373\u6642\u76e4\u52e2\uff0c\u4fdd\u7559\u98a8\u96aa\u63a7\u5236\u8207\u57fa\u672c\u8cea\u91cf\u3002",
+        "",
+        "<details>",
+        "<summary>\u7814\u7a76\u89c0\u5bdf</summary>",
+    ])
     if focus_rows:
         lines.extend(_research_observation(row, "\u7814\u7a76\u89c0\u5bdf") for row in focus_rows[:8])
     else:
