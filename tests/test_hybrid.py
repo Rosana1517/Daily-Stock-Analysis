@@ -115,6 +115,7 @@ class HybridTest(unittest.TestCase):
             self.assertIn("投組模擬", report)
             self.assertIn("新聞快訊", report)
             self.assertIn("研究觀察", report)
+            self.assertIn("選股優先順序表", report)
             self.assertIn("可重算驗證指標", report)
             self.assertNotIn("每日研究名單", report)
             self.assertNotIn("候選全覽", report)

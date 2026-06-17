@@ -410,6 +410,8 @@ def _save_report(
     watch_rows = _portfolio_rows(rows, portfolio_decisions, "watch")
     excluded_rows = _portfolio_rows(rows, portfolio_decisions, "exclude")
     data_limited_rows = [row for row in rows if row.signal_source == "data-limited"]
+    priority_rows = [row for row in rows if row.signal_source != "data-limited"] or rows
+    priority_groups = _screening_priority_groups(priority_rows)
 
     lines = [f"# Hybrid \u53f0\u80a1\u6bcf\u65e5\u5206\u6790\u5831\u544a - {report_date.isoformat()}", "", "## \u0052\u0053\u0053 \u7522\u696d\u8a0a\u865f", "", '<div class="rss-signal-grid">']
     if industry_signals:
@@ -443,6 +445,19 @@ def _save_report(
     else:
         lines.append("- \u672c\u6b21\u6c92\u6709\u660e\u78ba\u6392\u9664\u7684\u80a1\u7968\u3002")
     lines.extend(["</details>"])
+    lines.extend(["", "## \u9078\u80a1\u512a\u5148\u9806\u5e8f\u8868", "", "| \u512a\u5148\u7d1a | \u7d44\u5408 | \u6578\u91cf | \u98a8\u683c\u5224\u8b80 | \u5efa\u8b70\u52d5\u4f5c | \u4ee3\u8868\u80a1\u7968 |", "|---|---|---:|---|---|---|"])
+    if priority_groups:
+        for group in priority_groups:
+            lines.append(
+                f"| {group['priority']} | {group['label']} | {group['count']} | {group['meaning']} | {group['action']} | {group['samples']} |"
+            )
+    else:
+        lines.append("| - | 目前沒有可歸類股票 | 0 | 資料不足或條件尚未命中 | 先保留觀察 | n/a |")
+    lines.extend([
+        "",
+        "- 優先順序：`三者全中` > `舊版 + 籌碼雷達` > `舊版 + 新版` > `新版 + 籌碼雷達` > `單策略命中`。",
+        "- 單策略命中仍會保留在報表內，方便你分別看出每一條線各自抓到哪些股票。",
+    ])
     if data_limited_rows:
         lines.extend(["", "## \u8cc7\u6599\u5f85\u88dc\u6e05\u55ae", ""])
         for row in data_limited_rows[:12]:
@@ -496,6 +511,92 @@ def _industry_bias(score: float) -> str:
 
 def _portfolio_rows(rows: list[HybridRow], decisions: dict, bucket: str) -> list[HybridRow]:
     return [row for row in rows if portfolio_decision_bucket(decisions.get(row.symbol)) == bucket]
+
+
+def _screening_priority_groups(rows: list[HybridRow]) -> list[dict[str, object]]:
+    buckets = (
+        (
+            1,
+            "三者全中",
+            "績優且安全的主清單",
+            "主清單優先",
+            lambda row: row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit,
+        ),
+        (
+            2,
+            "舊版 + 籌碼雷達",
+            "穩健型上漲潛力",
+            "次主清單 / 持續觀察",
+            lambda row: row.legacy_hit and row.chip_radar_hit and not row.new_strategy_hit,
+        ),
+        (
+            3,
+            "舊版 + 新版",
+            "技術確認型",
+            "可觀察 / 等籌碼補強",
+            lambda row: row.legacy_hit and row.new_strategy_hit and not row.chip_radar_hit,
+        ),
+        (
+            4,
+            "新版 + 籌碼雷達",
+            "進攻型發動股",
+            "關注發動延續",
+            lambda row: row.new_strategy_hit and row.chip_radar_hit and not row.legacy_hit,
+        ),
+        (
+            5,
+            "單舊版",
+            "只有品質底",
+            "觀察名單",
+            lambda row: row.legacy_hit and not row.new_strategy_hit and not row.chip_radar_hit,
+        ),
+        (
+            5,
+            "單新版",
+            "只有發動確認",
+            "只留觀察",
+            lambda row: row.new_strategy_hit and not row.legacy_hit and not row.chip_radar_hit,
+        ),
+        (
+            5,
+            "單籌碼雷達",
+            "只有主力支持",
+            "等待新版確認",
+            lambda row: row.chip_radar_hit and not row.legacy_hit and not row.new_strategy_hit,
+        ),
+    )
+    groups: list[dict[str, object]] = []
+    for priority, label, meaning, action, predicate in buckets:
+        members = [row for row in rows if predicate(row)]
+        members.sort(
+            key=lambda row: (
+                row.hybrid_score,
+                row.technical_score,
+                row.top10_main_force_buy_strength or 0.0,
+                row.top10_main_force_net_buy or 0.0,
+            ),
+            reverse=True,
+        )
+        groups.append(
+            {
+                "priority": priority,
+                "label": label,
+                "count": len(members),
+                "meaning": meaning,
+                "action": action,
+                "samples": _priority_samples(members),
+            }
+        )
+    return groups
+
+
+def _priority_samples(rows: list[HybridRow], limit: int = 4) -> str:
+    samples = [f"{row.symbol} {row.name}" for row in rows[:limit]]
+    if not samples:
+        return "n/a"
+    if len(rows) > limit:
+        samples.append("等")
+    return "、".join(samples)
 
 
 def _research_observation(row: HybridRow, label: str) -> str:
@@ -664,6 +765,7 @@ def _technical_chart_stock(row: HybridRow, bars: list[Bar], decision) -> dict:
         "screeningBucket": row.screening_bucket,
         "screeningLabel": "\u7c4c\u78bc\u7a81\u7834\u4e3b\u6e05\u55ae" if row.screening_bucket == "chip_confirmed" else "\u7c4c\u78bc\u89c0\u5bdf\u6e05\u55ae" if row.screening_bucket == "chip_watch" else "\u820a\u7248\u89c0\u5bdf\u6e05\u55ae",
         "screeningFlags": {
+            "legacyMotherPoolHit": row.legacy_hit,
             "legacy": row.legacy_hit,
             "newStrategy": row.new_strategy_hit,
             "chipRadar": row.chip_radar_hit,

@@ -4,6 +4,7 @@ import unittest
 from datetime import datetime, timedelta
 
 from quant_research_platform.data import Bar
+from quant_research_platform.hybrid import HybridRow, _screening_priority_groups
 from quant_research_platform.universe import (
     _breaks_platform_consolidation,
     _is_ma20_rising,
@@ -23,6 +24,47 @@ def _bar(day_index: int, close: float, high: float | None = None, low: float | N
         low=low if low is not None else close - 1,
         close=close,
         volume=volume,
+    )
+
+
+def _hybrid_row(
+    symbol: str,
+    *,
+    legacy: bool = False,
+    new: bool = False,
+    chip: bool = False,
+    score: float = 0.0,
+) -> HybridRow:
+    return HybridRow(
+        symbol=symbol,
+        name=f"{symbol} 名稱",
+        industry="半導體",
+        screening_bucket="chip_confirmed" if new and chip else "chip_watch" if new or chip else "legacy_watch",
+        legacy_hit=legacy,
+        new_strategy_hit=new,
+        chip_radar_hit=chip,
+        signal_source="realtime",
+        kronos_return=0.12,
+        kronos_score=60.0,
+        news_score=55.0,
+        technical_score=score,
+        realtime_score=52.0,
+        hybrid_score=score,
+        current_close=100.0,
+        predicted_close=108.0,
+        realtime_status="盤中上漲",
+        action="研究觀察",
+        risk_note="測試用",
+        top10_main_force_buy_strength=70.0,
+        top10_main_force_net_buy=1000.0,
+        foreign_buy_streak_days=4.0,
+        branch_main_force_buy_streak_days=3.0,
+        branch_main_force_leader="凱基-台北",
+        chip_data_date="2026-06-16",
+        chip_data_source="official+broker",
+        chip_data_source_status="official+broker",
+        top10_main_force_brokers="凱基-台北",
+        technical_evidence=("close=100.0",),
     )
 
 
@@ -109,6 +151,23 @@ class HybridSupportTest(unittest.TestCase):
         )
 
         self.assertEqual([item["symbol"] for item in ranked], ["1102", "1101"])
+
+    def test_screening_priority_groups_rank_all_three_first(self):
+        groups = _screening_priority_groups(
+            [
+                _hybrid_row("2330.TW", legacy=True, new=True, chip=True, score=90.0),
+                _hybrid_row("2887.TW", legacy=True, new=False, chip=True, score=80.0),
+                _hybrid_row("2610.TW", legacy=False, new=True, chip=False, score=70.0),
+            ]
+        )
+
+        labels = [group["label"] for group in groups]
+        self.assertEqual(labels[0], "三者全中")
+        self.assertIn("舊版 + 籌碼雷達", labels)
+        self.assertIn("單新版", labels)
+        self.assertEqual(groups[0]["count"], 1)
+        self.assertIn("2330.TW", groups[0]["samples"])
+        self.assertIn("2887.TW", next(group for group in groups if group["label"] == "舊版 + 籌碼雷達")["samples"])
 
 
 if __name__ == "__main__":

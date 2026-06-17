@@ -79,6 +79,7 @@ class ReportHtmlTest(unittest.TestCase):
         self.assertNotIn('id="revisedStockList"', html)
         self.assertIn('id="chipSnapshotPanel"', html)
         self.assertIn("screeningFlags(stock)", html)
+        self.assertIn("legacyMotherPoolHit", html)
         self.assertIn("checks.every(Boolean)", html)
         self.assertIn("visibleStocks()", html)
         self.assertIn("renderChipSnapshot(stock)", html)

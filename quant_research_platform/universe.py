@@ -65,13 +65,15 @@ def build_candidate_selection_plan(
         )
     ]
     chip_watch_rows = [row for row in chip_radar_rows if row not in chip_rows]
-    legacy_pool_rows = _rank_legacy_rows(rows, news_terms)
+    legacy_ranked_rows = _rank_legacy_rows(rows, news_terms)
+    legacy_pool_rows = legacy_ranked_rows[:limit] if limit > 0 else legacy_ranked_rows
+    chip_radar_pool_rows = (chip_rows + chip_watch_rows)[:limit] if limit > 0 else (chip_rows + chip_watch_rows)
     mother_symbols = {
         str(row.get("symbol", "")).strip().upper()
         for row in legacy_pool_rows
     } | {
         str(row.get("symbol", "")).strip().upper()
-        for row in chip_radar_rows
+        for row in chip_radar_pool_rows
     }
     revised_rows = _rank_revised_rows(
         [row for row in rows if str(row.get("symbol", "")).strip().upper() in mother_symbols],
@@ -84,7 +86,7 @@ def build_candidate_selection_plan(
     }
     legacy_rows = [
         row
-        for row in _rank_legacy_rows(rows, news_terms)
+        for row in legacy_ranked_rows
         if str(row.get("symbol", "")).strip().upper() not in radar_symbols
     ]
     selected_symbols: list[str] = []

@@ -496,7 +496,8 @@ INTERACTIVE_CHART_JS = r"""
     return Boolean(screeningFlags(stock).newStrategy);
   }
   function isOldStrategy(stock) {
-    return Boolean(screeningFlags(stock).legacy);
+    const flags = screeningFlags(stock);
+    return Boolean(flags.legacyMotherPoolHit ?? flags.legacy);
   }
   function visibleStocks() {
     const active = [];
