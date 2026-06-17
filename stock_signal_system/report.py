@@ -448,11 +448,11 @@ def _interactive_chart_section() -> str:
         <aside class="tech-controls">
           <div class="field">
             <label for="stockSelect">股票</label>
-            <select id="stockSelect"></select>
             <section class="focus-card">
               <h3>綜合關注榜</h3>
               <div id="focusWatchlistPanel" class="focus-list"></div>
             </section>
+            <select id="stockSelect"></select>
             <div class="stock-filter-stack">
               <section class="stock-filter-item">
                 <label class="stock-filter-toggle"><input id="chipRadarToggle" type="checkbox" checked>第 1 層：籌碼雷達</label>
