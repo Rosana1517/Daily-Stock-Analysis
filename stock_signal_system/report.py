@@ -7,6 +7,7 @@ from datetime import date
 from pathlib import Path
 
 from stock_signal_system.models import IndustrySignal, StockRecommendation
+from stock_signal_system.report_retention import prune_report_artifacts
 from stock_signal_system.translation import zh_text
 
 
@@ -100,16 +101,8 @@ def save_report_html(report_dir: Path, report_date: date, content: str) -> Path:
     path = report_dir / f"stock_signals_{report_date.isoformat()}.html"
     title = _markdown_title(content) or f"Stock Signals - {report_date.isoformat()}"
     path.write_text(markdown_to_html(content, title=title), encoding="utf-8")
-    _prune_generated_report_html(report_dir)
+    prune_report_artifacts(report_dir)
     return path
-
-
-def _prune_generated_report_html(report_dir: Path, keep_latest: int = 3) -> None:
-    if keep_latest <= 0:
-        return
-    html_reports = sorted(report_dir.glob("stock_signals_*.html"), reverse=True)
-    for old_path in html_reports[keep_latest:]:
-        old_path.unlink(missing_ok=True)
 
 
 def markdown_to_html(markdown: str, title: str) -> str:

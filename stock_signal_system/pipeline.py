@@ -124,6 +124,8 @@ def _run_quant_hybrid_pipeline(config: AppConfig, current_date: date) -> Pipelin
     )
     report = report_path.read_text(encoding="utf-8")
     html_report_path = save_report_html(config.report_dir, current_date, report)
+    public_report_url(config.report_public_base_url, html_report_path)
+    return PipelineResult(str(report_path), [], [], "disabled")
     report_url = public_report_url(config.report_public_base_url, html_report_path)
     notification_body = _quant_notification_body(report, str(report_path), config.notification_mode, report_url)
     notification_status = send_notification(

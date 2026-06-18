@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import time
 import csv
+from datetime import date
 from pathlib import Path
 
 from quant_research_platform.config import QuantPlatformConfig
@@ -11,7 +12,7 @@ from quant_research_platform.twse_realtime import poll_realtime_quotes
 from quant_research_platform.universe import build_candidate_selection_plan, select_candidate_symbols
 from stock_signal_system.config import AppConfig
 from stock_signal_system.data.rss_sources import fetch_rss_news, save_news_csv
-from stock_signal_system.data.chip_snapshot import build_tw_chip_snapshot_csv
+from stock_signal_system.data.chip_snapshot import build_tw_chip_snapshot_csv, load_recent_twse_institutional_days
 from stock_signal_system.data.tpex import (
     build_tpex_daily_price_csv,
     build_tpex_stock_csv,
@@ -32,6 +33,7 @@ from stock_signal_system.validation import has_errors, validate_config
 
 def handle_run(args) -> None:
     config = AppConfig.from_file(args.config)
+    _ensure_quant_chip_snapshot_current(config, Path(".cache"))
     result = run_pipeline(config)
     print(f"report_path={result.report_path}")
     print(f"industries={len(result.industry_signals)}")
@@ -292,6 +294,62 @@ def _symbol_to_realtime_channel(symbol: str) -> str:
     if text.endswith(".TW"):
         return f"tse:{text[:-3]}"
     return f"tse:{text}"
+
+
+def _ensure_quant_chip_snapshot_current(config: AppConfig, cache_dir: Path) -> None:
+    if not config.quant_config_path:
+        return
+    chip_snapshot = Path("data/tw_chip_snapshot.csv")
+    twse_stock_path = Path("data/twse_stocks.csv")
+    tpex_stock_path = Path("data/tpex_stocks.csv")
+    if not twse_stock_path.exists() or not tpex_stock_path.exists():
+        return
+    latest_official_date = _latest_available_twse_chip_date(cache_dir)
+    if latest_official_date is None:
+        return
+    snapshot_date = _latest_chip_snapshot_date(chip_snapshot)
+    if snapshot_date is not None and snapshot_date >= latest_official_date:
+        return
+    broker_symbols, latest_volume_by_symbol = _chip_candidate_symbols_and_volumes(twse_stock_path, tpex_stock_path)
+    build_tw_chip_snapshot_csv(
+        chip_snapshot,
+        cache_dir,
+        as_of=latest_official_date,
+        broker_symbols=broker_symbols,
+        latest_volume_by_symbol=latest_volume_by_symbol,
+    )
+    _validate_chip_snapshot_schema(chip_snapshot)
+    combine_csv_files(
+        [twse_stock_path, tpex_stock_path, chip_snapshot],
+        Path("data/tw_listed_otc_stocks.csv"),
+    )
+    print(
+        f"chip_snapshot_autorefresh=updated snapshot_date={latest_official_date.isoformat()} output={chip_snapshot}",
+        flush=True,
+    )
+
+
+def _latest_available_twse_chip_date(cache_dir: Path) -> date | None:
+    days = load_recent_twse_institutional_days(cache_dir, as_of=date.today(), lookback_sessions=1, max_calendar_days=7)
+    return days[0].trade_date if days else None
+
+
+def _latest_chip_snapshot_date(path: Path) -> date | None:
+    if not path.exists():
+        return None
+    latest: date | None = None
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle):
+            raw = str(row.get("chip_data_date", "")).strip()
+            if not raw:
+                continue
+            try:
+                parsed = date.fromisoformat(raw)
+            except ValueError:
+                continue
+            if latest is None or parsed > latest:
+                latest = parsed
+    return latest
 
 
 def _chip_candidate_symbols_and_volumes(*stock_paths: Path, limit: int = 30) -> tuple[tuple[str, ...], dict[str, int]]:

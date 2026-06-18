@@ -1,5 +1,5 @@
 # Qlib signal backtest scaffold
-# Signal CSV: reports/tw_hybrid_2026-06-18.csv
+# Signal CSV: reports\tw_hybrid_2026-06-18.csv
 
 qlib_init:
   provider_uri: ~/.qlib/qlib_data/custom_tw

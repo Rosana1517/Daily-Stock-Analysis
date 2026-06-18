@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from stock_signal_system.report_retention import REPORT_RETENTION_DAYS, prune_report_artifacts
+
 
 @dataclass(frozen=True)
 class PublishResult:
@@ -85,12 +87,8 @@ def _has_staged_changes(repo_dir: Path) -> bool:
     return result.returncode == 1
 
 
-def _prune_published_report_html(reports_dir: Path, keep_latest: int = 3) -> None:
-    if keep_latest <= 0:
-        return
-    html_reports = sorted(reports_dir.glob("stock_signals_*.html"), reverse=True)
-    for old_path in html_reports[keep_latest:]:
-        old_path.unlink(missing_ok=True)
+def _prune_published_report_html(reports_dir: Path, keep_latest: int = REPORT_RETENTION_DAYS) -> None:
+    prune_report_artifacts(reports_dir, keep_latest)
 
 
 def _build_index(reports_dir: Path) -> str:

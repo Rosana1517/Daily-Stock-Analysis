@@ -9,10 +9,51 @@ from unittest.mock import patch
 
 from quant_research_platform.config import QuantPlatformConfig
 from quant_research_platform.daily_stock_bridge import load_latest_realtime_states
-from quant_research_platform.hybrid import _load_bars, run_tw_hybrid
+from quant_research_platform.hybrid import HybridRow, _load_bars, _screening_priority_groups, run_tw_hybrid
 
 
 class HybridTest(unittest.TestCase):
+    def test_screening_priority_groups_count_pair_intersections_including_triple_hits(self):
+        row = HybridRow(
+            symbol="2353.TW",
+            name="宏碁",
+            industry="電腦及週邊設備業",
+            screening_bucket="chip_confirmed",
+            legacy_hit=True,
+            new_strategy_hit=True,
+            chip_radar_hit=True,
+            signal_source="momentum-fallback",
+            kronos_return=0.05,
+            kronos_score=70.0,
+            news_score=60.0,
+            technical_score=55.0,
+            realtime_score=50.0,
+            hybrid_score=72.0,
+            current_close=35.0,
+            predicted_close=37.0,
+            realtime_status="normal",
+            action="watch",
+            risk_note="ok",
+            top10_main_force_buy_strength=40.0,
+            top10_main_force_net_buy=9000.0,
+            foreign_buy_streak_days=3.0,
+            branch_main_force_buy_streak_days=2.0,
+            branch_main_force_leader="測試分點",
+            chip_data_date="2026-06-17",
+            chip_data_source="TWSE T86 official + HiStock branch",
+            chip_data_source_status="official+broker",
+            top10_main_force_brokers="測試券商",
+            technical_evidence=(),
+        )
+
+        groups = {group["label"]: group for group in _screening_priority_groups([row])}
+
+        self.assertEqual(groups["三者全中"]["count"], 1)
+        self.assertEqual(groups["舊版 + 新版"]["count"], 1)
+        self.assertEqual(groups["舊版 + 籌碼雷達"]["count"], 1)
+        self.assertEqual(groups["新版 + 籌碼雷達"]["count"], 1)
+        self.assertIn("2353.TW", groups["舊版 + 新版"]["samples"])
+
     def test_latest_realtime_state_maps_tw_symbols(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "realtime.csv"
@@ -108,13 +149,13 @@ class HybridTest(unittest.TestCase):
             report = report_path.read_text(encoding="utf-8")
             self.assertNotIn("| 2330.TW | 2330.TW |", report)
             self.assertIn("候選股票分析", report)
-            self.assertIn("互動技術分析策略", report)
             self.assertIn("RSS 產業訊號", report)
-            self.assertIn("<details>", report)
+            self.assertIn('<details class="candidate-panel">', report)
             self.assertIn("technical-chart-data", report)
+            self.assertIn("tech-section-marker", report)
             self.assertIn("投組模擬", report)
             self.assertIn("新聞快訊", report)
-            self.assertIn("研究觀察", report)
+            self.assertIn('"strategySummary"', report)
             self.assertIn("選股優先順序表", report)
             self.assertIn("可重算驗證指標", report)
             self.assertNotIn("每日研究名單", report)
