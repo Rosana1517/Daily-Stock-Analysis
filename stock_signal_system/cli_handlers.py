@@ -168,6 +168,7 @@ def handle_refresh_quant_ohlcv(args) -> None:
                 if len(retried) > len(bars_by_symbol.get(symbol, [])):
                     bars_by_symbol[symbol] = retried
         unresolved_symbols: list[str] = []
+        tolerated_short_history: list[str] = []
         for symbol in symbols:
             current_bars = bars_by_symbol.get(symbol, [])
             if len(current_bars) >= required_bars:
@@ -175,6 +176,8 @@ def handle_refresh_quant_ohlcv(args) -> None:
             fallback_bars = existing_selected.get(symbol, [])
             if len(fallback_bars) >= required_bars:
                 bars_by_symbol[symbol] = fallback_bars
+            elif _should_tolerate_short_history(symbol, current_bars, required_bars, current_date=date.today()):
+                tolerated_short_history.append(symbol)
             else:
                 unresolved_symbols.append(symbol)
         merged_bars = dict(existing_all)
@@ -187,6 +190,15 @@ def handle_refresh_quant_ohlcv(args) -> None:
         print(f"quant_legacy_pool_symbols={len(selection_plan.legacy_pool_symbols)}", flush=True)
         print(f"quant_chip_radar_symbols={len(selection_plan.chip_radar_symbols)}", flush=True)
         print(f"quant_chip_breakout_symbols={len(selection_plan.chip_breakout_symbols)}", flush=True)
+        if tolerated_short_history:
+            detail = ", ".join(
+                f"{symbol}({len(bars_by_symbol.get(symbol, []))} bars)"
+                for symbol in tolerated_short_history
+            )
+            print(
+                f"warning: quant_short_history_tolerated={detail}; latest available data kept for recent listing candidates",
+                flush=True,
+            )
         if unresolved_symbols:
             missing = ", ".join(unresolved_symbols)
             raise SystemExit(
@@ -350,6 +362,16 @@ def _latest_chip_snapshot_date(path: Path) -> date | None:
             if latest is None or parsed > latest:
                 latest = parsed
     return latest
+
+
+def _should_tolerate_short_history(symbol: str, bars: list, required_bars: int, current_date: date) -> bool:
+    if len(bars) >= required_bars or len(bars) < 20:
+        return False
+    latest = getattr(bars[-1], "timestamp", None)
+    latest_date = latest.date() if latest else None
+    if latest_date is None:
+        return False
+    return (current_date - latest_date).days <= 3
 
 
 def _chip_candidate_symbols_and_volumes(*stock_paths: Path, limit: int = 30) -> tuple[tuple[str, ...], dict[str, int]]:
