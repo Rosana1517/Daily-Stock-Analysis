@@ -85,23 +85,23 @@ class HybridSupportTest(unittest.TestCase):
         self.assertTrue(_is_ma20_rising(rising_bars))
         self.assertFalse(_is_ma20_rising(falling_bars))
 
-    def test_revised_strategy_requires_margin_top100_when_available(self):
-        bars = [_bar(index, close=100 + index) for index in range(20)]
-        bars.append(_bar(20, close=105, high=121, low=99))
+    def test_revised_strategy_requires_pullback_ma20_rising_and_platform_breakout(self):
+        bars = [_bar(index, close=100 + index * 0.03, high=100.8, low=99.6) for index in range(20)]
+        bars.append(_bar(20, close=101.2, high=110.0, low=99.0, volume=1800))
         self.assertTrue(
             _passes_revised_strategy(
                 {"symbol": "2330"},
                 {"2330": bars},
-                require_margin=True,
-                margin_top_100={"2330"},
+                require_margin=False,
+                margin_top_100=set(),
             )
         )
         self.assertFalse(
             _passes_revised_strategy(
-                {"symbol": "2317"},
+                {"symbol": "2317", "platform_breakout": False},
                 {"2317": bars},
-                require_margin=True,
-                margin_top_100={"2330"},
+                require_margin=False,
+                margin_top_100=set(),
             )
         )
 

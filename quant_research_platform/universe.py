@@ -162,21 +162,15 @@ def _load_price_bars(path: Path | None) -> dict[str, list]:
 
 
 def _rank_revised_rows(rows: list[dict], news_terms: set[str], bars_by_symbol: dict[str, list]) -> list[dict]:
-    margin_ready = [row for row in rows if _margin_change_5d(row) is not None]
-    margin_top_100 = {
-        str(row.get("symbol", "")).strip().upper()
-        for row in sorted(margin_ready, key=lambda row: float(_margin_change_5d(row) or 0.0), reverse=True)[:100]
-        if float(_margin_change_5d(row) or 0.0) > 0
-    }
     filtered = [
         row
         for row in rows
-        if _passes_revised_strategy(row, bars_by_symbol, require_margin=bool(margin_ready), margin_top_100=margin_top_100)
+        if _passes_revised_strategy(row, bars_by_symbol, require_margin=False, margin_top_100=set())
     ]
     return sorted(
         filtered,
         key=lambda row: (
-            float(_margin_change_5d(row) or 0.0),
+            _platform_breakout_strength(_bars_for_row(row, bars_by_symbol)),
             100.0 - (_stochastic_k_value(_bars_for_row(row, bars_by_symbol)) or 100.0),
             _candidate_score(row, news_terms),
         ),
@@ -267,6 +261,8 @@ def _passes_revised_strategy(
     if k_value is None or k_value >= 40:
         return False
     if not _is_ma20_rising(bars):
+        return False
+    if not _breaks_platform_consolidation(row, bars):
         return False
     if require_margin:
         symbol = str(row.get("symbol", "")).strip().upper()

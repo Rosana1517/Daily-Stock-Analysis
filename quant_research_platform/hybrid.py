@@ -1042,6 +1042,7 @@ def _screening_column_html(rows: list[HybridRow], decisions: dict, empty_text: s
 def _technical_chart_stock(row: HybridRow, bars: list[Bar], decision) -> dict:
     recent_bars = bars[-160:]
     support, resistance = _support_resistance(recent_bars)
+    risk_low, risk_high = _risk_range(row)
     return {
         "symbol": row.symbol,
         "name": row.name,
@@ -1060,6 +1061,11 @@ def _technical_chart_stock(row: HybridRow, bars: list[Bar], decision) -> dict:
         "decision": portfolio_decision_label(decision),
         "bucket": portfolio_decision_bucket(decision),
         "riskNote": row.risk_note,
+        "riskLevel": _chart_risk_level(row),
+        "marketBias": _chart_market_bias(row),
+        "currentClose": round(row.current_close, 4),
+        "predictedClose": round(row.predicted_close, 4),
+        "priceRange": {"low": round(risk_low, 4), "high": round(risk_high, 4)},
         "chipSnapshot": {
             "top10MainForceBuyStrength": row.top10_main_force_buy_strength,
             "top10MainForceNetBuy": row.top10_main_force_net_buy,
@@ -1113,6 +1119,30 @@ def _support_resistance(bars: list[Bar]) -> tuple[float | None, float | None]:
         return None, None
     window = bars[-60:] if len(bars) >= 60 else bars
     return round(min(bar.low for bar in window), 4), round(max(bar.high for bar in window), 4)
+
+
+def _chart_market_bias(row: HybridRow) -> str:
+    for item in row.technical_evidence:
+        text = str(item)
+        if not text.startswith("structure_bias="):
+            continue
+        value = text.split("=", 1)[1].strip().lower()
+        return {
+            "bullish": "偏多",
+            "bearish": "偏空",
+            "neutral": "中性",
+            "data_limited": "資料不足",
+        }.get(value, value or "資料不足")
+    return "資料不足"
+
+
+def _chart_risk_level(row: HybridRow) -> str:
+    note = str(row.risk_note or "")
+    if row.technical_score < 45 or "偏空" in note or "轉弱" in note:
+        return "高"
+    if row.technical_score < 60 or "留意" in note or "震盪" in note:
+        return "中"
+    return "低"
 
 
 def _technical_strategy_summary(row: HybridRow, bars: list[Bar]) -> list[dict[str, str]]:
