@@ -12,8 +12,8 @@ on:
         required: false
         default: "false"
   schedule:
-    # 08:30 Asia/Taipei, Monday-Friday.
-    - cron: "30 0 * * 1-5"
+    # 15:30 Asia/Taipei, Monday-Friday.
+    - cron: "30 7 * * 1-5"
 
 permissions:
   contents: write

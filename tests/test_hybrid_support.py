@@ -10,6 +10,8 @@ from quant_research_platform.universe import (
     _is_ma20_rising,
     _passes_chip_breakout_strategy,
     _passes_revised_strategy,
+    _platform_box_range,
+    _platform_breakout_strength,
     _rank_candidate_rows,
     _stochastic_k_value,
 )
@@ -121,6 +123,37 @@ class HybridSupportTest(unittest.TestCase):
                 {"2330": bars},
             )
         )
+
+    def test_platform_box_range_uses_real_box_high_and_low(self):
+        bars = []
+        closes = [50.2, 50.8, 51.1, 50.5, 49.9, 50.4, 51.0, 50.6, 49.8, 50.3, 50.9, 50.1]
+        for index, close in enumerate(closes):
+            bars.append(_bar(index, close=close, high=51.2, low=49.6, volume=1000))
+        for offset in range(12, 21):
+            close = 50.1 + ((offset % 3) - 1) * 0.2
+            bars.append(_bar(offset, close=close, high=51.15, low=49.65, volume=980))
+        bars.append(_bar(21, close=51.9, high=52.2, low=50.8, volume=1650))
+
+        box_range = _platform_box_range(bars)
+
+        self.assertIsNotNone(box_range)
+        box_high, box_low, compression, window_size = box_range
+        self.assertAlmostEqual(box_high, 51.2, places=2)
+        self.assertAlmostEqual(box_low, 49.6, places=2)
+        self.assertLess(compression, 0.18)
+        self.assertGreaterEqual(window_size, 10)
+        self.assertTrue(_breaks_platform_consolidation({}, bars))
+        self.assertGreater(_platform_breakout_strength(bars), 18.0)
+
+    def test_platform_breakout_rejects_non_box_volatile_series(self):
+        bars = [
+            _bar(index, close=55 + ((index % 4) - 1.5) * 3.2, high=60 + (index % 3), low=49 - (index % 2), volume=1000)
+            for index in range(21)
+        ]
+        bars.append(_bar(21, close=60.4, high=61.0, low=55.0, volume=1400))
+
+        self.assertIsNone(_platform_box_range(bars))
+        self.assertFalse(_breaks_platform_consolidation({}, bars))
 
     def test_real_broker_snapshot_requires_broker_fields(self):
         self.assertTrue(

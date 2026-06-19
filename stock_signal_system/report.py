@@ -475,11 +475,11 @@ def _interactive_chart_section() -> str:
                 <p class="stock-filter-brief">先看前十大主力淨買超、主分點連買與外資連買，找出主力正在照顧、但還沒完全發動的股票。</p>
               </section>
               <section class="stock-filter-item">
-                <label class="stock-filter-toggle"><input id="newStrategyToggle" type="checkbox" checked>第 2 層：新版策略</label>
-                <p class="stock-filter-brief">在舊版母池與籌碼雷達基礎上，再檢查 K 值 &lt; 40、近 5 日融資增加、MA20 上升與突破確認。</p>
+                <label class="stock-filter-toggle"><input id="newStrategyToggle" type="checkbox">第 2 層：新版策略</label>
+                <p class="stock-filter-brief">在舊版母池與籌碼雷達基礎上，再檢查 K 值 &lt; 40、MA20 上升、盤整區間突破與帶量發動確認。</p>
               </section>
               <section class="stock-filter-item">
-                <label class="stock-filter-toggle"><input id="legacyStrategyToggle" type="checkbox" checked>第 3 層：舊版策略</label>
+                <label class="stock-filter-toggle"><input id="legacyStrategyToggle" type="checkbox">第 3 層：舊版策略</label>
                 <p class="stock-filter-brief">作為品質底層與候選母池，先用流動性、成交量、均量、營收成長、本益比與產業新聞做完整確認，不是和前兩層並列的同類策略。</p>
               </section>
             </div>
@@ -538,7 +538,7 @@ INTERACTIVE_CHART_JS = r"""
 (function () {
   const data = window.__TECH_DATA__ || {defaults: {}, stocks: []};
   const defaults = data.defaults || {};
-  const state = {stockIndex: 0, activeSymbol: null, filters: {chipRadar: true, newStrategy: true, oldStrategy: true}, layers: {ma: true, bollinger: true, support: true, volume: true, macd: true, rsi: true, markers: false, limitUp: false, monthlyMacd: false, ma20Volume: false}};
+  const state = {stockIndex: 0, activeSymbol: null, filters: {chipRadar: true, newStrategy: false, oldStrategy: false}, layers: {ma: true, bollinger: true, support: true, volume: true, macd: true, rsi: true, markers: false, limitUp: false, monthlyMacd: false, ma20Volume: false}};
   const $ = (id) => document.getElementById(id);
   const canvas = $("technicalChart");
   if (!canvas || !data.stocks || data.stocks.length === 0) return;
@@ -760,7 +760,7 @@ INTERACTIVE_CHART_JS = r"""
       blocks.push(`
         <div class="strategy-mini-card">
           <b>${state.filters.chipRadar ? "第 2 層：新版策略（交集確認）" : "第 2 層：新版策略（單獨查看）"}</b>
-          <span>這一層只負責確認「有沒有發動」：K 值 &lt; 40、MA20 上升、融資增加與突破確認。</span>
+          <span>這一層只負責確認「有沒有發動」：K 值 &lt; 40、MA20 上升、盤整區間上緣突破，並要求量能同步放大。</span>
         </div>
       `);
       newItems.slice(0, 2).forEach((item) => {
@@ -1378,11 +1378,11 @@ def _interactive_chart_section() -> str:
                 <p class="stock-filter-brief">先看前十大主力買超、外資連買與主分點連買，抓出主力正在照顧、但尚未完全發動的股票。</p>
               </section>
               <section class="stock-filter-item">
-                <label class="stock-filter-toggle"><input id="newStrategyToggle" type="checkbox" checked>第 2 層：新版策略</label>
+                <label class="stock-filter-toggle"><input id="newStrategyToggle" type="checkbox">第 2 層：新版策略</label>
                 <p class="stock-filter-brief">以 K 值 &lt; 40、MA20 上升、盤整區間突破做為發動確認，篩出準備轉強的候選。</p>
               </section>
               <section class="stock-filter-item">
-                <label class="stock-filter-toggle"><input id="legacyStrategyToggle" type="checkbox" checked>第 3 層：舊版策略</label>
+                <label class="stock-filter-toggle"><input id="legacyStrategyToggle" type="checkbox">第 3 層：舊版策略</label>
                 <p class="stock-filter-brief">以流動性、均量、趨勢、基本品質與每日報告綜合分析，做為品質底與研究母池。</p>
               </section>
             </div>
@@ -1452,7 +1452,7 @@ INTERACTIVE_CHART_JS = r"""
     hoveredBarIndex: null,
     pinnedBarIndex: null,
     layout: null,
-    filters: {chipRadar: true, newStrategy: true, oldStrategy: true},
+    filters: {chipRadar: true, newStrategy: false, oldStrategy: false},
     layers: {ma: true, bollinger: true, support: true, volume: true, macd: true, rsi: true, markers: false, limitUp: false, monthlyMacd: false, ma20Volume: false}
   };
   const $ = (id) => document.getElementById(id);
