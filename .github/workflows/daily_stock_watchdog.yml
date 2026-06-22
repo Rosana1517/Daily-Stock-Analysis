@@ -3,9 +3,9 @@ name: Daily Stock Analysis Watchdog
 on:
   workflow_dispatch:
   schedule:
-    # Backup checks after the main 08:30 Asia/Taipei run.
-    - cron: "50 0 * * 1-5"
-    - cron: "20 1 * * 1-5"
+    # Backup checks shortly after the main 15:30 Asia/Taipei run.
+    - cron: "40 7 * * 1-5"
+    - cron: "50 7 * * 1-5"
 
 permissions:
   actions: write
