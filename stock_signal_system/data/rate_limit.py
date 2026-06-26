@@ -62,7 +62,7 @@ class RateLimitedHttpClient:
                 print(f"http_get_done={request_key} bytes={len(text.encode('utf-8'))}", flush=True)
                 return text
             except urllib.error.HTTPError as exc:
-                if exc.code not in {402, 429, 500, 502, 503, 504, 520} or attempt == 2:
+                if exc.code not in {307, 308, 402, 429, 500, 502, 503, 504, 520} or attempt == 2:
                     print(f"http_get_failed={request_key} status={exc.code}", flush=True)
                     raise
                 print(f"http_get_retry={request_key} status={exc.code} attempt={attempt + 1}", flush=True)
