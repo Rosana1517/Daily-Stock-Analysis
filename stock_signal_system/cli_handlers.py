@@ -94,7 +94,7 @@ def handle_refresh_data(args) -> None:
             print(f"warning: tpex_refresh_failed={exc}", flush=True)
     if refreshed_paths:
         with _step_timer("combine_tw_market_data"):
-            stock_inputs = [Path("data/twse_stocks.csv"), Path("data/tpex_stocks.csv")]
+            stock_inputs = [p for p in [Path("data/twse_stocks.csv"), Path("data/tpex_stocks.csv")] if p.exists()]
             chip_snapshot = Path("data/tw_chip_snapshot.csv")
             chip_snapshot_ready = False
             try:

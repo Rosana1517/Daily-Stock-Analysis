@@ -31,7 +31,15 @@ class RateLimitedHttpClient:
         cache_key: Optional[str] = None,
         ttl_seconds: int = 3600,
     ) -> dict:
-        return json.loads(self.get_text(url, params, headers, cache_key, ttl_seconds))
+        text = self.get_text(url, params, headers, cache_key, ttl_seconds)
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            # Evict poisoned cache entry so the next attempt re-fetches.
+            request_key = cache_key or _safe_key(_with_params(url, params))
+            cache_path = self.cache_dir / f"{request_key}.cache"
+            cache_path.unlink(missing_ok=True)
+            raise
 
     def get_text(
         self,
