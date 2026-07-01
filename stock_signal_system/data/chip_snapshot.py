@@ -9,7 +9,17 @@ from stock_signal_system.data.broker_source import fetch_histock_branch_snapshot
 from stock_signal_system.data.rate_limit import RateLimitedHttpClient
 
 
-TWSE_T86_URL = "https://www.twse.com.tw/rwd/zh/fund/T86"
+_T86_URLS = [
+    "https://www.twse.com.tw/rwd/zh/fund/T86",
+    "https://www.twse.com.tw/fund/T86",
+]
+
+_T86_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
+    "Referer": "https://www.twse.com.tw/zh/trading/fund/T86.html",
+}
 
 
 @dataclass(frozen=True)
@@ -95,12 +105,18 @@ def load_recent_twse_institutional_days(
     cursor = as_of or date.today()
     collected: list[TwseInstitutionalDay] = []
     for _ in range(max_calendar_days):
-        payload = client.get_json(
-            TWSE_T86_URL,
-            params={"date": cursor.strftime("%Y%m%d"), "selectType": "ALLBUT0999", "response": "json"},
-            cache_key=f"twse_t86_{cursor:%Y%m%d}",
-            ttl_seconds=1800,
-        )
+        params = {"date": cursor.strftime("%Y%m%d"), "selectType": "ALLBUT0999", "response": "json"}
+        cache_key = f"twse_t86_{cursor:%Y%m%d}"
+        payload = None
+        for url in _T86_URLS:
+            try:
+                payload = client.get_json(url, params=params, headers=_T86_HEADERS, cache_key=cache_key, ttl_seconds=1800)
+                break
+            except Exception as exc:
+                print(f"warning: t86_fetch_failed url={url} date={cursor:%Y%m%d} error={exc}", flush=True)
+        if payload is None:
+            cursor -= timedelta(days=1)
+            continue
         day = _parse_twse_t86_payload(payload)
         if day is not None:
             collected.append(day)

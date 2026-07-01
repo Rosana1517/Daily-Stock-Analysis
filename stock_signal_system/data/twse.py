@@ -18,16 +18,35 @@ ENDPOINTS = {
     "holiday": "/holidaySchedule/holidaySchedule",
 }
 
+# Fallback mirrors for endpoints that require bulk data in one request.
+_FALLBACK_URLS: dict[str, list[str]] = {
+    "daily_all": [
+        "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL",
+        "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?response=json",
+    ],
+}
+
+_TWSE_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
+    "Referer": "https://www.twse.com.tw/zh/",
+}
+
 
 def fetch_twse_dataset(name: str, cache_dir: Path) -> list[dict]:
     if name not in ENDPOINTS:
         raise ValueError(f"Unknown TWSE dataset: {name}")
     client = RateLimitedHttpClient(cache_dir=cache_dir / "twse", min_interval_seconds=1.0)
-    return client.get_json(
-        BASE_URL + ENDPOINTS[name],
-        cache_key=f"twse_{name}",
-        ttl_seconds=1800,
-    )
+    urls = _FALLBACK_URLS.get(name) or [BASE_URL + ENDPOINTS[name]]
+    last_exc: Exception | None = None
+    for url in urls:
+        try:
+            return client.get_json(url, headers=_TWSE_HEADERS, cache_key=f"twse_{name}", ttl_seconds=1800)
+        except Exception as exc:
+            print(f"warning: twse_{name}_fetch_failed url={url} error={exc}", flush=True)
+            last_exc = exc
+    raise last_exc or RuntimeError(f"all twse {name} sources failed")
 
 
 def build_twse_stock_csv(output_path: Path, cache_dir: Path) -> Path:
