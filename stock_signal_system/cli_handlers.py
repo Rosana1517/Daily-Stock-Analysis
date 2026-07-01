@@ -118,7 +118,7 @@ def handle_refresh_data(args) -> None:
                 stock_inputs.append(chip_snapshot)
                 print(f"chip_snapshot_input={chip_snapshot}", flush=True)
             else:
-                raise SystemExit("ERROR chip snapshot refresh failed or schema invalid; refusing to use stale proxy snapshot.")
+                print("warning: chip_snapshot_unavailable=proceeding_without_chip_data", flush=True)
             combined_stocks = combine_csv_files(
                 stock_inputs,
                 Path("data/tw_listed_otc_stocks.csv"),
