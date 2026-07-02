@@ -1,0 +1,5 @@
+﻿symbol,name,industry,screening_bucket,legacy_hit,new_strategy_hit,chip_radar_hit,signal_source,kronos_return,kronos_score,news_score,technical_score,realtime_score,hybrid_score,current_close,predicted_close,realtime_status,action,risk_note,top10_main_force_buy_strength,top10_main_force_net_buy,foreign_buy_streak_days,branch_main_force_buy_streak_days,branch_main_force_leader,chip_data_date,chip_data_source,chip_data_source_status,top10_main_force_brokers
+5371.TWO,中光電,上櫃,legacy_watch,True,False,False,kronos,0.09266508001676854,100.0,50.0,40.0,50.0,70.5,84.69999694824219,92.5487289428711,無即時資料,研究重點,風險穩定,,,,,,,,,
+3260.TWO,威剛,上櫃,legacy_watch,True,False,False,kronos,0.2517197552849264,100.0,50.0,38.0,50.0,70.1,408.0,510.70166015625,無即時資料,研究重點,風險穩定,,,,,,,,,
+5314.TWO,世紀*,上櫃,legacy_watch,True,False,False,kronos,0.1979201096754808,100.0,50.0,32.0,50.0,68.9,65.0,77.86480712890625,無即時資料,等待確認,技術結構偏空,,,,,,,,,
+5351.TWO,鈺創,上櫃,legacy_watch,True,False,False,kronos,0.04576543065609329,77.45925839365597,50.0,42.0,50.0,61.88370335746239,83.69999694824219,87.53056335449219,無即時資料,觀察,風險穩定,,,,,,,,,
