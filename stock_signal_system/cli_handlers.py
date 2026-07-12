@@ -136,6 +136,7 @@ def handle_refresh_data(args) -> None:
             )
             print(f"combined_stocks_output={combined_stocks}", flush=True)
             print(f"combined_prices_output={combined_prices}", flush=True)
+            _archive_daily_snapshots(chip_snapshot if chip_snapshot_ready else None, combined_prices)
     elif Path("examples/stocks.csv").exists() and Path("examples/price_history.csv").exists():
         Path("data").mkdir(exist_ok=True)
         shutil.copyfile("examples/stocks.csv", "data/tw_listed_otc_stocks.csv")
@@ -143,6 +144,34 @@ def handle_refresh_data(args) -> None:
         print("warning: market_refresh_unavailable=using_example_fallback", flush=True)
     else:
         raise SystemExit("ERROR no TWSE/TPEx data could be refreshed and no fallback examples are available.")
+
+
+def _taipei_today() -> date:
+    try:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        return datetime.now(ZoneInfo("Asia/Taipei")).date()
+    except Exception:
+        return date.today()
+
+
+def _archive_daily_snapshots(chip_snapshot: Path | None, combined_prices: Path | None) -> None:
+    """Persist daily chip/price snapshots under reports/ so the publish step
+    commits them, building history for win-rate tracking and backtests."""
+    today = _taipei_today().isoformat()
+    targets = []
+    if chip_snapshot and chip_snapshot.exists():
+        targets.append((chip_snapshot, Path("reports/chip_snapshots") / f"tw_chip_snapshot_{today}.csv"))
+    if combined_prices and combined_prices.exists():
+        targets.append((combined_prices, Path("reports/price_snapshots") / f"tw_price_daily_{today}.csv"))
+    for source, target in targets:
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+            print(f"snapshot_archived={target}", flush=True)
+        except OSError as exc:
+            print(f"warning: snapshot_archive_failed={target} error={exc}", flush=True)
 
 
 def handle_refresh_quant_ohlcv(args) -> None:

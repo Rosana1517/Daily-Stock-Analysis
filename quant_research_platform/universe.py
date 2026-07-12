@@ -226,22 +226,42 @@ def save_candidate_csv(path: Path, symbols: tuple[str, ...]) -> Path:
     return path
 
 
+# Hard filters for the short-swing strategy: mid/low price band with real liquidity.
+MIN_UNIVERSE_PRICE = 10.0
+MAX_UNIVERSE_PRICE = 50.0
+MIN_AVG_DAILY_TURNOVER_TWD = 50_000_000.0
+
+
 def _load_universe_rows(path: Path) -> list[dict]:
     flagged = load_regulatory_flag_symbols(path.parent / "tw_regulatory_flags.csv")
-    excluded = 0
+    excluded_regulatory = 0
+    excluded_price_band = 0
+    excluded_turnover = 0
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         rows = []
         for row in csv.DictReader(handle):
-            if _float(row.get("price")) <= 0 or _float(row.get("volume")) <= 0:
+            price = _float(row.get("price"))
+            volume = _float(row.get("volume"))
+            if price <= 0 or volume <= 0:
                 continue
             symbol = str(row.get("symbol", "")).strip()
-            flag = flagged.get(symbol)
-            if flag:
-                excluded += 1
+            if flagged.get(symbol):
+                excluded_regulatory += 1
+                continue
+            if price < MIN_UNIVERSE_PRICE or price > MAX_UNIVERSE_PRICE:
+                excluded_price_band += 1
+                continue
+            avg_volume = _float(row.get("avg_volume_20d")) or volume
+            if price * avg_volume < MIN_AVG_DAILY_TURNOVER_TWD:
+                excluded_turnover += 1
                 continue
             rows.append(row)
-    if flagged:
-        print(f"universe_regulatory_excluded={excluded} flagged_total={len(flagged)}", flush=True)
+    print(
+        "universe_filter_excluded"
+        f" regulatory={excluded_regulatory} price_band={excluded_price_band}"
+        f" turnover={excluded_turnover} kept={len(rows)}",
+        flush=True,
+    )
     return rows
 
 

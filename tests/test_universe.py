@@ -37,7 +37,7 @@ class UniverseSelectionTest(unittest.TestCase):
                 )
                 writer.writeheader()
                 writer.writerow({"symbol": "1111", "market": "tse", "industry": "傳產", "price": 50, "volume": 1000, "avg_volume_20d": 1000, "revenue_growth_yoy": 0, "pe_ratio": 20, "notes": ""})
-                writer.writerow({"symbol": "2222", "market": "otc", "industry": "半導體", "price": 80, "volume": 9000000, "avg_volume_20d": 9000000, "revenue_growth_yoy": 30, "pe_ratio": 18, "notes": "TPEx"})
+                writer.writerow({"symbol": "2222", "market": "otc", "industry": "半導體", "price": 48, "volume": 9000000, "avg_volume_20d": 9000000, "revenue_growth_yoy": 30, "pe_ratio": 18, "notes": "TPEx"})
 
             selected = select_candidate_symbols(path, ("2330.TW",), 1)
 
@@ -69,9 +69,9 @@ class UniverseSelectionTest(unittest.TestCase):
                         "symbol": "1111",
                         "market": "tse",
                         "industry": "半導體",
-                        "price": 80,
-                        "volume": 200000,
-                        "avg_volume_20d": 200000,
+                        "price": 45,
+                        "volume": 2000000,
+                        "avg_volume_20d": 2000000,
                         "revenue_growth_yoy": 20,
                         "pe_ratio": 18,
                         "margin_financing_change_5d": 5000,
@@ -142,9 +142,9 @@ class UniverseSelectionTest(unittest.TestCase):
                         "symbol": "3333",
                         "market": "tse",
                         "industry": "半導體",
-                        "price": 55,
-                        "volume": 500000,
-                        "avg_volume_20d": 400000,
+                        "price": 45,
+                        "volume": 1500000,
+                        "avg_volume_20d": 1500000,
                         "revenue_growth_yoy": 12,
                         "pe_ratio": 20,
                         "top10_main_force_buy_strength": 70,
@@ -156,9 +156,9 @@ class UniverseSelectionTest(unittest.TestCase):
                         "symbol": "4444",
                         "market": "tse",
                         "industry": "半導體",
-                        "price": 80,
-                        "volume": 600000,
-                        "avg_volume_20d": 600000,
+                        "price": 40,
+                        "volume": 2000000,
+                        "avg_volume_20d": 2000000,
                         "revenue_growth_yoy": 10,
                         "pe_ratio": 18,
                         "top10_main_force_buy_strength": 0,
@@ -226,10 +226,10 @@ class UniverseSelectionTest(unittest.TestCase):
                     {
                         "symbol": "6666",
                         "market": "tse",
-                        "industry": "??擃?",
-                        "price": 80,
-                        "volume": 200000,
-                        "avg_volume_20d": 180000,
+                        "price": 45,
+                        "volume": 2000000,
+                        "avg_volume_20d": 2000000,
+                        "industry": "electronics",
                         "revenue_growth_yoy": 24,
                         "pe_ratio": 19,
                         "margin_financing_change_5d": 6000,
@@ -303,9 +303,9 @@ class UniverseSelectionTest(unittest.TestCase):
                         "symbol": "5555",
                         "market": "tse",
                         "industry": "半導體",
-                        "price": 55,
-                        "volume": 500000,
-                        "avg_volume_20d": 400000,
+                        "price": 45,
+                        "volume": 1500000,
+                        "avg_volume_20d": 1500000,
                         "revenue_growth_yoy": 12,
                         "pe_ratio": 20,
                         "top10_main_force_buy_strength": 70,

@@ -257,6 +257,7 @@ def run_tw_hybrid(
         benchmark_symbol=config.benchmark_symbol,
     )
     _save_csv(csv_path, report_rows)
+    recommendation_summary = _track_recommendations(rows, portfolio_decisions, report_date)
     _save_report(
         report_path,
         rows,
@@ -272,6 +273,7 @@ def run_tw_hybrid(
         qlib_engine,
         config,
         chip_snapshot_by_symbol,
+        recommendation_summary,
     )
     build_qlib_signal_backtest_config(csv_path, "custom_tw", config.benchmark_symbol or "2330.TW", qlib_path, config.top_n, 1)
 
@@ -504,6 +506,91 @@ def _save_csv(path: Path, rows: list[HybridRow]) -> None:
             writer.writerow(payload)
 
 
+RECOMMENDATION_LOG_PATH = Path("reports/recommendation_log.csv")
+PRICE_SNAPSHOT_DIR = Path("reports/price_snapshots")
+
+
+def _track_recommendations(
+    rows: list[HybridRow],
+    portfolio_decisions: dict,
+    report_date: date,
+):
+    """Log today's top picks and close the loop on past ones (win-rate tracking)."""
+    try:
+        from stock_signal_system.recommendation_tracker import (
+            append_recommendations,
+            evaluate_pending,
+            summarize,
+        )
+
+        candidates = [row for row in rows if row.signal_source != "data-limited" and row.current_close > 0]
+        picks: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for row in candidates:
+            is_focus = portfolio_decision_bucket(portfolio_decisions.get(row.symbol)) == "include"
+            if row.screening_bucket == "chip_confirmed" or is_focus:
+                if row.symbol not in seen:
+                    picks.append(_recommendation_payload(row))
+                    seen.add(row.symbol)
+        for row in candidates[:5]:
+            if row.symbol not in seen:
+                picks.append(_recommendation_payload(row))
+                seen.add(row.symbol)
+        added = append_recommendations(RECOMMENDATION_LOG_PATH, report_date, picks)
+        evaluated = evaluate_pending(RECOMMENDATION_LOG_PATH, PRICE_SNAPSHOT_DIR, report_date)
+        print(f"recommendation_log added={added} evaluated={evaluated}", flush=True)
+        return summarize(RECOMMENDATION_LOG_PATH)
+    except Exception as exc:
+        print(f"warning: recommendation_tracking_failed={exc}", flush=True)
+        return None
+
+
+def _recommendation_payload(row: HybridRow) -> dict[str, object]:
+    return {
+        "symbol": row.symbol,
+        "name": row.name,
+        "bucket": row.screening_bucket,
+        "entry_close": row.current_close,
+        "stop_loss_price": row.stop_loss_price,
+    }
+
+
+def _recommendation_section(summary) -> list[str]:
+    lines = ["", "## 推薦追蹤（勝率閉環）", ""]
+    if summary is None:
+        lines.append("- 推薦追蹤資料尚未建立。")
+        return lines
+    lines.append(f"- 已評估推薦數（5 個交易日後）：{summary.evaluated_count}，待評估：{summary.pending_count}")
+    if summary.win_rate is not None:
+        lines.append(f"- 勝率（5 日收盤 > 進場價）：{summary.win_rate:.1%}")
+        lines.append(f"- 平均 5 日報酬：{summary.average_return_5d:.2%}")
+        lines.append(f"- 平均 5 日內最大報酬：{summary.average_max_return_5d:.2%}")
+    else:
+        lines.append("- 尚無已完成 5 日評估的推薦（需累積至少 5 個交易日的價格快照）。")
+    if summary.recent_evaluated:
+        lines.extend(
+            [
+                "",
+                '<div class="table-wrap"><table>',
+                "<thead><tr><th>進場日</th><th>股票</th><th>來源池</th><th>進場價</th><th>5日報酬</th><th>最大報酬</th><th>結果</th></tr></thead>",
+                "<tbody>",
+            ]
+        )
+        for row in summary.recent_evaluated:
+            result = "✅ 勝" if row.get("win") == "1" else "❌ 敗" if row.get("win") == "0" else "n/a"
+            ret = row.get("return_5d", "")
+            max_ret = row.get("max_return_5d", "")
+            ret_text = f"{float(ret):.2%}" if ret else "n/a"
+            max_text = f"{float(max_ret):.2%}" if max_ret else "n/a"
+            lines.append(
+                f"<tr><td>{html.escape(row.get('entry_date', ''))}</td><td>{html.escape(row.get('symbol', ''))} {html.escape(row.get('name', ''))}</td>"
+                f"<td>{html.escape(row.get('bucket', ''))}</td><td>{html.escape(row.get('entry_close', ''))}</td>"
+                f"<td>{ret_text}</td><td>{max_text}</td><td>{result}</td></tr>"
+            )
+        lines.extend(["</tbody>", "</table></div>"])
+    return lines
+
+
 def _save_report(
     path: Path,
     rows: list[HybridRow],
@@ -519,6 +606,7 @@ def _save_report(
     qlib_engine,
     config: QuantPlatformConfig,
     chip_snapshot_by_symbol: dict[str, dict],
+    recommendation_summary=None,
 ) -> None:
     portfolio_decisions = agent_workflow
     focus_rows = _portfolio_rows(rows, portfolio_decisions, "include")
@@ -613,6 +701,7 @@ def _save_report(
         lines.append(f"- [{industries}] {item.title}?{item.source}, {item.date.isoformat()}?")
     if not news_items:
         lines.append("- \u4eca\u65e5\u6c92\u6709\u53ef\u4f75\u5165\u5831\u544a\u7684 RSS \u65b0\u805e\u3002")
+    lines.extend(_recommendation_section(recommendation_summary))
     lines.extend(_candidate_analysis_block(rows, portfolio_decisions, chip_snapshot_by_symbol))
     lines.extend(["", "```technical-chart-data", json.dumps(_technical_chart_payload(rows, bars_by_symbol, portfolio_decisions, focus_rows), ensure_ascii=False, separators=(",", ":")), "```"])
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
