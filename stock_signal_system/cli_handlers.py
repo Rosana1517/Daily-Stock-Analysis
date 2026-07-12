@@ -11,6 +11,7 @@ from quant_research_platform.data import fetch_openbb_ohlcv, fetch_yahoo_ohlcv, 
 from quant_research_platform.twse_realtime import poll_realtime_quotes
 from quant_research_platform.universe import build_candidate_selection_plan, select_candidate_symbols
 from stock_signal_system.config import AppConfig
+from stock_signal_system.data.regulatory_flags import build_tw_regulatory_flags_csv
 from stock_signal_system.data.rss_sources import fetch_rss_news, save_news_csv
 from stock_signal_system.data.chip_snapshot import build_tw_chip_snapshot_csv, load_recent_twse_institutional_days
 from stock_signal_system.data.tpex import (
@@ -92,6 +93,12 @@ def handle_refresh_data(args) -> None:
                 print(f"tpex_prices_output={tpex_prices_output}", flush=True)
         except Exception as exc:
             print(f"warning: tpex_refresh_failed={exc}", flush=True)
+    try:
+        with _step_timer("tw_regulatory_flags_refresh"):
+            flags_output = build_tw_regulatory_flags_csv(Path("data/tw_regulatory_flags.csv"), Path(args.cache_dir))
+            print(f"regulatory_flags_output={flags_output}", flush=True)
+    except Exception as exc:
+        print(f"warning: regulatory_flags_refresh_failed={exc}", flush=True)
     if refreshed_paths:
         with _step_timer("combine_tw_market_data"):
             stock_inputs = [p for p in [Path("data/twse_stocks.csv"), Path("data/tpex_stocks.csv")] if p.exists()]

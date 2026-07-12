@@ -36,7 +36,7 @@ from quant_research_platform.qlib_adapter import (
     run_qlib_engine_portfolio_backtest,
 )
 from quant_research_platform.signals import build_signals
-from quant_research_platform.universe import build_candidate_selection_plan
+from quant_research_platform.universe import build_candidate_selection_plan, platform_neckline_price
 from stock_signal_system.data.chip_snapshot import load_histock_broker_summaries, load_recent_twse_institutional_days
 from stock_signal_system.data.csv_sources import load_intraday_history, load_news
 
@@ -62,6 +62,7 @@ class HybridRow:
     realtime_status: str
     action: str
     risk_note: str
+    stop_loss_price: float | None
     top10_main_force_buy_strength: float | None
     top10_main_force_net_buy: float | None
     foreign_buy_streak_days: float | None
@@ -168,6 +169,7 @@ def run_tw_hybrid(
             realtime_status=realtime.status if realtime else "無即時資料",
             action=_action(hybrid_score, signal.expected_return, intraday_return),
             risk_note=_risk_note(signal.expected_return, tech.bias if tech else "neutral", intraday_return),
+            stop_loss_price=platform_neckline_price(bars_by_symbol.get(symbol, [])),
             top10_main_force_buy_strength=_optional_float(chip_snapshot, "top10_main_force_buy_strength", "top10_main_force_buy_strength_proxy"),
             top10_main_force_net_buy=_optional_float(chip_snapshot, "top10_main_force_net_buy"),
             foreign_buy_streak_days=_optional_float(chip_snapshot, "foreign_buy_streak_days"),
@@ -749,7 +751,7 @@ def _candidate_analysis_block(
         '<details class="candidate-panel">',
         '<summary>候選股票分析</summary>',
         '<div class="table-wrap"><table>',
-        '<thead><tr><th>股票</th><th>名稱</th><th>產業</th><th>Hybrid</th><th>舊版</th><th>新版</th><th>籌碼雷達</th><th>前十大主力強度</th><th>前十大主力淨買超</th><th>外資連買</th><th>主分點連買</th><th>主分點</th><th>籌碼日期</th><th>籌碼狀態</th><th>組合決策</th><th>風險註記</th></tr></thead>',
+        '<thead><tr><th>股票</th><th>名稱</th><th>產業</th><th>Hybrid</th><th>舊版</th><th>新版</th><th>籌碼雷達</th><th>停損參考(頸線)</th><th>前十大主力強度</th><th>前十大主力淨買超</th><th>外資連買</th><th>主分點連買</th><th>主分點</th><th>籌碼日期</th><th>籌碼狀態</th><th>組合決策</th><th>風險註記</th></tr></thead>',
         '<tbody>',
     ]
     for row in rows:
@@ -766,7 +768,7 @@ def _candidate_analysis_block(
         new_label = "\u662f" if row.new_strategy_hit else "\u5426"
         chip_label = "\u662f" if row.chip_radar_hit else "\u5426"
         lines.append(
-            f"<tr><td>{html.escape(row.symbol)}</td><td>{html.escape(row.name)}</td><td>{html.escape(row.industry)}</td><td>{row.hybrid_score:.1f}</td><td>{legacy_label}</td><td>{new_label}</td><td>{chip_label}</td><td>{_chip_value(top10_main_force_buy_strength)}</td><td>{_chip_value(top10_main_force_net_buy, digits=0)}</td><td>{_chip_value(foreign_buy_streak_days, digits=0)}</td><td>{_chip_value(branch_main_force_buy_streak_days, digits=0)}</td><td>{html.escape(branch_main_force_leader or 'n/a')}</td><td>{html.escape(chip_data_date or 'n/a')}</td><td>{html.escape(chip_data_source_status or 'n/a')}</td><td>{html.escape(portfolio_decision_label(decision))}</td><td>{html.escape(row.risk_note)}</td></tr>"
+            f"<tr><td>{html.escape(row.symbol)}</td><td>{html.escape(row.name)}</td><td>{html.escape(row.industry)}</td><td>{row.hybrid_score:.1f}</td><td>{legacy_label}</td><td>{new_label}</td><td>{chip_label}</td><td>{_stop_loss_cell(row)}</td><td>{_chip_value(top10_main_force_buy_strength)}</td><td>{_chip_value(top10_main_force_net_buy, digits=0)}</td><td>{_chip_value(foreign_buy_streak_days, digits=0)}</td><td>{_chip_value(branch_main_force_buy_streak_days, digits=0)}</td><td>{html.escape(branch_main_force_leader or 'n/a')}</td><td>{html.escape(chip_data_date or 'n/a')}</td><td>{html.escape(chip_data_source_status or 'n/a')}</td><td>{html.escape(portfolio_decision_label(decision))}</td><td>{html.escape(row.risk_note)}</td></tr>"
         )
     lines.extend(['</tbody>', '</table></div>', '</details>'])
     return lines
@@ -937,6 +939,16 @@ def _chip_value(value: float | None, digits: int = 1) -> str:
     return f"{value:.{digits}f}"
 
 
+def _stop_loss_cell(row: HybridRow) -> str:
+    if row.stop_loss_price is None or row.stop_loss_price <= 0:
+        return "n/a"
+    pct = ""
+    if row.current_close and row.current_close > 0:
+        distance = (row.current_close - row.stop_loss_price) / row.current_close * 100
+        pct = f" (-{distance:.1f}%)" if distance >= 0 else " (已破頸線)"
+    return f"{row.stop_loss_price:.2f}{pct}"
+
+
 def _placeholder_row(
     symbol: str,
     chip_snapshot: dict,
@@ -966,6 +978,7 @@ def _placeholder_row(
         realtime_status="無即時資料",
         action="待補資料",
         risk_note="缺少完整 OHLCV / 技術資料",
+        stop_loss_price=None,
         top10_main_force_buy_strength=_optional_float(chip_snapshot, "top10_main_force_buy_strength", "top10_main_force_buy_strength_proxy"),
         top10_main_force_net_buy=_optional_float(chip_snapshot, "top10_main_force_net_buy"),
         foreign_buy_streak_days=_optional_float(chip_snapshot, "foreign_buy_streak_days"),

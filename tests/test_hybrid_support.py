@@ -57,6 +57,7 @@ def _hybrid_row(
         realtime_status="盤中上漲",
         action="研究觀察",
         risk_note="測試用",
+        stop_loss_price=95.0,
         top10_main_force_buy_strength=70.0,
         top10_main_force_net_buy=1000.0,
         foreign_buy_streak_days=4.0,

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from quant_research_platform.data import load_csv_ohlcv
 from stock_signal_system.data.csv_sources import load_news
+from stock_signal_system.data.regulatory_flags import load_regulatory_flag_symbols
 
 
 @dataclass(frozen=True)
@@ -226,12 +227,22 @@ def save_candidate_csv(path: Path, symbols: tuple[str, ...]) -> Path:
 
 
 def _load_universe_rows(path: Path) -> list[dict]:
+    flagged = load_regulatory_flag_symbols(path.parent / "tw_regulatory_flags.csv")
+    excluded = 0
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         rows = []
         for row in csv.DictReader(handle):
-            if _float(row.get("price")) > 0 and _float(row.get("volume")) > 0:
-                rows.append(row)
-        return rows
+            if _float(row.get("price")) <= 0 or _float(row.get("volume")) <= 0:
+                continue
+            symbol = str(row.get("symbol", "")).strip()
+            flag = flagged.get(symbol)
+            if flag:
+                excluded += 1
+                continue
+            rows.append(row)
+    if flagged:
+        print(f"universe_regulatory_excluded={excluded} flagged_total={len(flagged)}", flush=True)
+    return rows
 
 
 def _candidate_score(row: dict, news_terms: set[str]) -> float:
@@ -411,6 +422,14 @@ def _platform_box_range(bars: list) -> tuple[float, float, float, int] | None:
         if best is None or score > ((0.18 - best[2]) * 1000.0 + (latest.close / max(best[0], 0.01) - 1.0) * 1800.0 + best[3]):
             best = candidate
     return best
+
+
+def platform_neckline_price(bars: list) -> float | None:
+    """Return the breakout platform's box-high (neckline) as a stop-loss reference."""
+    box_range = _platform_box_range(bars)
+    if box_range is None:
+        return None
+    return box_range[0]
 
 
 def _platform_breakout_strength(bars: list) -> float:
