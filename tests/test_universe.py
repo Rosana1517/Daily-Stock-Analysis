@@ -8,6 +8,24 @@ from pathlib import Path
 from quant_research_platform.universe import build_candidate_selection_plan, select_candidate_symbols
 
 
+def _write_revised_breakout_bars(writer: csv.DictWriter, symbol: str) -> None:
+    """21 bars satisfying the revised strategy: rising MA20, a 99~105 consolidation
+    box with multiple top/bottom touches, then a high-volume breakout bar whose
+    upper wick keeps stochastic K below 40."""
+    rows: list[dict] = []
+    for idx in range(9):  # uptrend feed so MA20 rises
+        close = 88 + idx
+        rows.append({"open": close, "high": close + 0.5, "low": close - 0.5, "close": close, "volume": 1000})
+    box_closes = [100, 104, 100, 104, 100, 104, 100, 104, 100, 104, 102]
+    for close in box_closes:
+        high = 105 if close == 104 else 100.5 if close == 100 else 103
+        low = 103 if close == 104 else 99 if close == 100 else 101
+        rows.append({"open": close, "high": high, "low": low, "close": close, "volume": 1000})
+    rows.append({"open": 104, "high": 138, "low": 103, "close": 107, "volume": 1600})
+    for idx, row in enumerate(rows):
+        writer.writerow({"symbol": symbol, "date": f"2026-05-{idx + 1:02d}", **row})
+
+
 class UniverseSelectionTest(unittest.TestCase):
     def test_selects_dynamic_candidates_with_market_suffixes(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -75,20 +93,8 @@ class UniverseSelectionTest(unittest.TestCase):
             with ohlcv_path.open("w", encoding="utf-8", newline="") as handle:
                 writer = csv.DictWriter(handle, fieldnames=["symbol", "date", "open", "high", "low", "close", "volume"])
                 writer.writeheader()
-                revised_closes = [100 + index for index in range(20)] + [105]
                 legacy_closes = [40 + index for index in range(20)] + [60]
-                for idx, close in enumerate(revised_closes):
-                    writer.writerow(
-                        {
-                            "symbol": "1111.TW",
-                            "date": f"2026-05-{idx + 1:02d}",
-                            "open": close,
-                            "high": close + 1,
-                            "low": close - 1,
-                            "close": close,
-                            "volume": 1000,
-                        }
-                    )
+                _write_revised_breakout_bars(writer, "1111.TW")
                 for idx, close in enumerate(legacy_closes):
                     writer.writerow(
                         {
@@ -249,20 +255,8 @@ class UniverseSelectionTest(unittest.TestCase):
             with ohlcv_path.open("w", encoding="utf-8", newline="") as handle:
                 writer = csv.DictWriter(handle, fieldnames=["symbol", "date", "open", "high", "low", "close", "volume"])
                 writer.writeheader()
-                revised_closes = [100 + index for index in range(20)] + [105]
                 chip_closes = [50 + (index % 2) * 0.5 for index in range(20)] + [56]
-                for idx, close in enumerate(revised_closes):
-                    writer.writerow(
-                        {
-                            "symbol": "6666.TW",
-                            "date": f"2026-05-{idx + 1:02d}",
-                            "open": close,
-                            "high": close + 1,
-                            "low": close - 1,
-                            "close": close,
-                            "volume": 1000,
-                        }
-                    )
+                _write_revised_breakout_bars(writer, "6666.TW")
                 for idx, close in enumerate(chip_closes):
                     writer.writerow(
                         {

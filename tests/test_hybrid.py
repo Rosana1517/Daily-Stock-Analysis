@@ -34,6 +34,7 @@ class HybridTest(unittest.TestCase):
             realtime_status="normal",
             action="watch",
             risk_note="ok",
+            stop_loss_price=34.0,
             top10_main_force_buy_strength=40.0,
             top10_main_force_net_buy=9000.0,
             foreign_buy_streak_days=3.0,
