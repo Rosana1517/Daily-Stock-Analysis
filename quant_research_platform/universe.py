@@ -310,6 +310,11 @@ def _passes_chip_breakout_strategy(row: dict, bars_by_symbol: dict[str, list]) -
     return _foreign_buy_streak_days(row) >= 3 or _branch_buy_streak_days(row) >= 2
 
 
+def passes_chip_breakout(row: dict, bars_by_symbol: dict[str, list]) -> bool:
+    """Public wrapper so backtests replay the exact production chip-breakout rule."""
+    return _passes_chip_breakout_strategy(row, bars_by_symbol)
+
+
 def _passes_chip_radar_strategy(row: dict) -> bool:
     return _top10_main_force_strong(row) or _foreign_buy_streak_days(row) >= 3 or _branch_buy_streak_days(row) >= 2
 

@@ -146,6 +146,30 @@ def handle_refresh_data(args) -> None:
         raise SystemExit("ERROR no TWSE/TPEx data could be refreshed and no fallback examples are available.")
 
 
+def handle_backtest_chip_breakout(args) -> None:
+    from stock_signal_system.chip_backtest import run_chip_breakout_backtest, save_backtest_report
+
+    result = run_chip_breakout_backtest(
+        Path(args.chip_dir),
+        Path(args.price_dir),
+        horizon=args.horizon,
+    )
+    print(f"backtest_signal_dates_scanned={result.signal_dates_scanned}", flush=True)
+    print(f"backtest_trades={result.trade_count}", flush=True)
+    if result.trade_count:
+        print(f"backtest_win_rate={result.win_rate:.1%}", flush=True)
+        print(f"backtest_avg_return_5d={result.average_return_5d:.2%}", flush=True)
+        print(f"backtest_avg_max_return_5d={result.average_max_return_5d:.2%}", flush=True)
+        output = save_backtest_report(result, Path(args.output))
+        print(f"backtest_output={output}", flush=True)
+    else:
+        print(
+            "backtest_no_trades=insufficient_history_or_no_signals"
+            " (needs >=21 daily price snapshots plus 5 forward sessions)",
+            flush=True,
+        )
+
+
 def _taipei_today() -> date:
     try:
         from datetime import datetime

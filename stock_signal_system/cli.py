@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from stock_signal_system.cli_handlers import (
+    handle_backtest_chip_breakout,
     handle_fetch_news,
     handle_fetch_tpex,
     handle_fetch_twse,
@@ -90,6 +91,15 @@ def main() -> None:
         help="Public reports base URL.",
     )
 
+    chip_backtest_parser = subparsers.add_parser(
+        "backtest-chip-breakout",
+        help="Backtest the chip-breakout rule over accumulated daily snapshots.",
+    )
+    chip_backtest_parser.add_argument("--chip-dir", default="reports/chip_snapshots", help="Chip snapshot archive directory.")
+    chip_backtest_parser.add_argument("--price-dir", default="reports/price_snapshots", help="Price snapshot archive directory.")
+    chip_backtest_parser.add_argument("--output", default="reports/chip_breakout_backtest.csv", help="Trade-level output CSV.")
+    chip_backtest_parser.add_argument("--horizon", type=int, default=5, help="Forward sessions for evaluation.")
+
     args = parser.parse_args()
     if args.command == "run":
         handle_run(args)
@@ -115,6 +125,8 @@ def main() -> None:
         handle_verify_twse(args)
     elif args.command == "publish-pages":
         handle_publish_pages(args)
+    elif args.command == "backtest-chip-breakout":
+        handle_backtest_chip_breakout(args)
 
 
 if __name__ == "__main__":
