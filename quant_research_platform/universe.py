@@ -467,6 +467,16 @@ def platform_neckline_price(bars: list) -> float | None:
     return box_range[0]
 
 
+def platform_measured_move_target(bars: list) -> float | None:
+    """Classic measured-move take-profit target: box_high + box_height,
+    projecting the consolidation range's height above the breakout point."""
+    box_range = _platform_box_range(bars)
+    if box_range is None:
+        return None
+    box_high, box_low, _compression, _window_size = box_range
+    return box_high + (box_high - box_low)
+
+
 def _platform_breakout_strength(bars: list) -> float:
     if len(bars) < 21:
         return 0.0

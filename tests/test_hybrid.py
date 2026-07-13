@@ -9,7 +9,69 @@ from unittest.mock import patch
 
 from quant_research_platform.config import QuantPlatformConfig
 from quant_research_platform.daily_stock_bridge import load_latest_realtime_states
-from quant_research_platform.hybrid import HybridRow, _chip_score, _load_bars, _screening_priority_groups, run_tw_hybrid
+from quant_research_platform.hybrid import (
+    HybridRow,
+    _apply_sector_diversification,
+    _chip_score,
+    _load_bars,
+    _screening_priority_groups,
+    run_tw_hybrid,
+)
+
+
+def _make_row(symbol: str, industry: str, hybrid_score: float) -> HybridRow:
+    return HybridRow(
+        symbol=symbol,
+        name=symbol,
+        industry=industry,
+        screening_bucket="chip_watch",
+        legacy_hit=True,
+        new_strategy_hit=False,
+        chip_radar_hit=False,
+        signal_source="momentum-fallback",
+        kronos_return=0.02,
+        kronos_score=60.0,
+        news_score=50.0,
+        technical_score=50.0,
+        realtime_score=50.0,
+        confidence_score=50.0,
+        hybrid_score=hybrid_score,
+        current_close=30.0,
+        predicted_close=31.0,
+        realtime_status="normal",
+        action="watch",
+        risk_note="ok",
+        stop_loss_price=28.0,
+        take_profit_price=34.0,
+        top10_main_force_buy_strength=None,
+        top10_main_force_net_buy=None,
+        foreign_buy_streak_days=None,
+        branch_main_force_buy_streak_days=None,
+        branch_main_force_leader="",
+        chip_data_date="",
+        chip_data_source="",
+        chip_data_source_status="",
+        top10_main_force_brokers="",
+        technical_evidence=(),
+    )
+
+
+class SectorDiversificationTest(unittest.TestCase):
+    def test_caps_picks_per_industry_keeping_priority_order(self):
+        rows = [
+            _make_row("1111.TW", "半導體", 90.0),
+            _make_row("2222.TW", "半導體", 85.0),
+            _make_row("3333.TW", "半導體", 80.0),
+            _make_row("4444.TW", "傳產", 70.0),
+        ]
+
+        kept = _apply_sector_diversification(rows, max_per_industry=2)
+
+        self.assertEqual([row.symbol for row in kept], ["1111.TW", "2222.TW", "4444.TW"])
+
+    def test_zero_or_negative_cap_disables_filtering(self):
+        rows = [_make_row("1111.TW", "半導體", 90.0), _make_row("2222.TW", "半導體", 85.0)]
+        self.assertEqual(_apply_sector_diversification(rows, max_per_industry=0), rows)
 
 
 class ChipScoreTest(unittest.TestCase):
@@ -63,6 +125,7 @@ class HybridTest(unittest.TestCase):
             news_score=60.0,
             technical_score=55.0,
             realtime_score=50.0,
+            confidence_score=55.0,
             hybrid_score=72.0,
             current_close=35.0,
             predicted_close=37.0,
@@ -70,6 +133,7 @@ class HybridTest(unittest.TestCase):
             action="watch",
             risk_note="ok",
             stop_loss_price=34.0,
+            take_profit_price=39.0,
             top10_main_force_buy_strength=40.0,
             top10_main_force_net_buy=9000.0,
             foreign_buy_streak_days=3.0,

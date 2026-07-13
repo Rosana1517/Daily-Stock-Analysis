@@ -37,7 +37,11 @@ from quant_research_platform.qlib_adapter import (
 )
 from quant_research_platform.signals import build_signals
 from quant_research_platform.market_regime_gate import MarketRegimeGate, evaluate_market_regime_gate
-from quant_research_platform.universe import build_candidate_selection_plan, platform_neckline_price
+from quant_research_platform.universe import (
+    build_candidate_selection_plan,
+    platform_measured_move_target,
+    platform_neckline_price,
+)
 from stock_signal_system.data.chip_snapshot import load_histock_broker_summaries, load_recent_twse_institutional_days
 from stock_signal_system.data.csv_sources import load_intraday_history, load_news
 
@@ -57,6 +61,7 @@ class HybridRow:
     news_score: float
     technical_score: float
     realtime_score: float
+    confidence_score: float
     hybrid_score: float
     current_close: float
     predicted_close: float
@@ -64,6 +69,7 @@ class HybridRow:
     action: str
     risk_note: str
     stop_loss_price: float | None
+    take_profit_price: float | None
     top10_main_force_buy_strength: float | None
     top10_main_force_net_buy: float | None
     foreign_buy_streak_days: float | None
@@ -176,6 +182,7 @@ def run_tw_hybrid(
             news_score=news_score,
             technical_score=technical_score,
             realtime_score=realtime_score,
+            confidence_score=signal.confidence * 100.0,
             hybrid_score=hybrid_score,
             current_close=signal.current_close,
             predicted_close=signal.predicted_close,
@@ -183,6 +190,7 @@ def run_tw_hybrid(
             action=_action(hybrid_score, signal.expected_return, intraday_return),
             risk_note=_risk_note(signal.expected_return, tech.bias if tech else "neutral", intraday_return),
             stop_loss_price=platform_neckline_price(bars_by_symbol.get(symbol, [])),
+            take_profit_price=platform_measured_move_target(bars_by_symbol.get(symbol, [])),
             top10_main_force_buy_strength=_optional_float(chip_snapshot, "top10_main_force_buy_strength", "top10_main_force_buy_strength_proxy"),
             top10_main_force_net_buy=_optional_float(chip_snapshot, "top10_main_force_net_buy"),
             foreign_buy_streak_days=_optional_float(chip_snapshot, "foreign_buy_streak_days"),
@@ -255,7 +263,7 @@ def run_tw_hybrid(
     for row in rows:
         if row.symbol not in portfolio_decisions:
             portfolio_decisions[row.symbol] = _data_insufficient_decision(row)
-    report_rows = _portfolio_rows(rows, portfolio_decisions, "include")
+    report_rows = _apply_sector_diversification(_portfolio_rows(rows, portfolio_decisions, "include"))
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
     report_path = config.output_dir / f"tw_hybrid_{report_date.isoformat()}.md"
@@ -550,21 +558,46 @@ def _track_recommendations(
             evaluate_pending,
             summarize,
         )
+        from stock_signal_system.weight_diagnostics import SCORE_SNAPSHOT_PATH, append_score_snapshot
 
         candidates = [row for row in rows if row.signal_source != "data-limited" and row.current_close > 0]
         picks: list[dict[str, object]] = []
+        picked_rows: list[HybridRow] = []
         seen: set[str] = set()
         for row in candidates:
             is_focus = portfolio_decision_bucket(portfolio_decisions.get(row.symbol)) == "include"
             if row.screening_bucket == "chip_confirmed" or is_focus:
                 if row.symbol not in seen:
                     picks.append(_recommendation_payload(row))
+                    picked_rows.append(row)
                     seen.add(row.symbol)
         for row in candidates[:5]:
             if row.symbol not in seen:
                 picks.append(_recommendation_payload(row))
+                picked_rows.append(row)
                 seen.add(row.symbol)
         added = append_recommendations(RECOMMENDATION_LOG_PATH, report_date, picks)
+        if added:
+            for row in picked_rows:
+                append_score_snapshot(
+                    SCORE_SNAPSHOT_PATH,
+                    report_date.isoformat(),
+                    row.symbol,
+                    {
+                        "kronos_score": row.kronos_score,
+                        "news_score": row.news_score,
+                        "technical_score": row.technical_score,
+                        "realtime_score": row.realtime_score,
+                        "confidence_score": row.confidence_score,
+                        "chip_score": _chip_score(
+                            {
+                                "top10_main_force_buy_strength": row.top10_main_force_buy_strength,
+                                "foreign_buy_streak_days": row.foreign_buy_streak_days,
+                                "branch_main_force_buy_streak_days": row.branch_main_force_buy_streak_days,
+                            }
+                        ),
+                    },
+                )
         evaluated = evaluate_pending(RECOMMENDATION_LOG_PATH, PRICE_SNAPSHOT_DIR, report_date)
         print(f"recommendation_log added={added} evaluated={evaluated}", flush=True)
         return summarize(RECOMMENDATION_LOG_PATH)
@@ -580,7 +613,35 @@ def _recommendation_payload(row: HybridRow) -> dict[str, object]:
         "bucket": row.screening_bucket,
         "entry_close": row.current_close,
         "stop_loss_price": row.stop_loss_price,
+        "take_profit_price": row.take_profit_price,
     }
+
+
+def _weight_diagnostics_section() -> list[str]:
+    lines = ["", "## hybrid_score 權重診斷", ""]
+    try:
+        from stock_signal_system.weight_diagnostics import SCORE_SNAPSHOT_PATH, evaluate_weight_diagnostics
+
+        result = evaluate_weight_diagnostics(RECOMMENDATION_LOG_PATH, SCORE_SNAPSHOT_PATH)
+    except Exception as exc:
+        lines.append(f"- 權重診斷暫時無法執行：{exc}")
+        return lines
+    lines.append(f"- {result.note}")
+    if not result.sufficient:
+        return lines
+    lines.extend(
+        [
+            "",
+            '<div class="table-wrap"><table>',
+            "<thead><tr><th>分數分量</th><th>目前權重</th><th>與 5 日報酬相關係數</th></tr></thead>",
+            "<tbody>",
+        ]
+    )
+    for item in result.correlations:
+        corr_text = f"{item.correlation:.3f}" if item.correlation is not None else "n/a"
+        lines.append(f"<tr><td>{html.escape(item.component)}</td><td>{item.current_weight:.0%}</td><td>{corr_text}</td></tr>")
+    lines.extend(["</tbody>", "</table></div>", '<p class="section-note">相關係數僅供參考，權重調整需人工確認後才會套用到生產設定。</p>'])
+    return lines
 
 
 def _recommendation_section(summary) -> list[str]:
@@ -588,31 +649,38 @@ def _recommendation_section(summary) -> list[str]:
     if summary is None:
         lines.append("- 推薦追蹤資料尚未建立。")
         return lines
-    lines.append(f"- 已評估推薦數（5 個交易日後）：{summary.evaluated_count}，待評估：{summary.pending_count}")
+    lines.append(f"- 已評估推薦數（動態出場，最長持有 5 個交易日）：{summary.evaluated_count}，待評估：{summary.pending_count}")
     if summary.win_rate is not None:
-        lines.append(f"- 勝率（5 日收盤 > 進場價）：{summary.win_rate:.1%}")
-        lines.append(f"- 平均 5 日報酬：{summary.average_return_5d:.2%}")
-        lines.append(f"- 平均 5 日內最大報酬：{summary.average_max_return_5d:.2%}")
+        lines.append(f"- 勝率（出場價 > 進場價）：{summary.win_rate:.1%}")
+        lines.append(f"- 平均實現報酬：{summary.average_return_5d:.2%}")
+        lines.append(f"- 平均持有期最大報酬：{summary.average_max_return_5d:.2%}")
+        lines.append(
+            f"- 出場分布：停損 {summary.stop_loss_exit_count} 檔、停利 {summary.take_profit_exit_count} 檔、"
+            f"到期收盤 {summary.horizon_exit_count} 檔"
+        )
     else:
-        lines.append("- 尚無已完成 5 日評估的推薦（需累積至少 5 個交易日的價格快照）。")
+        lines.append("- 尚無已完成評估的推薦（需累積至少 5 個交易日的價格快照）。")
     if summary.recent_evaluated:
         lines.extend(
             [
                 "",
                 '<div class="table-wrap"><table>',
-                "<thead><tr><th>進場日</th><th>股票</th><th>來源池</th><th>進場價</th><th>5日報酬</th><th>最大報酬</th><th>結果</th></tr></thead>",
+                "<thead><tr><th>進場日</th><th>股票</th><th>來源池</th><th>進場價</th><th>出場日</th><th>出場原因</th><th>實現報酬</th><th>最大報酬</th><th>結果</th></tr></thead>",
                 "<tbody>",
             ]
         )
+        exit_labels = {"stop_loss": "停損出場", "take_profit": "停利出場", "horizon_close": "到期收盤", "unresolved": "資料缺漏"}
         for row in summary.recent_evaluated:
             result = "✅ 勝" if row.get("win") == "1" else "❌ 敗" if row.get("win") == "0" else "n/a"
             ret = row.get("return_5d", "")
             max_ret = row.get("max_return_5d", "")
             ret_text = f"{float(ret):.2%}" if ret else "n/a"
             max_text = f"{float(max_ret):.2%}" if max_ret else "n/a"
+            exit_reason = exit_labels.get(row.get("exit_reason", ""), "n/a")
             lines.append(
                 f"<tr><td>{html.escape(row.get('entry_date', ''))}</td><td>{html.escape(row.get('symbol', ''))} {html.escape(row.get('name', ''))}</td>"
                 f"<td>{html.escape(row.get('bucket', ''))}</td><td>{html.escape(row.get('entry_close', ''))}</td>"
+                f"<td>{html.escape(row.get('eval_date', ''))}</td><td>{exit_reason}</td>"
                 f"<td>{ret_text}</td><td>{max_text}</td><td>{result}</td></tr>"
             )
         lines.extend(["</tbody>", "</table></div>"])
@@ -748,6 +816,7 @@ def _save_report(
     if not news_items:
         lines.append("- \u4eca\u65e5\u6c92\u6709\u53ef\u4f75\u5165\u5831\u544a\u7684 RSS \u65b0\u805e\u3002")
     lines.extend(_recommendation_section(recommendation_summary))
+    lines.extend(_weight_diagnostics_section())
     lines.extend(_candidate_analysis_block(rows, portfolio_decisions, chip_snapshot_by_symbol))
     lines.extend(["", "```technical-chart-data", json.dumps(_technical_chart_payload(rows, bars_by_symbol, portfolio_decisions, focus_rows), ensure_ascii=False, separators=(",", ":")), "```"])
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -789,6 +858,33 @@ def _industry_bias(score: float) -> str:
 
 def _portfolio_rows(rows: list[HybridRow], decisions: dict, bucket: str) -> list[HybridRow]:
     return [row for row in rows if portfolio_decision_bucket(decisions.get(row.symbol)) == bucket]
+
+
+MAX_PICKS_PER_INDUSTRY = 2
+
+
+def _apply_sector_diversification(rows: list[HybridRow], max_per_industry: int = MAX_PICKS_PER_INDUSTRY) -> list[HybridRow]:
+    """Cap how many picks from the same industry can appear in the final
+    recommendation set (CSV export + LINE notification), so a single hot
+    sector rotation can't fill every slot with correlated risk. Rows arrive
+    pre-sorted by priority/score; ties within an industry are broken by that
+    existing order, so the strongest picks per sector survive the cap."""
+    if max_per_industry <= 0:
+        return rows
+    counts: dict[str, int] = {}
+    kept: list[HybridRow] = []
+    dropped = 0
+    for row in rows:
+        industry = row.industry or "未分類"
+        count = counts.get(industry, 0)
+        if count >= max_per_industry:
+            dropped += 1
+            continue
+        counts[industry] = count + 1
+        kept.append(row)
+    if dropped:
+        print(f"sector_diversification_capped dropped={dropped} max_per_industry={max_per_industry}", flush=True)
+    return kept
 
 
 def _screening_priority_groups(rows: list[HybridRow]) -> list[dict[str, object]]:
@@ -886,7 +982,7 @@ def _candidate_analysis_block(
         '<details class="candidate-panel">',
         '<summary>候選股票分析</summary>',
         '<div class="table-wrap"><table>',
-        '<thead><tr><th>股票</th><th>名稱</th><th>產業</th><th>Hybrid</th><th>舊版</th><th>新版</th><th>籌碼雷達</th><th>停損參考(頸線)</th><th>前十大主力強度</th><th>前十大主力淨買超</th><th>外資連買</th><th>主分點連買</th><th>主分點</th><th>籌碼日期</th><th>籌碼狀態</th><th>組合決策</th><th>風險註記</th></tr></thead>',
+        '<thead><tr><th>股票</th><th>名稱</th><th>產業</th><th>Hybrid</th><th>舊版</th><th>新版</th><th>籌碼雷達</th><th>停損參考(頸線)</th><th>停利參考(量測目標)</th><th>前十大主力強度</th><th>前十大主力淨買超</th><th>外資連買</th><th>主分點連買</th><th>主分點</th><th>籌碼日期</th><th>籌碼狀態</th><th>組合決策</th><th>風險註記</th></tr></thead>',
         '<tbody>',
     ]
     for row in rows:
@@ -903,7 +999,7 @@ def _candidate_analysis_block(
         new_label = "\u662f" if row.new_strategy_hit else "\u5426"
         chip_label = "\u662f" if row.chip_radar_hit else "\u5426"
         lines.append(
-            f"<tr><td>{html.escape(row.symbol)}</td><td>{html.escape(row.name)}</td><td>{html.escape(row.industry)}</td><td>{row.hybrid_score:.1f}</td><td>{legacy_label}</td><td>{new_label}</td><td>{chip_label}</td><td>{_stop_loss_cell(row)}</td><td>{_chip_value(top10_main_force_buy_strength)}</td><td>{_chip_value(top10_main_force_net_buy, digits=0)}</td><td>{_chip_value(foreign_buy_streak_days, digits=0)}</td><td>{_chip_value(branch_main_force_buy_streak_days, digits=0)}</td><td>{html.escape(branch_main_force_leader or 'n/a')}</td><td>{html.escape(chip_data_date or 'n/a')}</td><td>{html.escape(chip_data_source_status or 'n/a')}</td><td>{html.escape(portfolio_decision_label(decision))}</td><td>{html.escape(row.risk_note)}</td></tr>"
+            f"<tr><td>{html.escape(row.symbol)}</td><td>{html.escape(row.name)}</td><td>{html.escape(row.industry)}</td><td>{row.hybrid_score:.1f}</td><td>{legacy_label}</td><td>{new_label}</td><td>{chip_label}</td><td>{_stop_loss_cell(row)}</td><td>{_take_profit_cell(row)}</td><td>{_chip_value(top10_main_force_buy_strength)}</td><td>{_chip_value(top10_main_force_net_buy, digits=0)}</td><td>{_chip_value(foreign_buy_streak_days, digits=0)}</td><td>{_chip_value(branch_main_force_buy_streak_days, digits=0)}</td><td>{html.escape(branch_main_force_leader or 'n/a')}</td><td>{html.escape(chip_data_date or 'n/a')}</td><td>{html.escape(chip_data_source_status or 'n/a')}</td><td>{html.escape(portfolio_decision_label(decision))}</td><td>{html.escape(row.risk_note)}</td></tr>"
         )
     lines.extend(['</tbody>', '</table></div>', '</details>'])
     return lines
@@ -1084,6 +1180,16 @@ def _stop_loss_cell(row: HybridRow) -> str:
     return f"{row.stop_loss_price:.2f}{pct}"
 
 
+def _take_profit_cell(row: HybridRow) -> str:
+    if row.take_profit_price is None or row.take_profit_price <= 0:
+        return "n/a"
+    pct = ""
+    if row.current_close and row.current_close > 0:
+        distance = (row.take_profit_price - row.current_close) / row.current_close * 100
+        pct = f" (+{distance:.1f}%)" if distance >= 0 else " (已達目標)"
+    return f"{row.take_profit_price:.2f}{pct}"
+
+
 def _placeholder_row(
     symbol: str,
     chip_snapshot: dict,
@@ -1107,6 +1213,7 @@ def _placeholder_row(
         news_score=50.0,
         technical_score=0.0,
         realtime_score=0.0,
+        confidence_score=0.0,
         hybrid_score=0.0,
         current_close=price,
         predicted_close=price,
@@ -1114,6 +1221,7 @@ def _placeholder_row(
         action="待補資料",
         risk_note="缺少完整 OHLCV / 技術資料",
         stop_loss_price=None,
+        take_profit_price=None,
         top10_main_force_buy_strength=_optional_float(chip_snapshot, "top10_main_force_buy_strength", "top10_main_force_buy_strength_proxy"),
         top10_main_force_net_buy=_optional_float(chip_snapshot, "top10_main_force_net_buy"),
         foreign_buy_streak_days=_optional_float(chip_snapshot, "foreign_buy_streak_days"),
