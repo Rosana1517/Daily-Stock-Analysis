@@ -9,7 +9,42 @@ from unittest.mock import patch
 
 from quant_research_platform.config import QuantPlatformConfig
 from quant_research_platform.daily_stock_bridge import load_latest_realtime_states
-from quant_research_platform.hybrid import HybridRow, _load_bars, _screening_priority_groups, run_tw_hybrid
+from quant_research_platform.hybrid import HybridRow, _chip_score, _load_bars, _screening_priority_groups, run_tw_hybrid
+
+
+class ChipScoreTest(unittest.TestCase):
+    def test_neutral_when_no_chip_data(self):
+        self.assertEqual(_chip_score({}), 50.0)
+
+    def test_uses_strength_directly_when_no_streaks(self):
+        self.assertEqual(_chip_score({"top10_main_force_buy_strength": 70.0}), 70.0)
+
+    def test_streaks_add_bonus_capped_at_100(self):
+        score = _chip_score(
+            {
+                "top10_main_force_buy_strength": 90.0,
+                "foreign_buy_streak_days": 5,
+                "branch_main_force_buy_streak_days": 5,
+            }
+        )
+        self.assertEqual(score, 100.0)
+
+    def test_streak_bonus_is_capped_beyond_five_days(self):
+        capped = _chip_score(
+            {
+                "top10_main_force_buy_strength": 40.0,
+                "foreign_buy_streak_days": 20,
+                "branch_main_force_buy_streak_days": 20,
+            }
+        )
+        five_day = _chip_score(
+            {
+                "top10_main_force_buy_strength": 40.0,
+                "foreign_buy_streak_days": 5,
+                "branch_main_force_buy_streak_days": 5,
+            }
+        )
+        self.assertEqual(capped, five_day)
 
 
 class HybridTest(unittest.TestCase):

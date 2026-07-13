@@ -36,6 +36,7 @@ from quant_research_platform.qlib_adapter import (
     run_qlib_engine_portfolio_backtest,
 )
 from quant_research_platform.signals import build_signals
+from quant_research_platform.market_regime_gate import MarketRegimeGate, evaluate_market_regime_gate
 from quant_research_platform.universe import build_candidate_selection_plan, platform_neckline_price
 from stock_signal_system.data.chip_snapshot import load_histock_broker_summaries, load_recent_twse_institutional_days
 from stock_signal_system.data.csv_sources import load_intraday_history, load_news
@@ -90,12 +91,22 @@ def run_tw_hybrid(
     line_to_env: str | None = None,
     line_broadcast: bool = False,
 ) -> tuple[Path, Path, Path, str]:
+    regime_gate = evaluate_market_regime_gate(Path(".cache"))
+    if regime_gate.available:
+        print(
+            f"market_regime_gate bullish={regime_gate.bullish} taiex_close={regime_gate.close:.1f}"
+            f" ma20={regime_gate.ma20:.1f} distance_pct={regime_gate.distance_pct:.2f}",
+            flush=True,
+        )
+    else:
+        print("warning: market_regime_gate_unavailable=defaulting_bullish", flush=True)
     selection_plan = build_candidate_selection_plan(
         config.universe_path,
         config.symbols,
         config.universe_candidate_limit,
         news_path,
         config.ohlcv_path,
+        regime_gate.bullish,
     )
     analysis_symbols = selection_plan.analysis_symbols or selection_plan.selected_symbols
     config = replace(config, symbols=analysis_symbols)
@@ -138,12 +149,14 @@ def run_tw_hybrid(
         news_score = industry_news_score(industry, industry_signals)
         technical_score = 50 + (tech.score_adjustment if tech else 0)
         realtime_score = _realtime_score(intraday_return)
+        chip_score = _chip_score(chip_snapshot)
         hybrid_score = (
-            kronos_score * 0.40
-            + news_score * 0.20
+            kronos_score * 0.35
+            + news_score * 0.15
             + technical_score * 0.20
             + realtime_score * 0.10
             + signal.confidence * 100 * 0.10
+            + chip_score * 0.10
         )
         rows_by_symbol[symbol] = HybridRow(
             symbol=symbol,
@@ -274,6 +287,7 @@ def run_tw_hybrid(
         config,
         chip_snapshot_by_symbol,
         recommendation_summary,
+        regime_gate,
     )
     build_qlib_signal_backtest_config(csv_path, "custom_tw", config.benchmark_symbol or "2330.TW", qlib_path, config.top_n, 1)
 
@@ -448,6 +462,20 @@ def _realtime_score(intraday_return: float) -> float:
     return max(0.0, min(100.0, 50 + intraday_return * 700))
 
 
+def _chip_score(chip_snapshot: dict) -> float:
+    """Blend top10 main-force buy strength with foreign/branch buy streaks
+    into a 0-100 score so real capital flow moves hybrid_score, not just the
+    screening bucket. Missing chip data stays neutral (50) rather than
+    penalizing stocks that simply lack broker-level data."""
+    strength = _optional_float(chip_snapshot, "top10_main_force_buy_strength", "top10_main_force_buy_strength_proxy")
+    if strength is None:
+        return 50.0
+    foreign_streak = _optional_float(chip_snapshot, "foreign_buy_streak_days") or 0.0
+    branch_streak = _optional_float(chip_snapshot, "branch_main_force_buy_streak_days") or 0.0
+    streak_bonus = min(foreign_streak, 5.0) * 3.0 + min(branch_streak, 5.0) * 2.0
+    return max(0.0, min(100.0, strength + streak_bonus))
+
+
 def _realtime_state_from_quote(quote) -> RealtimeState:
     suffix = "TWO" if str(quote.market).lower() == "otc" else "TW"
     price = float(quote.price or 0)
@@ -591,6 +619,21 @@ def _recommendation_section(summary) -> list[str]:
     return lines
 
 
+def _market_regime_line(regime_gate: MarketRegimeGate | None) -> str:
+    if regime_gate is None or not regime_gate.available:
+        return '<p class="section-note">大盤濾網：資料暫缺，本日突破類訊號未受篩選限制。</p>'
+    if regime_gate.bullish:
+        return (
+            f'<p class="section-note">大盤濾網：加權指數 {regime_gate.close:,.0f} 站上 20 日均線'
+            f'（{regime_gate.ma20:,.0f}，+{regime_gate.distance_pct:.1f}%），純技術突破訊號正常放行。</p>'
+        )
+    return (
+        f'<p class="section-note">大盤濾網：加權指數 {regime_gate.close:,.0f} 跌破 20 日均線'
+        f'（{regime_gate.ma20:,.0f}，{regime_gate.distance_pct:.1f}%），本日已停用「純技術突破」候選池'
+        "（新版策略），避免逆勢追突破；有籌碼認養佐證的突破股不受影響。</p>"
+    )
+
+
 def _save_report(
     path: Path,
     rows: list[HybridRow],
@@ -607,6 +650,7 @@ def _save_report(
     config: QuantPlatformConfig,
     chip_snapshot_by_symbol: dict[str, dict],
     recommendation_summary=None,
+    regime_gate: MarketRegimeGate | None = None,
 ) -> None:
     portfolio_decisions = agent_workflow
     focus_rows = _portfolio_rows(rows, portfolio_decisions, "include")
@@ -655,6 +699,8 @@ def _save_report(
 
     lines = [
         f"# Hybrid \u53f0\u80a1\u6bcf\u65e5\u5206\u6790\u5831\u544a - {report_date.isoformat()}",
+        "",
+        _market_regime_line(regime_gate),
         "",
         '<section class="report-card">',
         "<h2>選股優先順序表</h2>",

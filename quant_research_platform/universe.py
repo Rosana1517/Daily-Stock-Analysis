@@ -27,8 +27,9 @@ def select_candidate_symbols(
     limit: int,
     news_path: Path | None = None,
     ohlcv_path: Path | None = None,
+    market_bullish: bool = True,
 ) -> tuple[str, ...]:
-    plan = build_candidate_selection_plan(universe_path, fallback_symbols, limit, news_path, ohlcv_path)
+    plan = build_candidate_selection_plan(universe_path, fallback_symbols, limit, news_path, ohlcv_path, market_bullish)
     return plan.selected_symbols
 
 
@@ -38,6 +39,7 @@ def build_candidate_selection_plan(
     limit: int,
     news_path: Path | None = None,
     ohlcv_path: Path | None = None,
+    market_bullish: bool = True,
 ) -> CandidateSelectionPlan:
     if not universe_path or not universe_path.exists():
         selected = fallback_symbols[:limit] if limit > 0 else fallback_symbols
@@ -75,10 +77,18 @@ def build_candidate_selection_plan(
         str(row.get("symbol", "")).strip().upper()
         for row in chip_radar_rows
     }
-    revised_rows = _rank_revised_rows(
-        [row for row in rows if str(row.get("symbol", "")).strip().upper() in mother_symbols],
-        news_terms,
-        bars_by_symbol,
+    # Pure technical breakouts (no institutional chip confirmation) are gated
+    # off when TAIEX is below its 20-day MA: false-breakout rate rises sharply
+    # in a downtrend. Chip-confirmed breakouts (real capital flow behind them)
+    # are left untouched since they carry independent evidence.
+    revised_rows = (
+        _rank_revised_rows(
+            [row for row in rows if str(row.get("symbol", "")).strip().upper() in mother_symbols],
+            news_terms,
+            bars_by_symbol,
+        )
+        if market_bullish
+        else []
     )
     radar_symbols = {
         str(row.get("symbol", "")).strip().upper()

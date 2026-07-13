@@ -115,6 +115,11 @@ class UniverseSelectionTest(unittest.TestCase):
             self.assertEqual(plan.legacy_watch_symbols, ("2222.TW",))
             self.assertEqual(plan.selected_symbols, ("1111.TW", "2222.TW"))
 
+            bearish_plan = build_candidate_selection_plan(
+                universe_path, ("2330.TW",), 2, ohlcv_path=ohlcv_path, market_bullish=False
+            )
+            self.assertEqual(bearish_plan.revised_symbols, ())
+
     def test_selection_plan_prioritizes_chip_breakout_symbols(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             base = Path(tmp_dir)
