@@ -68,17 +68,24 @@ _github_daily_stock_analysis/
 ├── pyproject.toml                        ← 套件定義、CLI entry points、pytest 設定
 ├── .github/workflows/                    ← 4 支排程/CI/部署入口
 ├── stock_signal_system/                  ← 主系統套件(核心業務邏輯)
-│   ├── cli.py / cli_handlers.py          ← 調度層:命令入口
+│   ├── cli.py                            ← 調度層:命令入口
+│   ├── cli_handlers.py(facade,85行)      ← 調度層:daily run/validate/publish + 對外統一 import 點
+│   │   ├── cli_handlers_market_data.py(303行) ← RSS/TWSE/TPEx/籌碼快照 refresh/verify
+│   │   ├── cli_handlers_quant.py(152行)  ← 量化平台 OHLCV/即時報價/回測指令
+│   │   └── cli_step_timer.py(25行)       ← 共用的 `_step_timer` context manager
 │   ├── pipeline.py / pipeline_helpers.py ← 調度層:每日流程主邏輯
 │   ├── config.py / validation.py         ← 調度層:設定驗證
 │   ├── data/                             ← 工具箱:爬蟲/連線(twse, tpex, finmind, rss...)
 │   ├── strategies/                       ← 工具箱:AI/邏輯運算(candlestick, rule_score, market_structure)
 │   ├── notify.py / line_bot_server.py    ← 工具箱:通知
-│   ├── report.py(2438行) / report_retention.py / pages_publish.py ← 工具箱:檔案/報告產出
+│   ├── report.py(facade,148行) / report_markdown.py / report_hybrid_dashboard.py / report_hybrid_interactive.py / report_technical_chart_js.py / report_retention.py / pages_publish.py ← 工具箱:報告產出
 │   └── recommendation_tracker.py         ← 工具箱:記憶(追蹤紀錄)
 ├── quant_research_platform/              ← 量化研究擴充套件(獨立於主流程,optional）
-│   ├── hybrid.py(1608行)                ← 核心策略融合引擎
-│   ├── universe.py / backtest.py / market_regime/ / qlib_adapter.py
+│   ├── hybrid.py(1608行)                ← 核心策略融合引擎(尚未拆分)
+│   ├── universe.py(facade,372行)        ← 候選選股主流程
+│   │   ├── universe_strategies.py(204行) ← 策略通過判定與籌碼評分
+│   │   └── universe_platform_geometry.py(91行) ← 箱型突破幾何計算
+│   ├── backtest.py / market_regime/ / qlib_adapter.py
 │   └── agent_workflow.py                 ← 現行 agent 工作流(取代已刪除的 agents/)
 ├── cloudflare-workers/twse-realtime-proxy/ ← 獨立 JS Worker,即時報價代理
 ├── configs/                               ← 設定範例(*.example.json)
@@ -133,8 +140,9 @@ _github_daily_stock_analysis/
 - **規則**:單一檔案不超過 300 行,快到上限就拆出獨立檔案
 - **已完成**:`stock_signal_system/report.py`(原 2438行)先移除重複定義的死代碼(~900行),補齊測試後拆分為 `report.py`(facade,148行)+ `report_markdown.py`(173行,共用 markdown 解析)+ `report_hybrid_dashboard.py`(235行)+ `report_hybrid_interactive.py`(246行)+ `report_technical_chart_js.py`(770行,純 JS 樣板字串,不受 300 行規則實質約束)
 - **已刪除**:`stock_signal_system/low_reversal_screener.py`(1215行)體檢時發現完全未被 `cli.py`/`pipeline.py`/任何 workflow 呼叫,經使用者確認為廢棄功能後直接刪除,連同其對應的兩份手動報告輸出
-- **仍待處理**(依風險排序,已列入 project_state.md 切片計劃):
-  1. `quant_research_platform/hybrid.py`(1608行,核心策略融合)——優先度最高,是目前檔案清單中風險最高的項目
-  2. 其餘 300~620 行區間檔案(`universe.py`, `cli_handlers.py`, `candlestick.py`, `qlib_adapter.py`, `chip_snapshot.py`, `screener_sources.py`, `daily_stock_bridge.py`, `rss_sources.py`)——次要,視情況拆
+- **已拆分**:`quant_research_platform/universe.py`(619→372行facade)拆出 `universe_strategies.py`(204行)、`universe_platform_geometry.py`(91行);`stock_signal_system/cli_handlers.py`(497→85行facade)拆出 `cli_handlers_market_data.py`(303行)、`cli_handlers_quant.py`(152行)、`cli_step_timer.py`(25行)。兩者都採用與 report.py 相同的 facade 模式,對外 import 路徑不變
+- **仍待處理**(次要,經使用者決定暫不處理):
+  1. `quant_research_platform/hybrid.py`(1608行,核心策略融合)——測試已補強,拆分待未來評估拆分邊界
+  2. `candlestick.py`(399行)、`qlib_adapter.py`(368行)、`chip_snapshot.py`(342行)、`screener_sources.py`(337行)、`daily_stock_bridge.py`(311行)、`cli_handlers_market_data.py`(303行)——皆略超 300 行,無強烈自然拆分邊界,視未來需求再拆
 - **質量閘門**:`pytest` + `ruff`(`E9,F` 規則集,`python -m ruff check .`)。mypy 型別檢查經評估後暫不納入——現有程式碼有 18 個既存型別錯誤分散在 13 個檔案,經使用者決定先不處理,避免為了補型別檢查而觸碰不相關的業務邏輯(見 project_state.md 已知問題)
 - **供應鏈風險**:CI 會 clone 三個外部 fork repo 的 default branch(非鎖定 commit hash),長期建議改為鎖定版本,但不影響 stock_signal_system 主流程(quant 為 optional）

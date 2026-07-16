@@ -4,9 +4,13 @@
 
 ## 當前階段
 
-正在做:舊專案積木化改造 — 切片 7/8「補 lint 閘門」已完成(mypy 型別檢查暫緩)
+正在做:舊專案積木化改造(模式 E)全部切片完成
 
 已完成:
+- 切片 8:經使用者決定只拆最大的兩個檔案(其餘 4 個檔案略超 300 行但無明確自然邊界,回報比不划算,維持現狀):
+  - `quant_research_platform/universe.py`(619→372行facade):拆出 `universe_strategies.py`(204行,策略通過判定與籌碼評分)、`universe_platform_geometry.py`(91行,箱型突破幾何計算)。`tests/test_hybrid_support.py`、`tests/test_universe.py` 直接 import 的私有函式全部維持可從 `quant_research_platform.universe` 匯入(re-export)
+  - `stock_signal_system/cli_handlers.py`(497→85行facade):拆出 `cli_handlers_market_data.py`(303行,RSS/TWSE/TPEx/籌碼快照 refresh/verify 指令)、`cli_handlers_quant.py`(152行,量化平台 OHLCV/即時報價/回測指令)、`cli_step_timer.py`(25行,共用的 `_step_timer` context manager)。`tests/test_cli_handlers.py`、`tests/test_cli_quant_commands.py` 直接 import 的私有函式維持可從 `cli_handlers` 匯入
+  - 拆分後 `ruff check .` 乾淨、134 個測試全數通過
 - 切片 7:加入 `ruff` 作為 lint 質量閘門(`pyproject.toml` 的 `[tool.ruff]`,規則集 `E9,F`,並新增 `dev` optional-dependency)。跑 `python -m ruff check .` 時發現三個跟 report.py 死代碼相同模式的問題,一併修正:
   - `quant_research_platform/daily_stock_bridge.py`:`stock_name`/`stock_industry` 重複定義,刪除永遠不會執行的第一版
   - `stock_signal_system/data/rss_sources.py`:`_classify_industries` 重複定義(連帶其專屬的 `INDUSTRY_RULES` 常數與 `_matches_rule` 輔助函式,約 70 行),刪除死代碼後第二版(`INDUSTRY_RULES_ZH`)才是實際生效的分類規則
@@ -40,7 +44,8 @@
 
 ## 下一步
 
-- 依切片 8:視情況拆分其餘 300~620 行區間檔案(`universe.py`, `cli_handlers.py`, `candlestick.py`, `qlib_adapter.py`, `chip_snapshot.py`, `screener_sources.py`, `daily_stock_bridge.py`, `rss_sources.py`)
+- 舊專案積木化改造(模式 E)全部 8 個切片已完成,回到模式 B「日常切片開發」進行一般功能開發
+- 若未來想繼續降低檔案行數,剩餘候選:`candlestick.py`(399行)、`qlib_adapter.py`(368行)、`chip_snapshot.py`(342行)、`screener_sources.py`(337行)、`cli_handlers_market_data.py`(303行,拆分後仍略超)、`daily_stock_bridge.py`(311行)——皆屬次要,無強烈自然拆分邊界
 
 ---
 
@@ -55,7 +60,7 @@
 | 5 | 為 `low_reversal_screener.py` 補測試後視情況拆分 | AI/邏輯積木 | `stock_signal_system/low_reversal_screener.py` | ✅ 已完成(確認廢棄無人呼叫,經使用者同意直接刪除) |
 | 6 | 為 `hybrid.py` 補充測試覆蓋率後評估拆分範圍(核心策略引擎,風險最高,需最謹慎) | AI 積木 | `quant_research_platform/hybrid.py` | 🟡 測試已補,實際拆分待確認 |
 | 7 | 視需要補上 lint(如 ruff)與型別檢查(如 mypy)質量閘門 | 版本控制積木 | `pyproject.toml`、CI workflow | ✅ ruff 已加入,mypy 經使用者決定暫緩 |
-| 8 | 其餘 300~620 行區間檔案視情況拆分 | 各工具箱積木 | `universe.py`、`cli_handlers.py`、`candlestick.py` 等 | ⬜ |
+| 8 | 其餘 300~620 行區間檔案視情況拆分 | 各工具箱積木 | `universe.py`、`cli_handlers.py`、`candlestick.py` 等 | ✅ 已拆 universe.py、cli_handlers.py;其餘 4 檔經使用者決定維持現狀 |
 
 ---
 
