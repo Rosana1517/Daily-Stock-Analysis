@@ -4,9 +4,16 @@
 
 ## 當前階段
 
-正在做:舊專案積木化改造 — 切片 3/8「為 report.py 補齊測試」進行中
+正在做:舊專案積木化改造 — 切片 4/8「拆分 report.py」已完成,準備進入切片 5
 
 已完成:
+- 拆分 `stock_signal_system/report.py`(原 1535 行)依職責切成四個檔案:
+  - `report.py`(148行,facade):`build_report`/`save_report`/`save_report_html`/`markdown_to_html`(dispatcher)/`public_report_url`,對外 import 路徑完全不變
+  - `report_markdown.py`(173行):三種渲染器共用的 markdown 解析原語(表格、行內語法、標題擷取等)
+  - `report_hybrid_dashboard.py`(235行):`# Hybrid Quant Daily Stock Report` 深色儀表板渲染
+  - `report_hybrid_interactive.py`(246行):`# Hybrid 量化每日選股報告`/`# Hybrid 台股每日分析報告` 互動技術圖表渲染
+  - `report_technical_chart_js.py`(770行):互動圖表的前端 JS 樣板,純字串資源、非 Python 邏輯,不受 300 行規則實質影響(規則精神是限制邏輯複雜度,不是限制樣板字串長度)
+  - 拆分後 111 個測試全數通過,並手動驗證三種渲染路徑(預設/dashboard/互動式)輸出正常
 - 刪除根目錄未進版控的暫存/除錯殘留檔案(`AGENTS.md`、`WORKSPACE_REATTACH_REPORT.md`、`.cache_verify_tpex/`、`.cache_verify_twse/`、`tmp_preview_hybrid/`)
 - 刪除已廢棄的 `agents/` 舊架構樁模組與對應測試 `tests/test_legacy_agents.py`(已確認功能完全由 `quant_research_platform/agent_workflow.py` 取代,無其他程式碼引用舊模組)
 - 產出並經使用者確認 PRD.md / ARCH.md 初稿
@@ -15,8 +22,7 @@
 
 ## 已知問題
 
-- `report.py` 仍有 `hybrid_interactive_markdown_to_html` 內部細節(如 `_extract_technical_chart_payload`、`_strip_technical_chart_block`)、`_parse_hybrid_markdown`/`_table_lines_to_dicts`/`_section_bullets`/`_float_text` 等輔助函式僅透過上層整合測試間接覆蓋,尚無獨立單元測試——下次拆分前可視風險再補
-- `report.py` 拆分死代碼移除後仍有 1535 行,超出 300 行上限,尚未實際拆分成多檔案
+- `report_hybrid_dashboard.py`/`report_hybrid_interactive.py` 內的私有輔助函式(`_extract_technical_chart_payload`、`_parse_hybrid_markdown`、`_section_bullets`、`_float_text` 等)僅透過上層整合測試間接覆蓋,尚無獨立單元測試
 - `quant_research_platform/hybrid.py`(1608行)為核心策略融合邏輯,同樣超標,尚未處理
 - `stock_signal_system/low_reversal_screener.py`(1215行)無對應測試檔,尚未處理
 - 目前質量閘門只有 `pytest`,缺 lint 與型別檢查
@@ -25,7 +31,7 @@
 
 ## 下一步
 
-- 依切片 4:實際拆分 `report.py`——依職責切出報告排版/HTML產生/多格式輸出等獨立檔案,拆分後跑全數測試確認行為不變
+- 依切片 5:為 `low_reversal_screener.py` 補測試後視情況拆分
 
 ---
 
@@ -36,7 +42,7 @@
 | 1 | 地基整理:清雜訊、刪廢棄模組、補三份全局文檔 | 版本控制積木 | `agents/`、根目錄暫存檔、PRD.md/ARCH.md/project_state.md | ✅ 已完成 |
 | 2 | 確認文檔內容(使用者審閱 PRD/ARCH) | — | PRD.md、ARCH.md | ⬜ 待使用者確認 |
 | 3 | 為 `report.py` 補齊測試(在拆分前先固定行為,避免拆分引入回歸) | 檔案積木 | `stock_signal_system/report.py`、`tests/test_report_html.py` | ✅ 已完成(含意外發現並移除的死代碼) |
-| 4 | 拆分 `report.py`:依職責切出報告排版/HTML產生/多格式輸出等獨立檔案 | 檔案積木 | `stock_signal_system/report.py` → 拆出新檔 | ⬜ |
+| 4 | 拆分 `report.py`:依職責切出報告排版/HTML產生/多格式輸出等獨立檔案 | 檔案積木 | `stock_signal_system/report.py` → 拆出新檔 | ✅ 已完成 |
 | 5 | 為 `low_reversal_screener.py` 補測試後視情況拆分 | AI/邏輯積木 | `stock_signal_system/low_reversal_screener.py` | ⬜ |
 | 6 | 為 `hybrid.py` 補充測試覆蓋率後評估拆分範圍(核心策略引擎,風險最高,需最謹慎) | AI 積木 | `quant_research_platform/hybrid.py` | ⬜ |
 | 7 | 視需要補上 lint(如 ruff)與型別檢查(如 mypy)質量閘門 | 版本控制積木 | `pyproject.toml`、CI workflow | ⬜ |
