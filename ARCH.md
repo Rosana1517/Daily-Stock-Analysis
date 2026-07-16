@@ -136,5 +136,5 @@ _github_daily_stock_analysis/
 - **仍待處理**(依風險排序,已列入 project_state.md 切片計劃):
   1. `quant_research_platform/hybrid.py`(1608行,核心策略融合)——優先度最高,是目前檔案清單中風險最高的項目
   2. 其餘 300~620 行區間檔案(`universe.py`, `cli_handlers.py`, `candlestick.py`, `qlib_adapter.py`, `chip_snapshot.py`, `screener_sources.py`, `daily_stock_bridge.py`, `rss_sources.py`)——次要,視情況拆
-- **質量閘門缺口**:目前只有 `pytest`,**無 lint、無型別檢查**;是否要補上(如 `ruff` + `mypy`)待使用者決定是否列入改造範圍
+- **質量閘門**:`pytest` + `ruff`(`E9,F` 規則集,`python -m ruff check .`)。mypy 型別檢查經評估後暫不納入——現有程式碼有 18 個既存型別錯誤分散在 13 個檔案,經使用者決定先不處理,避免為了補型別檢查而觸碰不相關的業務邏輯(見 project_state.md 已知問題)
 - **供應鏈風險**:CI 會 clone 三個外部 fork repo 的 default branch(非鎖定 commit hash),長期建議改為鎖定版本,但不影響 stock_signal_system 主流程(quant 為 optional）

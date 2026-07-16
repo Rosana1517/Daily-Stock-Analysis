@@ -14,57 +14,6 @@ from stock_signal_system.data.rate_limit import RateLimitedHttpClient
 from stock_signal_system.models import NewsItem
 
 
-INDUSTRY_RULES = {
-    "AI伺服器": {
-        "required_any": ("ai", "artificial intelligence", "nvidia", "gpu", "人工智慧", "ai代理", "算力"),
-        "context_any": (
-            "data center",
-            "datacenter",
-            "server",
-            "semiconductor",
-            "chip",
-            "accelerator",
-            "cloud",
-            "model",
-            "compute",
-            "memory",
-            "台積電",
-            "晶片",
-            "伺服器",
-            "資料中心",
-            "供應鏈",
-            "記憶體",
-            "半導體",
-        ),
-        "exclude_any": ("student", "police", "murder", "shooting", "airline", "flight", "restaurant", "drug", "槍擊", "車禍"),
-    },
-    "半導體": {
-        "required_any": ("semiconductor", "chip", "foundry", "tsmc", "wafer", "晶片", "半導體", "台積電", "製程"),
-        "context_any": ("wafer", "fab", "gpu", "ai", "electronics", "supply chain", "製程", "晶圓", "先進製程", "封裝"),
-        "exclude_any": ("potato chip", "chocolate chip"),
-    },
-    "電力設備": {
-        "required_any": ("power grid", "electric grid", "grid", "transformer", "electricity", "電網", "變壓器", "輸配電", "電力"),
-        "context_any": ("infrastructure", "utility", "substation", "transmission", "energy demand", "電力", "輸配電", "台電", "電廠"),
-        "exclude_any": ("political power", "powerful", "powerpoint", "battery power", "police", "court", "asylum", "槍擊"),
-    },
-    "儲能": {
-        "required_any": ("energy storage", "battery storage", "battery", "ev", "electric vehicle", "儲能", "電池", "電動車", "充電"),
-        "context_any": ("grid", "renewable", "solar", "lease", "leases", "leased", "lithium", "charging", "utility", "能源", "綠能"),
-        "exclude_any": ("data storage", "cloud storage", "student", "police", "body", "roommate", "oil refinery", "槍擊"),
-    },
-    "散熱": {
-        "required_any": ("cooling", "thermal", "liquid cooling", "heat sink", "散熱", "水冷", "液冷"),
-        "context_any": ("server", "data center", "gpu", "ai", "electronics", "資料中心", "伺服器", "晶片"),
-        "exclude_any": ("cooling inflation", "cooling economy"),
-    },
-    "消費電子": {
-        "required_any": ("smartphone", "pc", "consumer electronics", "iphone", "laptop", "手機", "筆電", "消費電子", "3c"),
-        "context_any": ("shipment", "inventory", "device", "gaming", "console", "品牌", "出貨", "庫存"),
-        "exclude_any": ("flight", "airline", "jet fuel", "槍擊"),
-    },
-}
-
 GLOBAL_NOISE_TERMS = (
     "張員瑛",
     "身材",
@@ -219,27 +168,8 @@ def _sanitize_xml(value: str) -> str:
     return text
 
 
-def _classify_industries(title: str, body: str) -> list[str]:
-    text = f"{title} {title} {body}".lower()
-    if _is_noise_story(text):
-        return []
-    industries = []
-    for industry, rule in INDUSTRY_RULES.items():
-        if _matches_rule(text, rule):
-            industries.append(industry)
-    return industries
-
-
 def _is_noise_story(text: str) -> bool:
     return any(term.lower() in text for term in GLOBAL_NOISE_TERMS)
-
-
-def _matches_rule(text: str, rule: dict[str, tuple[str, ...]]) -> bool:
-    if any(_contains_term(text, term) for term in rule.get("exclude_any", ())):
-        return False
-    required = any(_contains_term(text, term) for term in rule.get("required_any", ()))
-    context = any(_contains_term(text, term) for term in rule.get("context_any", ()))
-    return required and context
 
 
 def _contains_term(text: str, term: str) -> bool:

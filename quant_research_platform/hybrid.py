@@ -722,8 +722,6 @@ def _save_report(
 ) -> None:
     portfolio_decisions = agent_workflow
     focus_rows = _portfolio_rows(rows, portfolio_decisions, "include")
-    watch_rows = _portfolio_rows(rows, portfolio_decisions, "watch")
-    excluded_rows = _portfolio_rows(rows, portfolio_decisions, "exclude")
     data_limited_rows = [row for row in rows if row.signal_source == "data-limited"]
     priority_rows = [row for row in rows if row.signal_source != "data-limited"] or rows
     priority_groups = _screening_priority_groups(priority_rows)

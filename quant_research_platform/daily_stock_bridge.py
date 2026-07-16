@@ -191,14 +191,6 @@ def send_hybrid_notification(
     )
 
 
-def stock_name(symbol: str) -> str:
-    return TW_STOCK_PROFILE.get(symbol, (symbol, "未知"))[0]
-
-
-def stock_industry(symbol: str) -> str:
-    return TW_STOCK_PROFILE.get(symbol, (symbol, "未知"))[1]
-
-
 def industry_news_score(industry: str, signals: list[IndustrySignal]) -> float:
     if not signals:
         return 50.0

@@ -150,8 +150,6 @@ def _stock_step_results(
     has_technical = tech is not None
     has_structure = bool(getattr(tech, "structure_bias", "")) if tech else False
     has_entry = bool(getattr(tech, "entry", "")) if tech else False
-    has_stop = bool(getattr(tech, "stop_loss", "")) if tech else False
-    has_exit = bool(getattr(tech, "exit", "")) if tech else False
     patterns = tuple(str(item) for item in getattr(tech, "patterns", ()) or ()) if tech else ()
     has_industry_link = bool(industry and (industry_signal or news_score != 50))
     has_qlib = _has_qlib_engine(qlib_engine) or _has_qlib_metrics(qlib_metrics)

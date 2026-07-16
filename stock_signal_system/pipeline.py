@@ -7,7 +7,7 @@ from typing import Optional
 from stock_signal_system.config import AppConfig
 from stock_signal_system.data.csv_sources import load_intraday_history, load_news, load_price_history, load_stocks
 from stock_signal_system.industry import analyze_industries
-from stock_signal_system.models import IndustrySignal, StockRecommendation, StockSnapshot
+from stock_signal_system.models import IndustrySignal, StockRecommendation
 from stock_signal_system.notify import send_notification
 from stock_signal_system.pipeline_helpers import (
     _ensure_min_industry_signals,

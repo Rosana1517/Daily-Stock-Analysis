@@ -78,7 +78,7 @@ def fetch_yahoo_ohlcv(symbols: Iterable[str], period: str = "1y") -> dict[str, l
 def _fetch_yfinance_bars(symbol: str, period: str) -> list[Bar]:
     try:
         import yfinance as yf
-    except ImportError as exc:
+    except ImportError:
         return _fetch_yahoo_chart_bars(symbol, period)
     try:
         frame = yf.Ticker(symbol).history(period=period, auto_adjust=False).reset_index()

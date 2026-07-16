@@ -9,7 +9,7 @@ from pathlib import Path
 from quant_research_platform.config import QuantPlatformConfig
 from quant_research_platform.data import fetch_openbb_ohlcv, fetch_yahoo_ohlcv, load_csv_ohlcv, save_ohlcv_csv
 from quant_research_platform.twse_realtime import poll_realtime_quotes
-from quant_research_platform.universe import build_candidate_selection_plan, select_candidate_symbols
+from quant_research_platform.universe import build_candidate_selection_plan
 from stock_signal_system.config import AppConfig
 from stock_signal_system.data.regulatory_flags import build_tw_regulatory_flags_csv
 from stock_signal_system.data.rss_sources import fetch_rss_news, save_news_csv

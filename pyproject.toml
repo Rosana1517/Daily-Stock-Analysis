@@ -8,6 +8,7 @@ dependencies = []
 [project.optional-dependencies]
 market = ["yfinance>=0.2.66", "twstock>=1.4.0"]
 quant = ["openbb>=4.0.0", "pyqlib>=0.9.6"]
+dev = ["ruff>=0.15.0"]
 
 [tool.setuptools.packages.find]
 include = ["stock_signal_system*", "quant_research_platform*"]
@@ -20,3 +21,10 @@ quant-research = "quant_research_platform.cli:main"
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 320
+
+[tool.ruff.lint]
+select = ["E9", "F"]

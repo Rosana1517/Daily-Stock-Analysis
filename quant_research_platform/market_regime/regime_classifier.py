@@ -161,7 +161,6 @@ def _score_categories(signal_map: Mapping[str, SignalScore], metrics: Mapping[st
     etf = _value(signal_map, "ETF capital flow")
     sentiment = _value(signal_map, "news and policy sentiment")
     volume_expansion = float(metrics.get("volume_expansion", 1.0))
-    advance_ratio = float(metrics.get("advance_ratio", 0.5))
 
     return {
         RegimeCategory.AI_MOMENTUM_EXPANSION: _avg(ai * 1.55, sector * 1.05, sentiment, trend, turnover, limit_up),
