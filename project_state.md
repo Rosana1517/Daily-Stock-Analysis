@@ -4,9 +4,10 @@
 
 ## 當前階段
 
-正在做:舊專案積木化改造 — 切片 4/8「拆分 report.py」已完成,準備進入切片 5
+正在做:舊專案積木化改造 — 切片 5/8 完成(以刪除取代補測試)
 
 已完成:
+- 切片 5:體檢發現 `stock_signal_system/low_reversal_screener.py`(1215行)完全沒有被 `cli.py`/`pipeline.py`/任何 GitHub Actions workflow 呼叫,也無任何設定檔或文件提及,只留下兩份 2026-05 手動產生的報告輸出。經使用者確認為廢棄功能,已刪除該模組與對應的 `reports/low_reversal_screener_2026-05-08.html`、`reports/low_reversal_screener_2026-05-09.html`,刪除前後 111 個測試皆通過(本無測試依賴此模組)
 - 拆分 `stock_signal_system/report.py`(原 1535 行)依職責切成四個檔案:
   - `report.py`(148行,facade):`build_report`/`save_report`/`save_report_html`/`markdown_to_html`(dispatcher)/`public_report_url`,對外 import 路徑完全不變
   - `report_markdown.py`(173行):三種渲染器共用的 markdown 解析原語(表格、行內語法、標題擷取等)
@@ -23,7 +24,7 @@
 ## 已知問題
 
 - `report_hybrid_dashboard.py`/`report_hybrid_interactive.py` 內的私有輔助函式(`_extract_technical_chart_payload`、`_parse_hybrid_markdown`、`_section_bullets`、`_float_text` 等)僅透過上層整合測試間接覆蓋,尚無獨立單元測試
-- `quant_research_platform/hybrid.py`(1608行)為核心策略融合邏輯,同樣超標,尚未處理
+- `quant_research_platform/hybrid.py`(1608行)為核心策略融合邏輯,同樣超標,尚未處理,是目前檔案清單中風險最高的項目
 - `stock_signal_system/low_reversal_screener.py`(1215行)無對應測試檔,尚未處理
 - 目前質量閘門只有 `pytest`,缺 lint 與型別檢查
 - CI 依賴三個外部 fork repo(`Rosana1517/Kronos`、`qlib`、`OpenBB`)的 default branch,未鎖定 commit hash,屬供應鏈風險(非本次改造範圍,僅記錄)
@@ -31,7 +32,7 @@
 
 ## 下一步
 
-- 依切片 5:為 `low_reversal_screener.py` 補測試後視情況拆分
+- 依切片 6:為 `hybrid.py` 補充測試覆蓋率後評估拆分範圍(核心策略引擎,風險最高,需最謹慎)
 
 ---
 
@@ -43,7 +44,7 @@
 | 2 | 確認文檔內容(使用者審閱 PRD/ARCH) | — | PRD.md、ARCH.md | ⬜ 待使用者確認 |
 | 3 | 為 `report.py` 補齊測試(在拆分前先固定行為,避免拆分引入回歸) | 檔案積木 | `stock_signal_system/report.py`、`tests/test_report_html.py` | ✅ 已完成(含意外發現並移除的死代碼) |
 | 4 | 拆分 `report.py`:依職責切出報告排版/HTML產生/多格式輸出等獨立檔案 | 檔案積木 | `stock_signal_system/report.py` → 拆出新檔 | ✅ 已完成 |
-| 5 | 為 `low_reversal_screener.py` 補測試後視情況拆分 | AI/邏輯積木 | `stock_signal_system/low_reversal_screener.py` | ⬜ |
+| 5 | 為 `low_reversal_screener.py` 補測試後視情況拆分 | AI/邏輯積木 | `stock_signal_system/low_reversal_screener.py` | ✅ 已完成(確認廢棄無人呼叫,經使用者同意直接刪除) |
 | 6 | 為 `hybrid.py` 補充測試覆蓋率後評估拆分範圍(核心策略引擎,風險最高,需最謹慎) | AI 積木 | `quant_research_platform/hybrid.py` | ⬜ |
 | 7 | 視需要補上 lint(如 ruff)與型別檢查(如 mypy)質量閘門 | 版本控制積木 | `pyproject.toml`、CI workflow | ⬜ |
 | 8 | 其餘 300~620 行區間檔案視情況拆分 | 各工具箱積木 | `universe.py`、`cli_handlers.py`、`candlestick.py` 等 | ⬜ |

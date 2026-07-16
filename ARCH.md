@@ -132,9 +132,9 @@ _github_daily_stock_analysis/
 
 - **規則**:單一檔案不超過 300 行,快到上限就拆出獨立檔案
 - **已完成**:`stock_signal_system/report.py`(原 2438行)先移除重複定義的死代碼(~900行),補齊測試後拆分為 `report.py`(facade,148行)+ `report_markdown.py`(173行,共用 markdown 解析)+ `report_hybrid_dashboard.py`(235行)+ `report_hybrid_interactive.py`(246行)+ `report_technical_chart_js.py`(770行,純 JS 樣板字串,不受 300 行規則實質約束)
+- **已刪除**:`stock_signal_system/low_reversal_screener.py`(1215行)體檢時發現完全未被 `cli.py`/`pipeline.py`/任何 workflow 呼叫,經使用者確認為廢棄功能後直接刪除,連同其對應的兩份手動報告輸出
 - **仍待處理**(依風險排序,已列入 project_state.md 切片計劃):
-  1. `quant_research_platform/hybrid.py`(1608行,核心策略融合)——優先度最高
-  2. `stock_signal_system/low_reversal_screener.py`(1215行,無對應測試)
-  3. 其餘 300~620 行區間檔案(`universe.py`, `cli_handlers.py`, `candlestick.py`, `qlib_adapter.py`, `chip_snapshot.py`, `screener_sources.py`, `daily_stock_bridge.py`, `rss_sources.py`)——次要,視情況拆
+  1. `quant_research_platform/hybrid.py`(1608行,核心策略融合)——優先度最高,是目前檔案清單中風險最高的項目
+  2. 其餘 300~620 行區間檔案(`universe.py`, `cli_handlers.py`, `candlestick.py`, `qlib_adapter.py`, `chip_snapshot.py`, `screener_sources.py`, `daily_stock_bridge.py`, `rss_sources.py`)——次要,視情況拆
 - **質量閘門缺口**:目前只有 `pytest`,**無 lint、無型別檢查**;是否要補上(如 `ruff` + `mypy`)待使用者決定是否列入改造範圍
 - **供應鏈風險**:CI 會 clone 三個外部 fork repo 的 default branch(非鎖定 commit hash),長期建議改為鎖定版本,但不影響 stock_signal_system 主流程(quant 為 optional）
