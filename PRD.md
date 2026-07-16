@@ -1,0 +1,88 @@
+# PRD — 產品需求文檔
+
+> 這份文件是從既有程式碼、README、docs/ 反推整理而成(模式 E:舊專案改造)。
+> 「為什麼做」「不做什麼」代碼看不出來,以下是 AI 根據現有文件與程式行為的推測,**需要您逐條確認或修正**。
+
+## 1. 產品概述
+
+- **一句話說清楚**:每個交易日自動抓取台股上市/上櫃的價格、籌碼、新聞、財報資料,用規則+量化混合策略算出「值得觀察」的候選股清單,產出 HTML/Markdown 報告發布到 GitHub Pages,並透過 LINE 推播摘要給使用者本人。
+- **為什麼做**:(推測)取代人工每天盯盤篩股的重複勞動,把新聞催化、財務體質、估值、K 線型態、市場結構、籌碼流向等多個角度自動化整合成一份每日觀察清單,供使用者做進一步人工判斷。
+- **目標用戶**:使用者本人(個人自用系統,非對外服務)。
+- **明確定位**:輸出是「研究與觀察清單」,**不是**保證獲利的訊號,也**不會**自動下單。
+
+## 2. 功能列表
+
+### 必須有(MVP,目前已實作且每日運行中)
+- [x] 每日排程自動抓資料(TWSE/TPEX 官方資料、FinMind、yfinance、twstock、RSS 新聞)
+- [x] 混合策略評分(新聞催化 + 財務品質 + 估值風險 + 日線蠟燭圖 + 1H 市場結構 + 5M 流動性掃描/IFVG + 籌碼分析)
+- [x] 台指(TAIEX)20MA 大盤狀態閘門,過濾純技術面突破訊號
+- [x] 產業分散上限(避免同產業集中推薦)
+- [x] 動態停損/停利追蹤(recommendation_tracker)
+- [x] 報告產生(HTML dashboard + Markdown)並發布到 GitHub Pages
+- [x] LINE 推播(report_link 摘要模式 / full_report 完整模式)
+- [x] 每日只發一次的 marker 機制 + watchdog 補跑
+- [x] CLI 手動觸發(validate-config / refresh-data / run / publish-pages / fetch-news 等子命令)
+- [x] 量化研究平台(quant_research_platform):獨立回測、選股池管理、與 qlib/OpenBB/Kronos 對接的擴充分析能力
+
+### 將來再說
+- 使用者互動式篩選介面(目前 index.html 僅是靜態報告連結列表,無互動)
+- 多使用者/多帳號支援
+- 自動下單串接
+
+## 3. 使用者流程(排程驅動,非互動式應用,以「一次每日執行」為單位)
+
+1. GitHub Actions 於台北時間 17:30(週一至五)觸發 `daily_stock_analysis.yml`
+2. refresh-data:抓取最新股價、籌碼、新聞等資料寫入 `data/`
+3. refresh-quant-ohlcv / refresh-quant-realtime:量化平台資料更新
+4. validate-config:檢查設定檔正確性,失敗則中止並提示
+5. run:執行 hybrid 策略評分,產生報告寫入 `reports/`
+6. publish-pages:發布報告到 GitHub Pages,更新 `index.html` 的報告連結列表
+7. 檢查當日 LINE marker,若未發送則透過 LINE 推播摘要或完整報告
+8. 17:40 / 17:50 watchdog 二次確認補跑,避免主流程失敗漏發
+
+## 4. 頁面清單(本專案僅一個靜態展示頁,無互動路由)
+
+| 頁面 | 主要內容和作用 |
+|---|---|
+| `index.html`(GitHub Pages 首頁) | 列出近期每日報告的連結,純展示,無表單、無登入 |
+| 每日報告 HTML(`reports/*.html`) | 當日候選股清單、評分細節、圖表儀表板 |
+
+## 5. 每個功能的完成定義
+
+- **每日排程執行**:成功時當日 `reports/` 產出新的 HTML/MD 報告,GitHub Pages 更新,LINE 收到推播;失敗時 watchdog 應能偵測並補跑,或至少讓使用者從 GitHub Actions 執行紀錄看到失敗原因
+- **混合策略評分**:輸出的候選清單需附評分依據(新聞/技術/籌碼/財務各分項可追溯),不是黑箱單一分數
+- **大盤狀態閘門**:當 TAIEX 位處 20MA 之下等弱勢狀態時,應抑制純技術面突破訊號的推薦,降低追高風險
+- **LINE 推播**:`report_link` 模式送出摘要+報告連結;`full_report` 模式送出完整 Markdown 內容(可能分段);當日已發送過則不重複發送
+- **CLI 指令**:每個子命令需有清楚的成功/失敗結束碼與訊息,方便排程與人工除錯
+
+## 6. 數據字段(核心資料實體,細節見 ARCH.md 第 7 節)
+
+- **股票基本資料**:代號、名稱、市場別(上市/上櫃)、產業別
+- **價格資料**:日線 / 1H / 5M 三層,欄位 `symbol,datetime,open,high,low,close,volume`
+- **籌碼快照**:法人/主力買賣超等(chip_snapshot)
+- **新聞資料**:RSS 來源,含催化事件分類
+- **推薦紀錄**:candidate、評分、進場/停損/停利價位、追蹤狀態(recommendation_tracker)
+
+## 7. 錯誤狀態
+
+- **外部資料源掛了**(TWSE/TPEX/FinMind/yfinance 逾時或格式變動):應有 fallback 或快取降級,並在報告/日誌中標示資料不完整,不應讓整條流程直接中斷發不出報告
+- **LINE API 失敗**:應記錄失敗但不讓報告發布流程整體失敗;watchdog 負責補發
+- **設定檔錯誤**:`validate-config` 應在流程最前面攔截,給出明確錯誤欄位,不進入後續昂貴的資料抓取與運算步驟
+- **無資料/空清單**:報告應明確顯示「今日無符合條件標的」,而非留白或報錯
+
+## 8. 不做什麼 ⚠️
+
+- 不做自動下單或任何資金移轉
+- 不提供個人化投資建議背書(僅是研究觀察清單,使用者需自行判斷)
+- 不做多使用者系統、不做登入權限體系(自用工具)
+- 不承諾即時(秒級)行情,以排程批次為主,realtime proxy 僅輔助當日評分用途
+- 不在前端(index.html/報告 HTML)嵌入任何 API Key 或憑證
+
+## 9. 驗收清單
+
+- [ ] `python -m stock_signal_system.cli validate-config --config configs/local.example.json` 可正常通過
+- [ ] `python -m stock_signal_system.cli run --config configs/local.example.json` 可產生報告於 `reports/`
+- [ ] GitHub Actions `daily_stock_analysis.yml` 手動觸發(workflow_dispatch)可完整跑完不報錯
+- [ ] LINE 推播在測試 config 下可正確送達(或至少不拋例外)
+- [ ] `pytest` 全數通過
+- [ ] GitHub Pages 上 `index.html` 能看到最新報告連結
