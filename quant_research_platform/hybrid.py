@@ -80,6 +80,7 @@ class HybridRow:
     chip_data_source_status: str
     top10_main_force_brokers: str
     technical_evidence: tuple[str, ...]
+    best_entry: bool = False
 
 
 def run_tw_hybrid(
@@ -201,6 +202,7 @@ def run_tw_hybrid(
             chip_data_source_status=str(chip_snapshot.get("chip_data_source_status", "")).strip(),
             top10_main_force_brokers=str(chip_snapshot.get("top10_main_force_brokers", "")).strip(),
             technical_evidence=_technical_evidence(symbol, tech, bars_by_symbol.get(symbol, [])),
+            best_entry=_is_best_entry(bars_by_symbol.get(symbol, [])),
         )
     report_symbols = []
     for symbol in (*analysis_symbols, *selection_plan.selected_symbols):
@@ -220,6 +222,7 @@ def run_tw_hybrid(
     rows = sorted(
         rows_by_symbol.values(),
         key=lambda item: (
+            not item.best_entry,
             not item.new_strategy_hit,
             not item.chip_radar_hit,
             not item.legacy_hit,
@@ -239,6 +242,7 @@ def run_tw_hybrid(
     rows = sorted(
         rows_by_symbol.values(),
         key=lambda item: (
+            not item.best_entry,
             not item.new_strategy_hit,
             not item.chip_radar_hit,
             not item.legacy_hit,
@@ -1018,6 +1022,8 @@ def _overall_focus_rows(rows: list[HybridRow], limit: int = 20) -> list[HybridRo
 
 
 def _overall_focus_priority(row: HybridRow) -> int:
+    if row.best_entry:
+        return 0
     if row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit:
         return 1
     if row.legacy_hit and row.chip_radar_hit and not row.new_strategy_hit:
@@ -1036,6 +1042,8 @@ def _overall_focus_priority(row: HybridRow) -> int:
 
 
 def _overall_focus_label(row: HybridRow) -> str:
+    if row.best_entry:
+        return '★最佳買點'
     if row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit:
         return '三者全中'
     if row.legacy_hit and row.chip_radar_hit and not row.new_strategy_hit:
@@ -1054,6 +1062,8 @@ def _overall_focus_label(row: HybridRow) -> str:
 
 
 def _overall_focus_reason(row: HybridRow) -> str:
+    if row.best_entry:
+        return '收盤站上 60MA 且 MACD 剛形成黃金交叉'
     if row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit:
         return '品質、籌碼、發動點三者都成立'
     if row.legacy_hit and row.chip_radar_hit and not row.new_strategy_hit:
@@ -1072,6 +1082,8 @@ def _overall_focus_reason(row: HybridRow) -> str:
 
 
 def _overall_focus_action(row: HybridRow) -> str:
+    if row.best_entry:
+        return '最佳買點，第一優先'
     if row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit:
         return '主清單，優先看'
     if row.legacy_hit and row.chip_radar_hit and not row.new_strategy_hit:
@@ -1308,6 +1320,7 @@ def _technical_chart_stock(row: HybridRow, bars: list[Bar], decision) -> dict:
             "legacy": row.legacy_hit,
             "newStrategy": row.new_strategy_hit,
             "chipRadar": row.chip_radar_hit,
+            "bestEntry": row.best_entry,
         },
         "signalSource": row.signal_source,
         "hybridScore": round(row.hybrid_score, 2),
@@ -1363,6 +1376,7 @@ def _technical_chart_focus_stock(row: HybridRow, rank: int) -> dict:
         "chipRadarHit": row.chip_radar_hit,
         "newStrategyHit": row.new_strategy_hit,
         "legacyHit": row.legacy_hit,
+        "bestEntry": row.best_entry,
         "top10MainForceBuyStrength": row.top10_main_force_buy_strength,
         "top10MainForceNetBuy": row.top10_main_force_net_buy,
     }
@@ -1570,6 +1584,32 @@ def _monthly_closes(bars: list[Bar]) -> list[tuple[str, float]]:
         key = bar.timestamp.strftime("%Y-%m")
         monthly[key] = bar.close
     return list(monthly.items())
+
+
+BEST_ENTRY_FRESH_CROSS_SESSIONS = 2
+
+
+def _is_best_entry(bars: list[Bar]) -> bool:
+    """★最佳買點: close at/above the 60-day MA AND the MACD(12,26,9) DIF line
+    crossed above its signal line within the last BEST_ENTRY_FRESH_CROSS_SESSIONS
+    sessions (a fresh golden cross, not one that fired long ago). Label-only:
+    it never filters candidates, only boosts their display priority."""
+    closes = [bar.close for bar in bars]
+    if len(closes) < 61:
+        return False
+    ma60 = sum(closes[-60:]) / 60.0
+    if closes[-1] < ma60:
+        return False
+    fast_ema = _ema(closes, 12)
+    slow_ema = _ema(closes, 26)
+    dif = [fast_value - slow_value for fast_value, slow_value in zip(fast_ema, slow_ema)]
+    signal_line = _ema(dif, 9)
+    hist = [dif_value - signal_value for dif_value, signal_value in zip(dif, signal_line)]
+    for offset in range(1, BEST_ENTRY_FRESH_CROSS_SESSIONS + 1):
+        index = len(hist) - offset
+        if index >= 1 and hist[index] > 0 and hist[index - 1] <= 0:
+            return True
+    return False
 
 
 def _macd_latest(values: list[float], fast: int, slow: int, signal: int) -> tuple[float | None, float | None]:

@@ -3,7 +3,11 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta
 
+from dataclasses import replace
+from pathlib import Path
+
 from quant_research_platform.agent_workflow import AgentDecision
+from quant_research_platform.daily_stock_bridge import notification_summary
 from quant_research_platform.data import Bar
 from quant_research_platform.hybrid import (
     HybridRow,
@@ -11,8 +15,11 @@ from quant_research_platform.hybrid import (
     _cross_status,
     _group_rows_by_industry,
     _industry_bias,
+    _is_best_entry,
     _kronos_score,
     _ma_position_status,
+    _overall_focus_label,
+    _overall_focus_priority,
     _portfolio_rows,
     _quote_intraday_status,
     _realtime_score,
@@ -178,6 +185,43 @@ class VolumeRatioAndSupportResistanceTest(unittest.TestCase):
 
     def test_support_resistance_empty_bars(self):
         self.assertEqual(_support_resistance([]), (None, None))
+
+
+class BestEntryTest(unittest.TestCase):
+    def test_fresh_macd_golden_cross_above_60ma_is_best_entry(self):
+        # Flat base keeps MACD hist at 0; the final two up bars flip DIF above
+        # its signal line within the freshness window, with close above the 60MA.
+        bars = [_bar(i, 100.0) for i in range(68)] + [_bar(68, 103.0), _bar(69, 106.0)]
+        self.assertTrue(_is_best_entry(bars))
+
+    def test_stale_golden_cross_is_not_best_entry(self):
+        # The cross fired ~10 sessions ago; still above 60MA but no longer fresh.
+        bars = [_bar(i, 100.0) for i in range(60)] + [_bar(60 + i, 101.0 + i) for i in range(10)]
+        self.assertFalse(_is_best_entry(bars))
+
+    def test_close_below_60ma_is_not_best_entry(self):
+        bars = [_bar(i, 100.0) for i in range(68)] + [_bar(68, 80.0), _bar(69, 81.0)]
+        self.assertFalse(_is_best_entry(bars))
+
+    def test_insufficient_history_is_not_best_entry(self):
+        bars = [_bar(i, 100.0 + i) for i in range(50)]
+        self.assertFalse(_is_best_entry(bars))
+
+
+class BestEntryDisplayTest(unittest.TestCase):
+    def test_best_entry_row_gets_star_label_and_top_priority(self):
+        row = replace(_make_row("2330.TW", "半導體", 80.0), best_entry=True)
+        self.assertEqual(_overall_focus_label(row), "★最佳買點")
+        self.assertEqual(_overall_focus_priority(row), 0)
+
+    def test_notification_summary_marks_best_entry_with_star(self):
+        starred = replace(_make_row("2330.TW", "半導體", 80.0), best_entry=True)
+        plain = _make_row("2317.TW", "電子", 70.0)
+
+        summary = notification_summary([starred, plain], Path("reports/x.md"))
+
+        self.assertIn("★2330.TW", summary)
+        self.assertNotIn("★2317.TW", summary)
 
 
 class TechnicalStatusTest(unittest.TestCase):
