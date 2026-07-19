@@ -738,7 +738,7 @@ def _market_regime_line(regime_gate: MarketRegimeGate | None) -> str:
     return (
         f'<p class="section-note">大盤濾網：加權指數 {regime_gate.close:,.0f} 跌破 20 日均線'
         f'（{regime_gate.ma20:,.0f}，{regime_gate.distance_pct:.1f}%），本日已停用「純技術突破」候選池'
-        "（新版策略），避免逆勢追突破；有籌碼認養佐證的突破股不受影響。</p>"
+        "（發動確認策略），避免逆勢追突破；有籌碼認養佐證的突破股不受影響。</p>"
     )
 
 
@@ -813,7 +813,7 @@ def _save_report(
         '<div class="table-wrap"><table><thead><tr><th>優先級</th><th>組合</th><th>數量</th><th>風格判讀</th><th>建議動作</th><th>代表股票</th></tr></thead><tbody>',
         "".join(priority_rows_html),
         "</tbody></table></div>",
-        '<p class="section-note">優先順序：<code>三者全中</code> &gt; <code>舊版 + 籌碼雷達</code> &gt; <code>舊版 + 新版</code> &gt; <code>新版 + 籌碼雷達</code> &gt; <code>單策略命中</code>。</p>',
+        '<p class="section-note">優先順序：<code>★最佳買點</code> &gt; <code>三者全中</code> &gt; <code>品質底池 + 主力動向</code> &gt; <code>品質底池 + 發動確認</code> &gt; <code>主力動向 + 發動確認</code> &gt; <code>單策略命中</code>。</p>',
         "</section>",
         '<div id="tech-section-marker"></div>',
         *_foreign_flow_section(report_date),
@@ -937,44 +937,44 @@ def _screening_priority_groups(rows: list[HybridRow]) -> list[dict[str, object]]
         ),
         (
             2,
-            "舊版 + 籌碼雷達",
+            "品質底池 + 主力動向",
             "穩健型上漲潛力",
             "次主清單 / 持續觀察",
             lambda row: row.legacy_hit and row.chip_radar_hit,
         ),
         (
             3,
-            "舊版 + 新版",
+            "品質底池 + 發動確認",
             "技術確認型",
             "可觀察 / 等籌碼補強",
             lambda row: row.legacy_hit and row.new_strategy_hit,
         ),
         (
             4,
-            "新版 + 籌碼雷達",
+            "主力動向 + 發動確認",
             "進攻型發動股",
             "關注發動延續",
             lambda row: row.new_strategy_hit and row.chip_radar_hit,
         ),
         (
             5,
-            "單舊版",
+            "單品質底池",
             "只有品質底",
             "觀察名單",
             lambda row: row.legacy_hit and not row.new_strategy_hit and not row.chip_radar_hit,
         ),
         (
             5,
-            "單新版",
+            "單發動確認",
             "只有發動確認",
             "只留觀察",
             lambda row: row.new_strategy_hit and not row.legacy_hit and not row.chip_radar_hit,
         ),
         (
             5,
-            "單籌碼雷達",
+            "單主力動向",
             "只有主力支持",
-            "等待新版確認",
+            "等待發動確認",
             lambda row: row.chip_radar_hit and not row.legacy_hit and not row.new_strategy_hit,
         ),
     )
@@ -1021,7 +1021,7 @@ def _candidate_analysis_block(
         '<details class="candidate-panel">',
         '<summary>候選股票分析</summary>',
         '<div class="table-wrap"><table>',
-        '<thead><tr><th>股票</th><th>名稱</th><th>產業</th><th>Hybrid</th><th>舊版</th><th>新版</th><th>籌碼雷達</th><th>停損參考(頸線)</th><th>停利參考(量測目標)</th><th>前十大主力強度</th><th>前十大主力淨買超</th><th>外資連買</th><th>主分點連買</th><th>主分點</th><th>籌碼日期</th><th>籌碼狀態</th><th>組合決策</th><th>風險註記</th></tr></thead>',
+        '<thead><tr><th>股票</th><th>名稱</th><th>產業</th><th>Hybrid</th><th>品質底池</th><th>發動確認</th><th>主力動向</th><th>停損參考(頸線)</th><th>停利參考(量測目標)</th><th>前十大主力強度</th><th>前十大主力淨買超</th><th>外資連買</th><th>主分點連買</th><th>主分點</th><th>籌碼日期</th><th>籌碼狀態</th><th>組合決策</th><th>風險註記</th></tr></thead>',
         '<tbody>',
     ]
     for row in rows:
@@ -1084,17 +1084,17 @@ def _overall_focus_label(row: HybridRow) -> str:
     if row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit:
         return '三者全中'
     if row.legacy_hit and row.chip_radar_hit and not row.new_strategy_hit:
-        return '舊版 + 籌碼雷達'
+        return '品質底池 + 主力動向'
     if row.legacy_hit and row.new_strategy_hit and not row.chip_radar_hit:
-        return '舊版 + 新版'
+        return '品質底池 + 發動確認'
     if row.new_strategy_hit and row.chip_radar_hit and not row.legacy_hit:
-        return '新版 + 籌碼雷達'
+        return '主力動向 + 發動確認'
     if row.new_strategy_hit and not row.legacy_hit and not row.chip_radar_hit:
-        return '單獨命中新版'
+        return '單獨命中發動確認'
     if row.chip_radar_hit and not row.legacy_hit and not row.new_strategy_hit:
-        return '單獨命中籌碼雷達'
+        return '單獨命中主力動向'
     if row.legacy_hit and not row.new_strategy_hit and not row.chip_radar_hit:
-        return '單獨命中舊版'
+        return '單獨命中品質底池'
     return '未命中'
 
 
@@ -1132,7 +1132,7 @@ def _overall_focus_action(row: HybridRow) -> str:
     if row.new_strategy_hit and not row.legacy_hit and not row.chip_radar_hit:
         return '只留觀察，不列主清單'
     if row.chip_radar_hit and not row.legacy_hit and not row.new_strategy_hit:
-        return '先觀察，等新版確認'
+        return '先觀察，等發動確認'
     if row.legacy_hit and not row.new_strategy_hit and not row.chip_radar_hit:
         return '放觀察名單'
     return '暫不納入'
@@ -1351,7 +1351,7 @@ def _technical_chart_stock(row: HybridRow, bars: list[Bar], decision) -> dict:
         "name": row.name,
         "industry": row.industry,
         "screeningBucket": row.screening_bucket,
-        "screeningLabel": "\u7c4c\u78bc\u7a81\u7834\u4e3b\u6e05\u55ae" if row.screening_bucket == "chip_confirmed" else "\u7c4c\u78bc\u89c0\u5bdf\u6e05\u55ae" if row.screening_bucket == "chip_watch" else "\u820a\u7248\u89c0\u5bdf\u6e05\u55ae",
+        "screeningLabel": "籌碼突破主清單" if row.screening_bucket == "chip_confirmed" else "籌碼觀察清單" if row.screening_bucket == "chip_watch" else "品質底池觀察清單",
         "screeningFlags": {
             "legacyMotherPoolHit": row.legacy_hit,
             "legacy": row.legacy_hit,

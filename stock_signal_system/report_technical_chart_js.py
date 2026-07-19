@@ -261,9 +261,9 @@ INTERACTIVE_CHART_JS = r"""
 
   function activeFilterLabels() {
     const labels = [];
-    if (state.filters.chipRadar) labels.push("籌碼雷達");
-    if (state.filters.newStrategy) labels.push("新版策略");
-    if (state.filters.oldStrategy) labels.push("舊版策略");
+    if (state.filters.oldStrategy) labels.push("品質底池");
+    if (state.filters.chipRadar) labels.push("主力動向");
+    if (state.filters.newStrategy) labels.push("發動確認");
     return labels;
   }
 
@@ -273,16 +273,17 @@ INTERACTIVE_CHART_JS = r"""
     const labels = activeFilterLabels();
     const flags = screeningFlags(stock);
     const hits = [
-      flags.chipRadar ? "籌碼雷達命中" : null,
-      flags.newStrategy ? "新版策略命中" : null,
-      (flags.legacyMotherPoolHit ?? flags.legacy) ? "舊版策略命中" : null
+      (flags.legacyMotherPoolHit ?? flags.legacy) ? "品質底池命中" : null,
+      flags.chipRadar ? "主力動向命中" : null,
+      flags.newStrategy ? "發動確認命中" : null,
+      flags.bestEntry ? "★最佳買點" : null
     ].filter(Boolean).join(" / ") || "未命中";
     node.innerHTML = `
       <div class="strategy-list" style="padding-top:12px;">
         <div class="strategy-item"><b>目前篩選模式</b><span>${escapeHtml(labels.join(" + ") || "未勾選策略")}</span></div>
         <div class="strategy-item"><b>該股實際命中</b><span>${escapeHtml(hits)}</span></div>
-        <div class="strategy-item"><b>新版策略核心</b><span>K 值 &lt; 40、MA20 上升、盤整區間突破。</span></div>
-        <div class="strategy-item"><b>舊版策略角色</b><span>承接每日報告母池與多代理分析結論，負責品質底與風險判讀。</span></div>
+        <div class="strategy-item"><b>漏斗三層</b><span>品質底池（哪些值得看）→ 主力動向（誰在買）→ 發動確認（何時買，K 值 &lt; 40、MA20 上升、盤整突破）。</span></div>
+        <div class="strategy-item"><b>★最佳買點定義</b><span>收盤站上 60MA 且 MACD 剛形成黃金交叉，優先於所有分層顯示。</span></div>
       </div>
     `;
   }

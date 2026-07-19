@@ -221,11 +221,11 @@ class HybridSupportTest(unittest.TestCase):
 
         labels = [group["label"] for group in groups]
         self.assertEqual(labels[0], "三者全中")
-        self.assertIn("舊版 + 籌碼雷達", labels)
-        self.assertIn("單新版", labels)
+        self.assertIn("品質底池 + 主力動向", labels)
+        self.assertIn("單發動確認", labels)
         self.assertEqual(groups[0]["count"], 1)
         self.assertIn("2330.TW", groups[0]["samples"])
-        self.assertIn("2887.TW", next(group for group in groups if group["label"] == "舊版 + 籌碼雷達")["samples"])
+        self.assertIn("2887.TW", next(group for group in groups if group["label"] == "品質底池 + 主力動向")["samples"])
 
     def test_overall_focus_rows_prioritize_all_three_first(self):
         rows = [

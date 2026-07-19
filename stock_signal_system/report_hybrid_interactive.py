@@ -176,19 +176,19 @@ def _interactive_chart_section() -> str:
             <select id="stockSelect"></select>
             <div class="stock-filter-stack">
               <section class="stock-filter-item">
-                <label class="stock-filter-toggle"><input id="chipRadarToggle" type="checkbox" checked>第 1 層：籌碼雷達</label>
-                <p class="stock-filter-brief">先看前十大主力買超、外資連買與主分點連買，抓出主力正在照顧、但尚未完全發動的股票。</p>
+                <label class="stock-filter-toggle"><input id="legacyStrategyToggle" type="checkbox">第 1 層：品質底池（選股範圍）</label>
+                <p class="stock-filter-brief">以流動性、均量、趨勢與基本品質篩出可研究的母池，回答「哪些股票值得看」。</p>
               </section>
               <section class="stock-filter-item">
-                <label class="stock-filter-toggle"><input id="newStrategyToggle" type="checkbox">第 2 層：新版策略</label>
-                <p class="stock-filter-brief">以 K 值 &lt; 40、MA20 上升、盤整區間突破做為發動確認，篩出準備轉強的候選。</p>
+                <label class="stock-filter-toggle"><input id="chipRadarToggle" type="checkbox" checked>第 2 層：主力動向（誰在買）</label>
+                <p class="stock-filter-brief">看前十大主力買超、外資連買與主分點連買，確認有真實資金正在照顧。</p>
               </section>
               <section class="stock-filter-item">
-                <label class="stock-filter-toggle"><input id="legacyStrategyToggle" type="checkbox">第 3 層：舊版策略</label>
-                <p class="stock-filter-brief">以流動性、均量、趨勢、基本品質與每日報告綜合分析，做為品質底與研究母池。</p>
+                <label class="stock-filter-toggle"><input id="newStrategyToggle" type="checkbox">第 3 層：發動確認（何時買）</label>
+                <p class="stock-filter-brief">以 K 值 &lt; 40、MA20 上升、盤整區間突破確認發動時點，回答「現在能不能進場」。</p>
               </section>
             </div>
-            <p class="filter-tip">勾選一個策略可看單一路徑；勾選兩個或三個策略時，只顯示同時命中的股票。</p>
+            <p class="filter-tip">三層是漏斗：品質底池 → 主力動向 → 發動確認，通過越多層可信度越高；同時滿足「站上 60MA + MACD 剛金叉」者標記為 ★最佳買點，優先顯示。勾選多層時只顯示同時命中的股票。</p>
             <section class="chip-card">
               <h3>籌碼快照</h3>
               <div id="chipSnapshotPanel" class="chip-grid"></div>

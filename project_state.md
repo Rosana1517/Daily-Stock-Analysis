@@ -1,12 +1,16 @@
 # project_state — 當前狀態文檔
 
-> 本次為「模式 E:舊專案積木化改造」,以下記錄改造進度,不涉及每日選股系統本身的業務邏輯變動(改造期間行為不變原則)。
-
 ## 當前階段
 
-正在做:舊專案積木化改造(模式 E)全部切片完成
+正在做:2026-07 新功能開發(模式 C)三個切片全部完成
 
-已完成:
+已完成(2026-07 新功能輪):
+- 切片 A「★最佳買點」:`HybridRow` 新增 `best_entry` 欄位(收盤 ≥ 60MA 且 MACD DIF 於最近 2 個交易日內剛上穿訊號線)。純標籤不篩選:報告排序與綜合關注榜優先顯示(priority 0、標籤「★最佳買點」)、LINE 摘要加 ★ 前綴、圖表 payload 帶 `bestEntry` 旗標。新增 6 個測試
+- 切片 B「大盤外資動向」:新模組 `stock_signal_system/data/foreign_flow_trend.py` 彙總既有 TWSE T86 快取資料成大盤外資每日買賣超(張)、連買/連賣天數與偏多/偏空/中性判讀;`hybrid.py` 報告新增「外資動向」區塊(T86 失敗時降級為「外資資料暫缺」不中斷報告)。已用真實 TWSE 資料驗證。新增 5 個離線測試
+- 切片 C「漏斗式重命名」:所有使用者可見文案改為 品質底池(選股範圍)→ 主力動向(誰在買)→ 發動確認(何時買)→ ★最佳買點 的漏斗順序;互動篩選介面重排並更新各層說明;內部欄位名(`legacy_hit`/`chip_radar_hit`/`new_strategy_hit`)與 DOM id 完全不變。測試斷言同步更新
+- (前一輪)模式 E 舊專案積木化改造 8 個切片全部完成,細節見 git log(commits 579966e6 以前)與 ARCH.md
+
+已完成(前一輪積木化改造,摘要):
 - 切片 8:經使用者決定只拆最大的兩個檔案(其餘 4 個檔案略超 300 行但無明確自然邊界,回報比不划算,維持現狀):
   - `quant_research_platform/universe.py`(619→372行facade):拆出 `universe_strategies.py`(204行,策略通過判定與籌碼評分)、`universe_platform_geometry.py`(91行,箱型突破幾何計算)。`tests/test_hybrid_support.py`、`tests/test_universe.py` 直接 import 的私有函式全部維持可從 `quant_research_platform.universe` 匯入(re-export)
   - `stock_signal_system/cli_handlers.py`(497→85行facade):拆出 `cli_handlers_market_data.py`(303行,RSS/TWSE/TPEx/籌碼快照 refresh/verify 指令)、`cli_handlers_quant.py`(152行,量化平台 OHLCV/即時報價/回測指令)、`cli_step_timer.py`(25行,共用的 `_step_timer` context manager)。`tests/test_cli_handlers.py`、`tests/test_cli_quant_commands.py` 直接 import 的私有函式維持可從 `cli_handlers` 匯入
@@ -44,8 +48,8 @@
 
 ## 下一步
 
-- 舊專案積木化改造(模式 E)全部 8 個切片已完成,回到模式 B「日常切片開發」進行一般功能開發
-- 若未來想繼續降低檔案行數,剩餘候選:`candlestick.py`(399行)、`qlib_adapter.py`(368行)、`chip_snapshot.py`(342行)、`screener_sources.py`(337行)、`cli_handlers_market_data.py`(303行,拆分後仍略超)、`daily_stock_bridge.py`(311行)——皆屬次要,無強烈自然拆分邊界
+- 2026-07 新功能三切片已完成;請使用者於下一次每日排程執行後,對照 PRD.md 8.5 節驗收清單實際檢查報告與 LINE 推播內容
+- 若未來想繼續降低檔案行數,剩餘候選:`candlestick.py`(399行)、`qlib_adapter.py`(368行)、`chip_snapshot.py`(342行)、`screener_sources.py`(337行)、`cli_handlers_market_data.py`(303行)、`daily_stock_bridge.py`(311行)——皆屬次要,無強烈自然拆分邊界
 
 ---
 

@@ -149,10 +149,10 @@ class HybridTest(unittest.TestCase):
         groups = {group["label"]: group for group in _screening_priority_groups([row])}
 
         self.assertEqual(groups["三者全中"]["count"], 1)
-        self.assertEqual(groups["舊版 + 新版"]["count"], 1)
-        self.assertEqual(groups["舊版 + 籌碼雷達"]["count"], 1)
-        self.assertEqual(groups["新版 + 籌碼雷達"]["count"], 1)
-        self.assertIn("2353.TW", groups["舊版 + 新版"]["samples"])
+        self.assertEqual(groups["品質底池 + 發動確認"]["count"], 1)
+        self.assertEqual(groups["品質底池 + 主力動向"]["count"], 1)
+        self.assertEqual(groups["主力動向 + 發動確認"]["count"], 1)
+        self.assertIn("2353.TW", groups["品質底池 + 發動確認"]["samples"])
 
     def test_latest_realtime_state_maps_tw_symbols(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
