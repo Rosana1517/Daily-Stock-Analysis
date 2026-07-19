@@ -44,6 +44,7 @@ from quant_research_platform.universe import (
 )
 from stock_signal_system.data.chip_snapshot import load_histock_broker_summaries, load_recent_twse_institutional_days
 from stock_signal_system.data.csv_sources import load_intraday_history, load_news
+from stock_signal_system.data.foreign_flow_trend import summarize_market_foreign_flow
 
 
 @dataclass(frozen=True)
@@ -691,6 +692,41 @@ def _recommendation_section(summary) -> list[str]:
     return lines
 
 
+def _foreign_flow_section(report_date: date, cache_dir: Path = Path(".cache")) -> list[str]:
+    """外資動向 report block: last ~10 sessions of market-wide foreign net
+    buy/sell aggregated from cached TWSE T86 data. Degrades to a placeholder
+    line instead of failing the whole report when data is unavailable."""
+    try:
+        days = load_recent_twse_institutional_days(cache_dir, as_of=report_date, lookback_sessions=10)
+        trend = summarize_market_foreign_flow(days)
+    except Exception as exc:
+        print(f"warning: foreign_flow_trend_failed={exc}", flush=True)
+        trend = None
+    lines = ["## 外資動向", ""]
+    if trend is None:
+        lines.extend(["- 外資資料暫缺，今日無法判讀外資動向。", ""])
+        return lines
+    streak_text = (
+        f"連續買超 {trend.streak_days} 天"
+        if trend.streak_days > 0
+        else f"連續賣超 {abs(trend.streak_days)} 天" if trend.streak_days < 0 else "今日買賣超接近平衡"
+    )
+    lines.append(
+        f"- 判讀：**{trend.bias}**（{streak_text}，近 {len(trend.daily_net_lots)} 個交易日累計 {trend.cumulative_net_lots:+,.0f} 張）"
+    )
+    lines.append("")
+    lines.append('<div class="table-wrap"><table><thead><tr><th>日期</th><th>外資買賣超（張）</th></tr></thead><tbody>')
+    for trade_date, net_lots in trend.daily_net_lots:
+        color = "#dc2626" if net_lots > 0 else "#16a34a" if net_lots < 0 else "#475569"
+        lines.append(
+            f'<tr><td>{trade_date.isoformat()}</td><td style="color:{color};font-weight:700;">{net_lots:+,.0f}</td></tr>'
+        )
+    lines.append("</tbody></table></div>")
+    lines.append('<p class="section-note">資料來源：TWSE T86 三大法人個股買賣超彙總（股數換算為張），僅含上市普通股。</p>')
+    lines.append("")
+    return lines
+
+
 def _market_regime_line(regime_gate: MarketRegimeGate | None) -> str:
     if regime_gate is None or not regime_gate.available:
         return '<p class="section-note">大盤濾網：資料暫缺，本日突破類訊號未受篩選限制。</p>'
@@ -780,6 +816,7 @@ def _save_report(
         '<p class="section-note">優先順序：<code>三者全中</code> &gt; <code>舊版 + 籌碼雷達</code> &gt; <code>舊版 + 新版</code> &gt; <code>新版 + 籌碼雷達</code> &gt; <code>單策略命中</code>。</p>',
         "</section>",
         '<div id="tech-section-marker"></div>',
+        *_foreign_flow_section(report_date),
         "## \u0052\u0053\u0053 \u7522\u696d\u8a0a\u865f",
         "",
         '<div class="rss-signal-grid">',
