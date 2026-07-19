@@ -167,7 +167,7 @@ def load_latest_realtime_states(path: Path | None) -> dict[str, RealtimeState]:
 def notification_summary(report_rows: list, report_path: Path) -> str:
     lines = [f"Hybrid AI 選股摘要\n報告: {report_path}", ""]
     for rank, row in enumerate(report_rows[:5], start=1):
-        star = "★" if getattr(row, "best_entry", False) else ""
+        star = "★" if getattr(row, "best_entry", False) else "☆" if getattr(row, "short_entry", False) else ""
         lines.append(
             f"{rank}. {star}{row.symbol} {row.name} | hybrid {row.hybrid_score:.1f} | "
             f"Kronos {row.kronos_return:.2%} | {row.action}"

@@ -276,14 +276,14 @@ INTERACTIVE_CHART_JS = r"""
       (flags.legacyMotherPoolHit ?? flags.legacy) ? "品質底池命中" : null,
       flags.chipRadar ? "主力動向命中" : null,
       flags.newStrategy ? "發動確認命中" : null,
-      flags.bestEntry ? "★最佳買點" : null
+      flags.bestEntry ? "★最佳買點" : flags.shortEntry ? "☆短線買點" : null
     ].filter(Boolean).join(" / ") || "未命中";
     node.innerHTML = `
       <div class="strategy-list" style="padding-top:12px;">
         <div class="strategy-item"><b>目前篩選模式</b><span>${escapeHtml(labels.join(" + ") || "未勾選策略")}</span></div>
         <div class="strategy-item"><b>該股實際命中</b><span>${escapeHtml(hits)}</span></div>
         <div class="strategy-item"><b>漏斗三層</b><span>品質底池（哪些值得看）→ 主力動向（誰在買）→ 發動確認（何時買，K 值 &lt; 40、MA20 上升、盤整突破）。</span></div>
-        <div class="strategy-item"><b>★最佳買點定義</b><span>收盤站上 60MA 且 MACD 剛形成黃金交叉，優先於所有分層顯示。</span></div>
+        <div class="strategy-item"><b>★/☆ 買點定義</b><span>★最佳買點＝收盤剛突破 60MA 且 MACD 剛金叉；☆短線買點＝剛突破 20MA 且 MACD 剛金叉，優先度僅次於 ★。</span></div>
       </div>
     `;
   }

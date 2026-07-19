@@ -14,8 +14,10 @@ from quant_research_platform.hybrid import (
     _action,
     _cross_status,
     _group_rows_by_industry,
+    _fresh_ma_breakout,
     _industry_bias,
     _is_best_entry,
+    _is_short_entry,
     _kronos_score,
     _ma_position_status,
     _overall_focus_label,
@@ -188,14 +190,15 @@ class VolumeRatioAndSupportResistanceTest(unittest.TestCase):
 
 
 class BestEntryTest(unittest.TestCase):
-    def test_fresh_macd_golden_cross_above_60ma_is_best_entry(self):
-        # Flat base keeps MACD hist at 0; the final two up bars flip DIF above
-        # its signal line within the freshness window, with close above the 60MA.
-        bars = [_bar(i, 100.0) for i in range(68)] + [_bar(68, 103.0), _bar(69, 106.0)]
+    def test_fresh_60ma_breakout_with_fresh_macd_cross_is_best_entry(self):
+        # A dip below the 60MA, then two up bars: the close crosses back above
+        # the 60MA and the MACD DIF crosses its signal line, both within the
+        # 2-session freshness window.
+        bars = [_bar(i, 100.0) for i in range(66)] + [_bar(66, 98.0), _bar(67, 99.0), _bar(68, 103.0), _bar(69, 106.0)]
         self.assertTrue(_is_best_entry(bars))
 
-    def test_stale_golden_cross_is_not_best_entry(self):
-        # The cross fired ~10 sessions ago; still above 60MA but no longer fresh.
+    def test_long_held_above_60ma_is_not_best_entry(self):
+        # The cross above the 60MA fired ~10 sessions ago; no longer fresh.
         bars = [_bar(i, 100.0) for i in range(60)] + [_bar(60 + i, 101.0 + i) for i in range(10)]
         self.assertFalse(_is_best_entry(bars))
 
@@ -208,20 +211,57 @@ class BestEntryTest(unittest.TestCase):
         self.assertFalse(_is_best_entry(bars))
 
 
+class ShortEntryTest(unittest.TestCase):
+    def test_fresh_20ma_breakout_with_fresh_macd_cross_is_short_entry(self):
+        bars = [_bar(i, 100.0) for i in range(26)] + [_bar(26, 98.0), _bar(27, 99.0), _bar(28, 103.0), _bar(29, 106.0)]
+        self.assertTrue(_is_short_entry(bars))
+
+    def test_stale_20ma_breakout_is_not_short_entry(self):
+        bars = [_bar(i, 100.0) for i in range(20)] + [_bar(20 + i, 101.0 + i) for i in range(10)]
+        self.assertFalse(_is_short_entry(bars))
+
+
+class FreshMaBreakoutTest(unittest.TestCase):
+    def test_cross_on_latest_bar_is_fresh(self):
+        closes = [100.0] * 20 + [98.0, 103.0]
+        self.assertTrue(_fresh_ma_breakout(closes, 20))
+
+    def test_cross_three_sessions_ago_is_stale(self):
+        closes = [100.0] * 20 + [98.0, 103.0, 104.0, 105.0]
+        self.assertFalse(_fresh_ma_breakout(closes, 20))
+
+    def test_fallen_back_below_ma_is_not_a_breakout(self):
+        closes = [100.0] * 20 + [98.0, 103.0, 90.0]
+        self.assertFalse(_fresh_ma_breakout(closes, 20))
+
+
 class BestEntryDisplayTest(unittest.TestCase):
     def test_best_entry_row_gets_star_label_and_top_priority(self):
         row = replace(_make_row("2330.TW", "半導體", 80.0), best_entry=True)
         self.assertEqual(_overall_focus_label(row), "★最佳買點")
         self.assertEqual(_overall_focus_priority(row), 0)
 
-    def test_notification_summary_marks_best_entry_with_star(self):
+    def test_short_entry_row_ranks_just_below_best_entry(self):
+        row = replace(_make_row("2317.TW", "電子", 75.0), short_entry=True)
+        self.assertEqual(_overall_focus_label(row), "☆短線買點")
+        self.assertEqual(_overall_focus_priority(row), 1)
+
+    def test_best_entry_wins_when_both_flags_set(self):
+        row = replace(_make_row("2330.TW", "半導體", 80.0), best_entry=True, short_entry=True)
+        self.assertEqual(_overall_focus_label(row), "★最佳買點")
+        self.assertEqual(_overall_focus_priority(row), 0)
+
+    def test_notification_summary_marks_entries_with_star_symbols(self):
         starred = replace(_make_row("2330.TW", "半導體", 80.0), best_entry=True)
+        short = replace(_make_row("2454.TW", "半導體", 76.0), short_entry=True)
         plain = _make_row("2317.TW", "電子", 70.0)
 
-        summary = notification_summary([starred, plain], Path("reports/x.md"))
+        summary = notification_summary([starred, short, plain], Path("reports/x.md"))
 
         self.assertIn("★2330.TW", summary)
+        self.assertIn("☆2454.TW", summary)
         self.assertNotIn("★2317.TW", summary)
+        self.assertNotIn("☆2317.TW", summary)
 
 
 class TechnicalStatusTest(unittest.TestCase):

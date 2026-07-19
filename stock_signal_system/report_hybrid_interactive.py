@@ -188,7 +188,7 @@ def _interactive_chart_section() -> str:
                 <p class="stock-filter-brief">以 K 值 &lt; 40、MA20 上升、盤整區間突破確認發動時點，回答「現在能不能進場」。</p>
               </section>
             </div>
-            <p class="filter-tip">三層是漏斗：品質底池 → 主力動向 → 發動確認，通過越多層可信度越高；同時滿足「站上 60MA + MACD 剛金叉」者標記為 ★最佳買點，優先顯示。勾選多層時只顯示同時命中的股票。</p>
+            <p class="filter-tip">三層是漏斗：品質底池 → 主力動向 → 發動確認，通過越多層可信度越高。買點標記：★最佳買點＝收盤剛突破 60MA 且 MACD 剛金叉；☆短線買點＝剛突破 20MA 且 MACD 剛金叉，優先度僅次於 ★。勾選多層時只顯示同時命中的股票。</p>
             <section class="chip-card">
               <h3>籌碼快照</h3>
               <div id="chipSnapshotPanel" class="chip-grid"></div>
