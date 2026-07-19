@@ -272,9 +272,10 @@ def save_candidate_csv(path: Path, symbols: tuple[str, ...]) -> Path:
     return path
 
 
-# Hard filters for the short-swing strategy: mid/low price band with real liquidity.
+# Hard filters for the short-swing strategy: real liquidity plus a floor that
+# keeps out penny stocks. No upper price cap — high-price stocks are allowed
+# in and labeled by price tier (低/中/高價位) instead.
 MIN_UNIVERSE_PRICE = 10.0
-MAX_UNIVERSE_PRICE = 50.0
 MIN_AVG_DAILY_TURNOVER_TWD = 50_000_000.0
 
 
@@ -294,7 +295,7 @@ def _load_universe_rows(path: Path) -> list[dict]:
             if flagged.get(symbol):
                 excluded_regulatory += 1
                 continue
-            if price < MIN_UNIVERSE_PRICE or price > MAX_UNIVERSE_PRICE:
+            if price < MIN_UNIVERSE_PRICE:
                 excluded_price_band += 1
                 continue
             avg_volume = _float(row.get("avg_volume_20d")) or volume

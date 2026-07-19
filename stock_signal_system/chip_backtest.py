@@ -7,7 +7,6 @@ from pathlib import Path
 
 from quant_research_platform.data import Bar
 from quant_research_platform.universe import (
-    MAX_UNIVERSE_PRICE,
     MIN_AVG_DAILY_TURNOVER_TWD,
     MIN_UNIVERSE_PRICE,
     passes_chip_breakout,
@@ -85,7 +84,7 @@ def run_chip_breakout_backtest(
                 continue
             close = price_row["close"]
             volume = price_row["volume"]
-            if close < MIN_UNIVERSE_PRICE or close > MAX_UNIVERSE_PRICE:
+            if close < MIN_UNIVERSE_PRICE:
                 continue
             if close * volume < MIN_AVG_DAILY_TURNOVER_TWD:
                 continue

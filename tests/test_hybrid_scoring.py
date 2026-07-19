@@ -23,6 +23,7 @@ from quant_research_platform.hybrid import (
     _overall_focus_label,
     _overall_focus_priority,
     _portfolio_rows,
+    _price_tier,
     _quote_intraday_status,
     _realtime_score,
     _risk_note,
@@ -236,32 +237,47 @@ class FreshMaBreakoutTest(unittest.TestCase):
 
 
 class BestEntryDisplayTest(unittest.TestCase):
-    def test_best_entry_row_gets_star_label_and_top_priority(self):
-        row = replace(_make_row("2330.TW", "半導體", 80.0), best_entry=True)
-        self.assertEqual(_overall_focus_label(row), "★最佳買點")
-        self.assertEqual(_overall_focus_priority(row), 0)
-
-    def test_short_entry_row_ranks_just_below_best_entry(self):
+    def test_short_entry_row_gets_top_priority(self):
         row = replace(_make_row("2317.TW", "電子", 75.0), short_entry=True)
         self.assertEqual(_overall_focus_label(row), "☆短線買點")
+        self.assertEqual(_overall_focus_priority(row), 0)
+
+    def test_best_entry_row_ranks_just_below_short_entry(self):
+        row = replace(_make_row("2330.TW", "半導體", 80.0), best_entry=True)
+        self.assertEqual(_overall_focus_label(row), "★最佳買點")
         self.assertEqual(_overall_focus_priority(row), 1)
 
-    def test_best_entry_wins_when_both_flags_set(self):
+    def test_both_flags_show_double_marker_at_top_priority(self):
         row = replace(_make_row("2330.TW", "半導體", 80.0), best_entry=True, short_entry=True)
-        self.assertEqual(_overall_focus_label(row), "★最佳買點")
+        self.assertEqual(_overall_focus_label(row), "☆★雙重買點")
         self.assertEqual(_overall_focus_priority(row), 0)
 
     def test_notification_summary_marks_entries_with_star_symbols(self):
         starred = replace(_make_row("2330.TW", "半導體", 80.0), best_entry=True)
         short = replace(_make_row("2454.TW", "半導體", 76.0), short_entry=True)
+        both = replace(_make_row("2603.TW", "航運", 74.0), best_entry=True, short_entry=True)
         plain = _make_row("2317.TW", "電子", 70.0)
 
-        summary = notification_summary([starred, short, plain], Path("reports/x.md"))
+        summary = notification_summary([starred, short, both, plain], Path("reports/x.md"))
 
         self.assertIn("★2330.TW", summary)
         self.assertIn("☆2454.TW", summary)
+        self.assertIn("☆★2603.TW", summary)
         self.assertNotIn("★2317.TW", summary)
         self.assertNotIn("☆2317.TW", summary)
+
+
+class PriceTierTest(unittest.TestCase):
+    def test_tier_boundaries(self):
+        self.assertEqual(_price_tier(15.0), "低價位")
+        self.assertEqual(_price_tier(29.99), "低價位")
+        self.assertEqual(_price_tier(30.0), "中價位")
+        self.assertEqual(_price_tier(80.0), "中價位")
+        self.assertEqual(_price_tier(80.5), "高價位")
+        self.assertEqual(_price_tier(600.0), "高價位")
+
+    def test_no_quote_when_price_missing(self):
+        self.assertEqual(_price_tier(0.0), "無報價")
 
 
 class TechnicalStatusTest(unittest.TestCase):

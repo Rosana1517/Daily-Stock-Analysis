@@ -103,8 +103,8 @@ class ChipBacktestTest(unittest.TestCase):
                     price_dir,
                     snapshot_date,
                     {
-                        # out of 10-50 band
-                        "9999": {"open": 80, "high": 81, "low": 79, "close": 80, "volume": 5_000_000},
+                        # below the 10-yuan floor
+                        "9999": {"open": 8, "high": 8.1, "low": 7.9, "close": 8, "volume": 5_000_000},
                         # weak chips
                         "8888": {"open": 30, "high": 30.5, "low": 29.5, "close": 30, "volume": 5_000_000},
                         # illiquid

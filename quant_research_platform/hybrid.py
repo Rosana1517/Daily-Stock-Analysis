@@ -225,8 +225,8 @@ def run_tw_hybrid(
     rows = sorted(
         rows_by_symbol.values(),
         key=lambda item: (
-            not item.best_entry,
             not item.short_entry,
+            not item.best_entry,
             not item.new_strategy_hit,
             not item.chip_radar_hit,
             not item.legacy_hit,
@@ -246,8 +246,8 @@ def run_tw_hybrid(
     rows = sorted(
         rows_by_symbol.values(),
         key=lambda item: (
-            not item.best_entry,
             not item.short_entry,
+            not item.best_entry,
             not item.new_strategy_hit,
             not item.chip_radar_hit,
             not item.legacy_hit,
@@ -817,7 +817,7 @@ def _save_report(
         '<div class="table-wrap"><table><thead><tr><th>優先級</th><th>組合</th><th>數量</th><th>風格判讀</th><th>建議動作</th><th>代表股票</th></tr></thead><tbody>',
         "".join(priority_rows_html),
         "</tbody></table></div>",
-        '<p class="section-note">優先順序：<code>★最佳買點</code> &gt; <code>☆短線買點</code> &gt; <code>三者全中</code> &gt; <code>品質底池 + 主力動向</code> &gt; <code>品質底池 + 發動確認</code> &gt; <code>主力動向 + 發動確認</code> &gt; <code>單策略命中</code>。</p>',
+        '<p class="section-note">優先順序：<code>☆短線買點</code> &gt; <code>★最佳買點</code> &gt; <code>三者全中</code> &gt; <code>品質底池 + 主力動向</code> &gt; <code>品質底池 + 發動確認</code> &gt; <code>主力動向 + 發動確認</code> &gt; <code>單策略命中</code>。</p>',
         "</section>",
         '<div id="tech-section-marker"></div>',
         *_foreign_flow_section(report_date),
@@ -1025,7 +1025,7 @@ def _candidate_analysis_block(
         '<details class="candidate-panel">',
         '<summary>候選股票分析</summary>',
         '<div class="table-wrap"><table>',
-        '<thead><tr><th>股票</th><th>名稱</th><th>產業</th><th>Hybrid</th><th>品質底池</th><th>發動確認</th><th>主力動向</th><th>停損參考(頸線)</th><th>停利參考(量測目標)</th><th>前十大主力強度</th><th>前十大主力淨買超</th><th>外資連買</th><th>主分點連買</th><th>主分點</th><th>籌碼日期</th><th>籌碼狀態</th><th>組合決策</th><th>風險註記</th></tr></thead>',
+        '<thead><tr><th>股票</th><th>名稱</th><th>產業</th><th>價位</th><th>Hybrid</th><th>品質底池</th><th>發動確認</th><th>主力動向</th><th>停損參考(頸線)</th><th>停利參考(量測目標)</th><th>前十大主力強度</th><th>前十大主力淨買超</th><th>外資連買</th><th>主分點連買</th><th>主分點</th><th>籌碼日期</th><th>籌碼狀態</th><th>組合決策</th><th>風險註記</th></tr></thead>',
         '<tbody>',
     ]
     for row in rows:
@@ -1042,7 +1042,7 @@ def _candidate_analysis_block(
         new_label = "\u662f" if row.new_strategy_hit else "\u5426"
         chip_label = "\u662f" if row.chip_radar_hit else "\u5426"
         lines.append(
-            f"<tr><td>{html.escape(row.symbol)}</td><td>{html.escape(row.name)}</td><td>{html.escape(row.industry)}</td><td>{row.hybrid_score:.1f}</td><td>{legacy_label}</td><td>{new_label}</td><td>{chip_label}</td><td>{_stop_loss_cell(row)}</td><td>{_take_profit_cell(row)}</td><td>{_chip_value(top10_main_force_buy_strength)}</td><td>{_chip_value(top10_main_force_net_buy, digits=0)}</td><td>{_chip_value(foreign_buy_streak_days, digits=0)}</td><td>{_chip_value(branch_main_force_buy_streak_days, digits=0)}</td><td>{html.escape(branch_main_force_leader or 'n/a')}</td><td>{html.escape(chip_data_date or 'n/a')}</td><td>{html.escape(chip_data_source_status or 'n/a')}</td><td>{html.escape(portfolio_decision_label(decision))}</td><td>{html.escape(row.risk_note)}</td></tr>"
+            f"<tr><td>{html.escape(row.symbol)}</td><td>{html.escape(row.name)}</td><td>{html.escape(row.industry)}</td><td>{_price_tier(row.current_close)}</td><td>{row.hybrid_score:.1f}</td><td>{legacy_label}</td><td>{new_label}</td><td>{chip_label}</td><td>{_stop_loss_cell(row)}</td><td>{_take_profit_cell(row)}</td><td>{_chip_value(top10_main_force_buy_strength)}</td><td>{_chip_value(top10_main_force_net_buy, digits=0)}</td><td>{_chip_value(foreign_buy_streak_days, digits=0)}</td><td>{_chip_value(branch_main_force_buy_streak_days, digits=0)}</td><td>{html.escape(branch_main_force_leader or 'n/a')}</td><td>{html.escape(chip_data_date or 'n/a')}</td><td>{html.escape(chip_data_source_status or 'n/a')}</td><td>{html.escape(portfolio_decision_label(decision))}</td><td>{html.escape(row.risk_note)}</td></tr>"
         )
     lines.extend(['</tbody>', '</table></div>', '</details>'])
     return lines
@@ -1063,9 +1063,9 @@ def _overall_focus_rows(rows: list[HybridRow], limit: int = 20) -> list[HybridRo
 
 
 def _overall_focus_priority(row: HybridRow) -> int:
-    if row.best_entry:
-        return 0
     if row.short_entry:
+        return 0
+    if row.best_entry:
         return 1
     if row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit:
         return 2
@@ -1085,10 +1085,12 @@ def _overall_focus_priority(row: HybridRow) -> int:
 
 
 def _overall_focus_label(row: HybridRow) -> str:
-    if row.best_entry:
-        return '★最佳買點'
+    if row.short_entry and row.best_entry:
+        return '☆★雙重買點'
     if row.short_entry:
         return '☆短線買點'
+    if row.best_entry:
+        return '★最佳買點'
     if row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit:
         return '三者全中'
     if row.legacy_hit and row.chip_radar_hit and not row.new_strategy_hit:
@@ -1107,10 +1109,12 @@ def _overall_focus_label(row: HybridRow) -> str:
 
 
 def _overall_focus_reason(row: HybridRow) -> str:
-    if row.best_entry:
-        return '收盤剛突破 60MA 且 MACD 剛形成黃金交叉'
+    if row.short_entry and row.best_entry:
+        return '收盤同時剛突破 20MA 與 60MA 且 MACD 剛形成黃金交叉'
     if row.short_entry:
         return '收盤剛突破 20MA 且 MACD 剛形成黃金交叉'
+    if row.best_entry:
+        return '收盤剛突破 60MA 且 MACD 剛形成黃金交叉'
     if row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit:
         return '品質、籌碼、發動點三者都成立'
     if row.legacy_hit and row.chip_radar_hit and not row.new_strategy_hit:
@@ -1129,10 +1133,12 @@ def _overall_focus_reason(row: HybridRow) -> str:
 
 
 def _overall_focus_action(row: HybridRow) -> str:
-    if row.best_entry:
-        return '最佳買點，第一優先'
+    if row.short_entry and row.best_entry:
+        return '雙重買點，第一優先'
     if row.short_entry:
-        return '短線買點，次優先'
+        return '短線買點，第一優先'
+    if row.best_entry:
+        return '最佳買點，次優先'
     if row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit:
         return '主清單，優先看'
     if row.legacy_hit and row.chip_radar_hit and not row.new_strategy_hit:
@@ -1372,6 +1378,7 @@ def _technical_chart_stock(row: HybridRow, bars: list[Bar], decision) -> dict:
             "bestEntry": row.best_entry,
             "shortEntry": row.short_entry,
         },
+        "priceTier": _price_tier(row.current_close),
         "signalSource": row.signal_source,
         "hybridScore": round(row.hybrid_score, 2),
         "technicalScore": round(row.technical_score, 2),
@@ -1428,6 +1435,7 @@ def _technical_chart_focus_stock(row: HybridRow, rank: int) -> dict:
         "legacyHit": row.legacy_hit,
         "bestEntry": row.best_entry,
         "shortEntry": row.short_entry,
+        "priceTier": _price_tier(row.current_close),
         "top10MainForceBuyStrength": row.top10_main_force_buy_strength,
         "top10MainForceNetBuy": row.top10_main_force_net_buy,
     }
@@ -1638,6 +1646,17 @@ def _monthly_closes(bars: list[Bar]) -> list[tuple[str, float]]:
 
 
 BEST_ENTRY_FRESH_CROSS_SESSIONS = 2
+
+
+def _price_tier(close: float) -> str:
+    """股價分類: 低價位 < 30 元, 中價位 30~80 元 (含兩端), 高價位 > 80 元."""
+    if close <= 0:
+        return "無報價"
+    if close < 30:
+        return "低價位"
+    if close <= 80:
+        return "中價位"
+    return "高價位"
 
 
 def _fresh_macd_golden_cross(closes: list[float]) -> bool:
