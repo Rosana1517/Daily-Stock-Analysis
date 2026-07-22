@@ -87,6 +87,36 @@ class ReportHtmlTest(unittest.TestCase):
         self.assertIn('data-layer="ma20Volume">', html)
         self.assertNotIn("technical-chart-data", html)
 
+    def test_hybrid_chinese_report_renders_price_tier_filter_and_zoom_controls(self):
+        markdown = """# Hybrid 台股每日分析報告 - 2026-07-20
+
+## 選股結果
+
+```technical-chart-data
+{"defaults":{},"stocks":[{"symbol":"2330.TW","name":"台積電","priceTier":"高價位","bars":[]}]}
+```
+"""
+
+        html = markdown_to_html(markdown, "Hybrid 台股每日分析報告")
+
+        # 股價分類篩選控制項
+        self.assertIn('id="tierLowToggle"', html)
+        self.assertIn('id="tierMidToggle"', html)
+        self.assertIn('id="tierHighToggle"', html)
+        self.assertIn("低價位（30 元以下）", html)
+        self.assertIn("中價位（30~80 元）", html)
+        self.assertIn("高價位（80 元以上）", html)
+        # 三個價位預設全開
+        self.assertIn('id="tierLowToggle" type="checkbox" checked', html)
+        self.assertIn('id="tierHighToggle" type="checkbox" checked', html)
+        # 縮放控制項與觸控支援
+        self.assertIn('id="zoomInBtn"', html)
+        self.assertIn('id="zoomOutBtn"', html)
+        self.assertIn('id="zoomResetBtn"', html)
+        self.assertIn('id="zoomStatus"', html)
+        self.assertIn("touch-action: pan-y", html)
+        self.assertIn("雙指縮放", html)
+
     def test_hybrid_quant_daily_report_renders_dark_dashboard(self):
         markdown = """# Hybrid Quant Daily Stock Report - 2026-05-13
 

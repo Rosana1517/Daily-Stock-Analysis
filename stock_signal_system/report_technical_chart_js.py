@@ -13,6 +13,8 @@ INTERACTIVE_CHART_JS = r"""
     pinnedBarIndex: null,
     layout: null,
     filters: {chipRadar: true, newStrategy: false, oldStrategy: false},
+    tiers: {low: true, mid: true, high: true},
+    zoom: {start: null, count: null},
     layers: {ma: true, bollinger: true, support: true, volume: true, macd: true, rsi: true, markers: false, limitUp: false, monthlyMacd: false, ma20Volume: false}
   };
   const $ = (id) => document.getElementById(id);
@@ -22,6 +24,9 @@ INTERACTIVE_CHART_JS = r"""
   let chartWidth = 0;
   let chartHeight = 0;
   let labelBoxes = [];
+  const MIN_VISIBLE_BARS = 10;
+  const drag = {active: false, moved: false, startX: 0, startViewStart: 0};
+  const pinch = {active: false, startDistance: 0, startCount: 0, startStart: 0, anchorRatio: 0.5};
   const controls = ["maShort", "maMid", "maLong", "rsiLow", "rsiHigh", "bollingerSigma"];
   const initial = {maShort: 5, maMid: 20, maLong: 60, rsiLow: 20, rsiHigh: 80, bollingerSigma: 2};
 
@@ -42,13 +47,32 @@ INTERACTIVE_CHART_JS = r"""
     return Boolean(flags.legacyMotherPoolHit ?? flags.legacy);
   }
 
+  function tierKey(stock) {
+    const tier = String(stock.priceTier || "");
+    if (tier === "低價位") return "low";
+    if (tier === "中價位") return "mid";
+    if (tier === "高價位") return "high";
+    return null;
+  }
+
+  function matchesTier(stock) {
+    const key = tierKey(stock);
+    if (key === null) return true;
+    return Boolean(state.tiers[key]);
+  }
+
+  function anyTierSelected() {
+    return state.tiers.low || state.tiers.mid || state.tiers.high;
+  }
+
   function visibleStocks() {
     const active = [];
     if (state.filters.chipRadar) active.push("chipRadar");
     if (state.filters.newStrategy) active.push("newStrategy");
     if (state.filters.oldStrategy) active.push("oldStrategy");
-    if (!active.length) return [];
+    if (!active.length || !anyTierSelected()) return [];
     return (data.stocks || []).filter((stock) => {
+      if (!matchesTier(stock)) return false;
       const checks = [];
       if (state.filters.chipRadar) checks.push(isChipRadar(stock));
       if (state.filters.newStrategy) checks.push(isNewStrategy(stock));
@@ -71,6 +95,82 @@ INTERACTIVE_CHART_JS = r"""
     return stocks[Math.min(state.stockIndex, stocks.length - 1)] || null;
   }
 
+  function totalBars() {
+    const stock = currentStock();
+    return (stock && stock.bars) ? stock.bars.length : 0;
+  }
+
+  function viewRange(total) {
+    if (!total) return {start: 0, end: 0, count: 0};
+    const minBars = Math.min(MIN_VISIBLE_BARS, total);
+    const count = clamp(state.zoom.count === null ? total : state.zoom.count, minBars, total);
+    const start = clamp(state.zoom.start === null ? total - count : state.zoom.start, 0, total - count);
+    return {start, end: start + count, count};
+  }
+
+  function resetZoom() {
+    state.zoom.start = null;
+    state.zoom.count = null;
+  }
+
+  function anchorRatioFromClientX(clientX) {
+    const layout = state.layout;
+    if (!layout) return 0.5;
+    const rect = canvas.getBoundingClientRect();
+    const plotWidth = Math.max(1, layout.width - layout.pad.left - layout.pad.right);
+    return clamp((clientX - rect.left - layout.pad.left) / plotWidth, 0, 1);
+  }
+
+  function applyZoom(factor, anchorRatio) {
+    const total = totalBars();
+    if (!total) return;
+    const view = viewRange(total);
+    const anchorIndex = view.start + anchorRatio * view.count;
+    const minBars = Math.min(MIN_VISIBLE_BARS, total);
+    const count = clamp(Math.round(view.count / factor), minBars, total);
+    state.zoom.count = count;
+    state.zoom.start = clamp(Math.round(anchorIndex - anchorRatio * count), 0, total - count);
+    state.hoveredBarIndex = null;
+    render();
+  }
+
+  function setZoomWindow(count, start) {
+    const total = totalBars();
+    if (!total) return;
+    const minBars = Math.min(MIN_VISIBLE_BARS, total);
+    const nextCount = clamp(Math.round(count), minBars, total);
+    state.zoom.count = nextCount;
+    state.zoom.start = clamp(Math.round(start), 0, total - nextCount);
+    render();
+  }
+
+  function panByBars(deltaBars) {
+    const total = totalBars();
+    if (!total) return;
+    const view = viewRange(total);
+    state.zoom.count = view.count;
+    state.zoom.start = clamp(Math.round(view.start + deltaBars), 0, total - view.count);
+    render();
+  }
+
+  function barsPerPixel() {
+    const layout = state.layout;
+    if (!layout || !layout.step) return 0;
+    return 1 / layout.step;
+  }
+
+  function updateZoomStatus() {
+    const node = $("zoomStatus");
+    if (!node) return;
+    const total = totalBars();
+    if (!total) {
+      node.textContent = "";
+      return;
+    }
+    const view = viewRange(total);
+    node.textContent = view.count >= total ? `全區間 ${total} 根 K 棒` : `顯示第 ${view.start + 1}~${view.end} 根 / 共 ${total} 根`;
+  }
+
   function init() {
     Object.keys(initial).forEach((key) => { $(key).value = defaults[key] || initial[key]; });
     $("stockSelect").addEventListener("change", () => {
@@ -78,6 +178,7 @@ INTERACTIVE_CHART_JS = r"""
       state.stockIndex = Number($("stockSelect").value || 0);
       state.hoveredBarIndex = null;
       state.pinnedBarIndex = null;
+      resetZoom();
       render();
     });
     [["chipRadarToggle", "chipRadar"], ["newStrategyToggle", "newStrategy"], ["legacyStrategyToggle", "oldStrategy"]].forEach(([id, key]) => {
@@ -87,10 +188,26 @@ INTERACTIVE_CHART_JS = r"""
         state.activeSymbol = null;
         state.hoveredBarIndex = null;
         state.pinnedBarIndex = null;
+        resetZoom();
         syncStockSelect();
         render();
       });
     });
+    [["tierLowToggle", "low"], ["tierMidToggle", "mid"], ["tierHighToggle", "high"]].forEach(([id, key]) => {
+      const node = $(id);
+      if (!node) return;
+      node.addEventListener("change", (event) => {
+        state.tiers[key] = event.target.checked;
+        state.stockIndex = 0;
+        state.activeSymbol = null;
+        state.hoveredBarIndex = null;
+        state.pinnedBarIndex = null;
+        resetZoom();
+        syncStockSelect();
+        render();
+      });
+    });
+    bindZoomControls();
     controls.forEach((id) => $(id).addEventListener("input", render));
     document.querySelectorAll("[data-layer]").forEach((item) => {
       item.addEventListener("change", () => {
@@ -99,6 +216,7 @@ INTERACTIVE_CHART_JS = r"""
       });
     });
     canvas.addEventListener("mousemove", (event) => {
+      if (drag.active) return;
       if (state.pinnedBarIndex !== null) return;
       const index = pickBarIndexFromEvent(event);
       if (index === state.hoveredBarIndex) return;
@@ -111,6 +229,10 @@ INTERACTIVE_CHART_JS = r"""
       render();
     });
     canvas.addEventListener("click", (event) => {
+      if (drag.moved) {
+        drag.moved = false;
+        return;
+      }
       const index = pickBarIndexFromEvent(event);
       if (index === null) {
         state.pinnedBarIndex = null;
@@ -125,6 +247,109 @@ INTERACTIVE_CHART_JS = r"""
     syncStockSelect();
     renderFocusWatchlist();
     render();
+  }
+
+  function bindZoomControls() {
+    const zoomIn = $("zoomInBtn");
+    const zoomOut = $("zoomOutBtn");
+    const zoomReset = $("zoomResetBtn");
+    if (zoomIn) zoomIn.addEventListener("click", () => applyZoom(1.35, 0.5));
+    if (zoomOut) zoomOut.addEventListener("click", () => applyZoom(1 / 1.35, 0.5));
+    if (zoomReset) zoomReset.addEventListener("click", () => { resetZoom(); render(); });
+
+    canvas.addEventListener("wheel", (event) => {
+      if (!totalBars()) return;
+      event.preventDefault();
+      applyZoom(event.deltaY < 0 ? 1.2 : 1 / 1.2, anchorRatioFromClientX(event.clientX));
+    }, {passive: false});
+
+    canvas.addEventListener("dblclick", (event) => {
+      event.preventDefault();
+      resetZoom();
+      render();
+    });
+
+    canvas.addEventListener("mousedown", (event) => {
+      if (event.button !== 0 || !totalBars()) return;
+      const view = viewRange(totalBars());
+      drag.active = true;
+      drag.moved = false;
+      drag.startX = event.clientX;
+      drag.startViewStart = view.start;
+      canvas.classList.add("is-panning");
+    });
+
+    window.addEventListener("mousemove", (event) => {
+      if (!drag.active) return;
+      const deltaPx = event.clientX - drag.startX;
+      if (Math.abs(deltaPx) > 3) drag.moved = true;
+      if (!drag.moved) return;
+      const view = viewRange(totalBars());
+      state.zoom.count = view.count;
+      setZoomWindow(view.count, drag.startViewStart - deltaPx * barsPerPixel());
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (!drag.active) return;
+      drag.active = false;
+      canvas.classList.remove("is-panning");
+    });
+
+    canvas.addEventListener("touchstart", (event) => {
+      if (!totalBars()) return;
+      const view = viewRange(totalBars());
+      if (event.touches.length === 2) {
+        pinch.active = true;
+        drag.active = false;
+        pinch.startDistance = touchDistance(event.touches);
+        pinch.startCount = view.count;
+        pinch.startStart = view.start;
+        pinch.anchorRatio = anchorRatioFromClientX((event.touches[0].clientX + event.touches[1].clientX) / 2);
+      } else if (event.touches.length === 1) {
+        drag.active = true;
+        drag.moved = false;
+        drag.startX = event.touches[0].clientX;
+        drag.startViewStart = view.start;
+      }
+    }, {passive: true});
+
+    canvas.addEventListener("touchmove", (event) => {
+      if (pinch.active && event.touches.length === 2) {
+        event.preventDefault();
+        const distance = touchDistance(event.touches);
+        if (pinch.startDistance <= 0) return;
+        const total = totalBars();
+        const minBars = Math.min(MIN_VISIBLE_BARS, total);
+        const count = clamp(Math.round(pinch.startCount * (pinch.startDistance / Math.max(distance, 1))), minBars, total);
+        const anchorIndex = pinch.startStart + pinch.anchorRatio * pinch.startCount;
+        setZoomWindow(count, anchorIndex - pinch.anchorRatio * count);
+        return;
+      }
+      if (drag.active && event.touches.length === 1) {
+        const deltaPx = event.touches[0].clientX - drag.startX;
+        if (Math.abs(deltaPx) <= 4) return;
+        event.preventDefault();
+        drag.moved = true;
+        const view = viewRange(totalBars());
+        setZoomWindow(view.count, drag.startViewStart - deltaPx * barsPerPixel());
+      }
+    }, {passive: false});
+
+    const endTouch = (event) => {
+      if (event.touches.length < 2) pinch.active = false;
+      if (event.touches.length === 0) {
+        drag.active = false;
+        drag.moved = false;
+      }
+    };
+    canvas.addEventListener("touchend", endTouch, {passive: true});
+    canvas.addEventListener("touchcancel", endTouch, {passive: true});
+  }
+
+  function touchDistance(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
   }
 
   function syncStockSelect() {
@@ -156,7 +381,7 @@ INTERACTIVE_CHART_JS = r"""
         <div class="focus-rank">${escapeHtml(String(item.rank || ""))}</div>
         <div class="focus-body">
           <div class="focus-title">${escapeHtml(item.symbol || "")} ${escapeHtml(item.name || "")} <span>${escapeHtml(item.label || "")}</span></div>
-          <div class="focus-note">${escapeHtml(item.reason || "")}。${escapeHtml(item.action || "")}。Hybrid ${escapeHtml(formatNumber(item.hybridScore, 1))} / 技術 ${escapeHtml(formatNumber(item.technicalScore, 1))}</div>
+          <div class="focus-note">${escapeHtml(item.reason || "")}。${escapeHtml(item.action || "")}。${item.priceTier ? escapeHtml(item.priceTier) + " / " : ""}Hybrid ${escapeHtml(formatNumber(item.hybridScore, 1))} / 技術 ${escapeHtml(formatNumber(item.technicalScore, 1))}</div>
         </div>
       </button>
     `).join("");
@@ -265,6 +490,11 @@ INTERACTIVE_CHART_JS = r"""
     if (state.filters.oldStrategy) labels.push("品質底池");
     if (state.filters.chipRadar) labels.push("主力動向");
     if (state.filters.newStrategy) labels.push("發動確認");
+    const tiers = [];
+    if (state.tiers.low) tiers.push("低價位");
+    if (state.tiers.mid) tiers.push("中價位");
+    if (state.tiers.high) tiers.push("高價位");
+    if (tiers.length && tiers.length < 3) labels.push(`價位：${tiers.join("／")}`);
     return labels;
   }
 
@@ -333,9 +563,11 @@ INTERACTIVE_CHART_JS = r"""
     const stock = currentStock();
     if (!stock) {
       renderFocusWatchlist();
-      drawEmptyState("目前沒有符合勾選條件的股票。");
+      const message = anyTierSelected() ? "目前沒有符合勾選條件的股票。" : "請至少勾選一種股價分類。";
+      drawEmptyState(message);
       const panel = $("chartInfoPanel");
-      if (panel) panel.innerHTML = '<div class="chart-info-title">目前沒有符合勾選條件的股票。</div>';
+      if (panel) panel.innerHTML = `<div class="chart-info-title">${escapeHtml(message)}</div>`;
+      updateZoomStatus();
       return;
     }
     renderFocusWatchlist();
@@ -346,6 +578,7 @@ INTERACTIVE_CHART_JS = r"""
     if (!stock.bars || stock.bars.length === 0) {
       drawEmptyState(`${stock.symbol} 缺少完整 OHLCV / 技術資料`);
       renderChartInfo(stock, params());
+      updateZoomStatus();
       return;
     }
     const ratio = window.devicePixelRatio || 1;
@@ -358,14 +591,18 @@ INTERACTIVE_CHART_JS = r"""
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     draw(stock, params(), rect.width, rect.height);
     renderChartInfo(stock, params());
+    updateZoomStatus();
   }
 
   function activeBarIndex(stock) {
     const count = (stock.bars || []).length;
     if (!count) return 0;
-    if (state.pinnedBarIndex !== null) return clamp(state.pinnedBarIndex, 0, count - 1);
-    if (state.hoveredBarIndex !== null) return clamp(state.hoveredBarIndex, 0, count - 1);
-    return count - 1;
+    const view = viewRange(count);
+    const lo = view.start;
+    const hi = Math.max(view.start, view.end - 1);
+    if (state.pinnedBarIndex !== null) return clamp(state.pinnedBarIndex, lo, hi);
+    if (state.hoveredBarIndex !== null) return clamp(state.hoveredBarIndex, lo, hi);
+    return hi;
   }
 
   function pickBarIndexFromEvent(event) {
@@ -375,8 +612,9 @@ INTERACTIVE_CHART_JS = r"""
     const x = event.clientX - rect.left;
     const layout = state.layout;
     if (x < layout.pad.left || x > layout.width - layout.pad.right) return null;
-    const raw = Math.floor((x - layout.pad.left) / Math.max(layout.step, 1));
-    return clamp(raw, 0, stock.bars.length - 1);
+    const view = layout.view || {start: 0, end: stock.bars.length};
+    const raw = view.start + Math.floor((x - layout.pad.left) / Math.max(layout.step, 1));
+    return clamp(raw, view.start, Math.max(view.start, view.end - 1));
   }
 
   function drawEmptyState(message) {
@@ -398,8 +636,6 @@ INTERACTIVE_CHART_JS = r"""
   function draw(stock, p, width, height) {
     const bars = stock.bars || [];
     const closes = bars.map((bar) => bar.close);
-    const highs = bars.map((bar) => bar.high);
-    const lows = bars.map((bar) => bar.low);
     const pad = {left: 56, right: 18, top: 30, bottom: 28};
     const panes = {
       price: {top: pad.top, height: height * 0.52},
@@ -407,19 +643,29 @@ INTERACTIVE_CHART_JS = r"""
       macd: {top: height * 0.71, height: 76},
       rsi: {top: height * 0.86, height: 62}
     };
+    const view = viewRange(bars.length);
     const chartW = width - pad.left - pad.right;
-    const step = chartW / Math.max(1, bars.length);
-    const x = (i) => pad.left + i * step + step * 0.5;
-    state.layout = {pad, panes, width, height, step};
+    const step = chartW / Math.max(1, view.count);
+    const x = (i) => pad.left + (i - view.start) * step + step * 0.5;
+    state.layout = {pad, panes, width, height, step, view};
     const maValues = [sma(closes, p.maShort), sma(closes, p.maMid), sma(closes, p.maLong)];
     const boll = bollinger(closes, p.bollingerPeriod, p.bollingerSigma);
-    const priceValues = highs.concat(lows, maValues.flat().filter(Number.isFinite), boll.upper.filter(Number.isFinite), boll.lower.filter(Number.isFinite));
+    // Price axis follows the visible window so zooming actually rescales.
+    const priceValues = [];
+    for (let i = view.start; i < view.end; i += 1) {
+      priceValues.push(bars[i].high, bars[i].low);
+      maValues.forEach((series) => { if (Number.isFinite(series[i])) priceValues.push(series[i]); });
+      if (Number.isFinite(boll.upper[i])) priceValues.push(boll.upper[i]);
+      if (Number.isFinite(boll.lower[i])) priceValues.push(boll.lower[i]);
+    }
     const priceMin = Math.min(...priceValues) * 0.995;
     const priceMax = Math.max(...priceValues) * 1.005;
     const yPrice = scale(priceMin, priceMax, panes.price.top + panes.price.height, panes.price.top);
     ctx.clearRect(0, 0, width, height);
     drawPane(panes.price, width, "價格 / K 線");
-    bars.forEach((bar, i) => drawCandle(bar, x(i), Math.max(2, step * 0.62), yPrice));
+    for (let i = view.start; i < view.end; i += 1) {
+      drawCandle(bars[i], x(i), Math.max(2, step * 0.62), yPrice);
+    }
     if (state.layers.bollinger) {
       line(boll.upper, x, yPrice, "#8b5cf6", 1.4);
       line(boll.lower, x, yPrice, "#8b5cf6", 1.4);
@@ -518,8 +764,9 @@ INTERACTIVE_CHART_JS = r"""
   function drawCrossMarkers(values, shortWindow, longWindow, x, y) {
     const shortMa = sma(values, shortWindow);
     const longMa = sma(values, longWindow);
+    const view = (state.layout && state.layout.view) || {start: 0, end: values.length};
     const markers = [];
-    for (let i = 1; i < values.length; i += 1) {
+    for (let i = Math.max(1, view.start); i < Math.min(view.end, values.length); i += 1) {
       if (!Number.isFinite(shortMa[i - 1]) || !Number.isFinite(longMa[i - 1]) || !Number.isFinite(shortMa[i]) || !Number.isFinite(longMa[i])) continue;
       const golden = shortMa[i - 1] <= longMa[i - 1] && shortMa[i] > longMa[i];
       const death = shortMa[i - 1] >= longMa[i - 1] && shortMa[i] < longMa[i];
@@ -532,8 +779,9 @@ INTERACTIVE_CHART_JS = r"""
 
   function drawMarkers(bars, x, y) {
     const signals = [];
-    const start = Math.max(3, bars.length - 45);
-    for (let i = start; i < bars.length; i += 1) {
+    const view = (state.layout && state.layout.view) || {start: 0, end: bars.length};
+    const start = Math.max(3, view.start, view.end - 45);
+    for (let i = start; i < view.end; i += 1) {
       const prev = bars.slice(i - 3, i);
       if (!prev.length) continue;
       if (bars[i].close > Math.max(...prev.map((bar) => bar.high))) {
@@ -552,8 +800,9 @@ INTERACTIVE_CHART_JS = r"""
   function drawConditionMarkers(bars, closes, x, y) {
     const signals = [];
     const ma20 = sma(closes, 20);
-    const start = Math.max(1, bars.length - 45);
-    for (let i = start; i < bars.length; i += 1) {
+    const view = (state.layout && state.layout.view) || {start: 0, end: bars.length};
+    const start = Math.max(1, view.start, view.end - 45);
+    for (let i = start; i < view.end; i += 1) {
       const previous = bars[i - 1];
       if (state.layers.limitUp && previous && bars[i].close / previous.close - 1 >= 0.095 && !hasThreeLimitUps(bars, i)) {
         signals.push({index: i, price: bars[i].high, text: "漲停", color: "#dc2626", offset: -28});
@@ -586,18 +835,27 @@ INTERACTIVE_CHART_JS = r"""
 
   function drawVolume(bars, x, step, pane, width) {
     drawPane(pane, width, "成交量");
-    const maxVol = Math.max(...bars.map((bar) => bar.volume), 1);
-    bars.forEach((bar, i) => {
+    const view = (state.layout && state.layout.view) || {start: 0, end: bars.length};
+    let maxVol = 1;
+    for (let i = view.start; i < view.end; i += 1) maxVol = Math.max(maxVol, bars[i].volume);
+    for (let i = view.start; i < view.end; i += 1) {
+      const bar = bars[i];
       const h = (bar.volume / maxVol) * (pane.height - 22);
       ctx.fillStyle = bar.close >= bar.open ? "#fecaca" : "#bbf7d0";
       ctx.fillRect(x(i) - step * 0.32, pane.top + pane.height - h, Math.max(1, step * 0.64), h);
-    });
+    }
   }
 
   function drawMacd(closes, x, pane, width, p) {
     drawPane(pane, width, "MACD");
     const macd = macdSeries(closes, p.macdFast, p.macdSlow, p.macdSignal);
-    const values = macd.hist.concat(macd.macd, macd.signal).filter(Number.isFinite);
+    const view = (state.layout && state.layout.view) || {start: 0, end: closes.length};
+    const values = [];
+    for (let i = view.start; i < view.end; i += 1) {
+      [macd.hist[i], macd.macd[i], macd.signal[i]].forEach((value) => {
+        if (Number.isFinite(value)) values.push(value);
+      });
+    }
     const min = Math.min(...values, -0.01);
     const max = Math.max(...values, 0.01);
     const y = scale(min, max, pane.top + pane.height - 8, pane.top + 18);
@@ -607,11 +865,12 @@ INTERACTIVE_CHART_JS = r"""
     ctx.moveTo(56, zero);
     ctx.lineTo(width - 18, zero);
     ctx.stroke();
-    macd.hist.forEach((value, i) => {
-      if (!Number.isFinite(value)) return;
+    for (let i = view.start; i < Math.min(view.end, macd.hist.length); i += 1) {
+      const value = macd.hist[i];
+      if (!Number.isFinite(value)) continue;
       ctx.fillStyle = value >= 0 ? "#dc2626" : "#16a34a";
       ctx.fillRect(x(i) - 2, Math.min(zero, y(value)), 4, Math.max(1, Math.abs(zero - y(value))));
-    });
+    }
     line(macd.macd, x, y, "#2563eb", 1.2);
     line(macd.signal, x, y, "#f97316", 1.2);
   }
@@ -660,19 +919,21 @@ INTERACTIVE_CHART_JS = r"""
   }
 
   function line(values, x, y, color, width) {
+    const view = (state.layout && state.layout.view) || {start: 0, end: values.length};
     ctx.strokeStyle = color;
     ctx.lineWidth = width;
     ctx.beginPath();
     let started = false;
-    values.forEach((value, i) => {
-      if (!Number.isFinite(value)) return;
+    for (let i = Math.max(0, view.start); i < Math.min(view.end, values.length); i += 1) {
+      const value = values[i];
+      if (!Number.isFinite(value)) continue;
       if (!started) {
         ctx.moveTo(x(i), y(value));
         started = true;
       } else {
         ctx.lineTo(x(i), y(value));
       }
-    });
+    }
     ctx.stroke();
     ctx.lineWidth = 1;
   }

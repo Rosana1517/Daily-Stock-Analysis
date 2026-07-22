@@ -98,8 +98,18 @@ def hybrid_interactive_markdown_to_html(markdown: str, title: str) -> str:
     .strategy-item {{ border: 1px solid #dde5ee; border-radius: 8px; background: #ffffff; padding: 10px 12px; font-size: 12px; min-height: 0; max-height: 92px; overflow: hidden; }}
     .strategy-item b {{ display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: #0f172a; margin-bottom: 4px; line-height: 1.4; }}
     .strategy-item span {{ display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: #475569; line-height: 1.5; }}
+    .tier-filter {{ margin-top: 10px; }}
+    .tier-filter-title {{ font-size: 13px; font-weight: 800; color: #1f2937; margin-bottom: 6px; }}
+    .tier-toggle {{ display: flex; align-items: center; gap: 6px; font-size: 12px; color: #334155; padding: 3px 0; }}
+    .tier-toggle input {{ width: 15px; height: 15px; }}
+    .chart-zoom-bar {{ display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }}
+    .zoom-btn {{ min-width: 40px; min-height: 34px; border: 1px solid #cbd5e1; border-radius: 8px; background: #ffffff; color: #1f2937; font-size: 15px; font-weight: 800; cursor: pointer; padding: 0 12px; }}
+    .zoom-btn:hover {{ background: #eef4fb; }}
+    .zoom-btn.zoom-reset {{ font-size: 13px; font-weight: 700; }}
+    .zoom-status {{ color: #64748b; font-size: 12px; }}
     .chart-wrap {{ padding: 16px; min-width: 0; }}
-    #technicalChart {{ width: 100%; height: 620px; display: block; border: 1px solid #d8e0ea; border-radius: 6px; background: #ffffff; }}
+    #technicalChart {{ width: 100%; height: 620px; display: block; border: 1px solid #d8e0ea; border-radius: 6px; background: #ffffff; touch-action: pan-y; cursor: grab; }}
+    #technicalChart.is-panning {{ cursor: grabbing; }}
     .chart-note {{ margin: 10px 0 0; color: #64748b; font-size: 13px; }}
     .chart-empty {{ display: grid; place-items: center; height: 100%; color: #64748b; font-size: 14px; }}
     .rss-signal-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 10px 0 18px; }}
@@ -188,7 +198,13 @@ def _interactive_chart_section() -> str:
                 <p class="stock-filter-brief">以 K 值 &lt; 40、MA20 上升、盤整區間突破確認發動時點，回答「現在能不能進場」。</p>
               </section>
             </div>
-            <p class="filter-tip">三層是漏斗：品質底池 → 主力動向 → 發動確認，通過越多層可信度越高。買點標記：☆短線買點＝收盤剛突破 20MA 且 MACD 剛金叉（第一優先）；★最佳買點＝剛突破 60MA 且 MACD 剛金叉（次優先）；同時命中顯示 ☆★。個股另標示股價分類：低價位（30 元以下）／中價位（30~80 元）／高價位（80 元以上）。勾選多層時只顯示同時命中的股票。</p>
+            <section class="stock-filter-item tier-filter">
+              <div class="tier-filter-title">股價分類</div>
+              <label class="tier-toggle"><input id="tierLowToggle" type="checkbox" checked>低價位（30 元以下）</label>
+              <label class="tier-toggle"><input id="tierMidToggle" type="checkbox" checked>中價位（30~80 元）</label>
+              <label class="tier-toggle"><input id="tierHighToggle" type="checkbox" checked>高價位（80 元以上）</label>
+            </section>
+            <p class="filter-tip">三層是漏斗：品質底池 → 主力動向 → 發動確認，通過越多層可信度越高。買點標記：☆短線買點＝收盤剛突破 20MA 且 MACD 剛金叉（第一優先）；★最佳買點＝剛突破 60MA 且 MACD 剛金叉（次優先）；同時命中顯示 ☆★。勾選多層時只顯示同時命中的股票；股價分類與漏斗層是「同時滿足」關係（綜合關注榜不受價位篩選影響，僅標示價位）。</p>
             <section class="chip-card">
               <h3>籌碼快照</h3>
               <div id="chipSnapshotPanel" class="chip-grid"></div>
@@ -231,8 +247,14 @@ def _interactive_chart_section() -> str:
             <div id="stockSummaryPanel" class="stock-summary-grid"></div>
             <div id="chartInfoPanel" class="chart-info-panel"></div>
           </div>
+          <div class="chart-zoom-bar">
+            <button type="button" id="zoomOutBtn" class="zoom-btn" title="縮小">－</button>
+            <button type="button" id="zoomInBtn" class="zoom-btn" title="放大">＋</button>
+            <button type="button" id="zoomResetBtn" class="zoom-btn zoom-reset">重設縮放</button>
+            <span id="zoomStatus" class="zoom-status"></span>
+          </div>
           <canvas id="technicalChart" width="1120" height="620"></canvas>
-          <p class="chart-note">K 線圖支援滑鼠移動與點擊定位；若顯示資料不足，代表該股缺少完整 OHLCV 或技術資料。</p>
+          <p class="chart-note">滑鼠：滾輪縮放、拖曳平移、雙擊還原、點擊定位單日 K 棒。手機：雙指縮放、單指左右拖曳平移（上下滑動仍可捲動頁面）。若顯示資料不足，代表該股缺少完整 OHLCV 或技術資料。</p>
           <details class="strategy-panel">
             <summary>策略條件摘要</summary>
             <div id="strategyContext" class="strategy-context"></div>
