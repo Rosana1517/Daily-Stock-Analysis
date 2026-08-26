@@ -46,6 +46,7 @@ from stock_signal_system.data.chip_snapshot import load_histock_broker_summaries
 from stock_signal_system.data.csv_sources import load_intraday_history, load_news
 from stock_signal_system.data.foreign_flow_trend import summarize_market_foreign_flow
 from stock_signal_system.data.foreign_futures_position import fetch_foreign_taiex_futures_position
+from stock_signal_system.data.industry_chain import INDUSTRY_CHAIN_NAMES, build_industry_chain_index, find_chain_consensus_groups
 from stock_signal_system.data.margin_balance_trend import load_recent_margin_balance_days, summarize_margin_balance_trend
 from stock_signal_system.data.pristine_index import evaluate_relative_strength, fetch_pristine_index_history
 
@@ -851,6 +852,40 @@ def _pristine_index_section(report_date: date, cache_dir: Path = Path(".cache"))
     return lines
 
 
+def _industry_chain_consensus_section(rows: list[HybridRow], cache_dir: Path = Path(".cache")) -> list[str]:
+    """產業鏈同步訊號 report block（P8）：同一產業鏈同一層（上／中／下游）內，
+    候選池個股當日同時出現 ★最佳買點／☆短線買點／◆超跌抄底 任一訊號達 2 檔
+    以上時列出。範圍刻意限定既有候選池（不主動擴大抓池外成分股，見 PRD.md
+    P8），純資訊呈現，不影響既有的 ★/☆/◆ 排序與漏斗優先順序。Degrades to a
+    placeholder line instead of failing the whole report when the chain
+    index or lookup fails."""
+    signaling = {row.symbol: row.name for row in rows if row.best_entry or row.short_entry or row.dip_reversal}
+    try:
+        index = build_industry_chain_index(cache_dir)
+        groups = find_chain_consensus_groups(signaling, index) if signaling else ()
+    except Exception as exc:
+        print(f"warning: industry_chain_consensus_failed={exc}", flush=True)
+        groups = None
+    lines = ["## 產業鏈同步訊號", ""]
+    if groups is None:
+        lines.extend(["- 產業鏈對照表暫缺，今日無法判讀同步訊號。", ""])
+        return lines
+    if not groups:
+        lines.extend(["- 今日無產業鏈同步訊號。", ""])
+        return lines
+    for group in groups:
+        chain_name = INDUSTRY_CHAIN_NAMES.get(group.ic_code, group.ic_code)
+        member_text = "、".join(f"{name}({code})" for code, name in group.members)
+        lines.append(f"- **{chain_name}－{group.tier}**：{len(group.members)} 檔同步出現進場訊號（{member_text}）")
+    lines.append(
+        '<p class="section-note">同一產業鏈同一層（上／中／下游）內，候選池個股當日同時出現'
+        "★最佳買點／☆短線買點／◆超跌抄底任一訊號達2檔以上時列出；僅涵蓋既有候選池個股，"
+        "不代表整條產業鏈全部成分股的狀態。資料來源：ic.tpex.org.tw 產業價值鏈資訊平台。</p>"
+    )
+    lines.append("")
+    return lines
+
+
 def _market_regime_line(regime_gate: MarketRegimeGate | None) -> str:
     if regime_gate is None or not regime_gate.available:
         return '<p class="section-note">大盤濾網：資料暫缺，本日突破類訊號未受篩選限制。</p>'
@@ -944,6 +979,7 @@ def _save_report(
         *_pristine_index_section(report_date),
         *_margin_balance_section(report_date),
         *_foreign_futures_section(),
+        *_industry_chain_consensus_section(rows),
         "## \u0052\u0053\u0053 \u7522\u696d\u8a0a\u865f",
         "",
         '<div class="rss-signal-grid">',
