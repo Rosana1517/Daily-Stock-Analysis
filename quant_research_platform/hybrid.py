@@ -45,6 +45,7 @@ from quant_research_platform.universe import (
 from stock_signal_system.data.chip_snapshot import load_histock_broker_summaries, load_recent_twse_institutional_days
 from stock_signal_system.data.csv_sources import load_intraday_history, load_news
 from stock_signal_system.data.foreign_flow_trend import summarize_market_foreign_flow
+from stock_signal_system.data.margin_balance_trend import load_recent_margin_balance_days, summarize_margin_balance_trend
 from stock_signal_system.data.pristine_index import evaluate_relative_strength, fetch_pristine_index_history
 
 
@@ -754,6 +755,43 @@ def _foreign_flow_section(report_date: date, cache_dir: Path = Path(".cache")) -
     return lines
 
 
+def _margin_balance_section(report_date: date, cache_dir: Path = Path(".cache")) -> list[str]:
+    """融資餘額動向 report block: market-wide margin financing balance trend
+    from cached TWSE MI_MARGN data. 連續大減=籌碼清洗訊號、單日急增=散戶追價
+    警訊，皆為原方法論的市場層級判讀，不是個股因子。Degrades to a placeholder
+    line instead of failing the whole report when data is unavailable."""
+    try:
+        days = load_recent_margin_balance_days(cache_dir, as_of=report_date, lookback_sessions=5)
+        trend = summarize_margin_balance_trend(days)
+    except Exception as exc:
+        print(f"warning: margin_balance_section_failed={exc}", flush=True)
+        trend = None
+    lines = ["## 融資餘額動向", ""]
+    if trend is None:
+        lines.extend(["- 融資餘額資料暫缺，今日無法判讀散戶籌碼動向。", ""])
+        return lines
+    streak_text = (
+        f"連續增加 {trend.streak_days} 天"
+        if trend.streak_days > 0
+        else f"連續減少 {abs(trend.streak_days)} 天" if trend.streak_days < 0 else "今日變化不大"
+    )
+    lines.append(
+        f"- 判讀：**{trend.verdict}**（{streak_text}，區間累計 {trend.window_change_thousands / 100_000.0:+.1f} 億元）"
+    )
+    lines.append("")
+    lines.append('<div class="table-wrap"><table><thead><tr><th>日期</th><th>融資餘額（億元）</th><th>當日增減（億元）</th></tr></thead><tbody>')
+    for day in trend.daily:
+        color = "#dc2626" if day.change_thousands > 0 else "#16a34a" if day.change_thousands < 0 else "#475569"
+        lines.append(
+            f"<tr><td>{day.trade_date.isoformat()}</td><td>{day.balance_thousands / 100_000.0:,.1f}</td>"
+            f'<td style="color:{color};font-weight:700;">{day.change_thousands / 100_000.0:+,.1f}</td></tr>'
+        )
+    lines.append("</tbody></table></div>")
+    lines.append('<p class="section-note">資料來源：TWSE 信用交易統計（融資金額，仟元換算為億元）；市場層級判讀，非個股因子。</p>')
+    lines.append("")
+    return lines
+
+
 PRISTINE_LOOKBACK_SESSIONS = 5
 
 
@@ -877,6 +915,7 @@ def _save_report(
         '<div id="tech-section-marker"></div>',
         *_foreign_flow_section(report_date),
         *_pristine_index_section(report_date),
+        *_margin_balance_section(report_date),
         "## \u0052\u0053\u0053 \u7522\u696d\u8a0a\u865f",
         "",
         '<div class="rss-signal-grid">',

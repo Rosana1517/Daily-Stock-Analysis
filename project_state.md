@@ -2,9 +2,10 @@
 
 ## 當前階段
 
-正在做:璞玉方法論整合(模式 C)—— P1/P2 已完成;逐項查證 P3~P7 資料源後,依 P7→P3→P6→P5 順序實作中(P7 完成)
+正在做:璞玉方法論整合(模式 C)—— P1/P2/P7/P3 已完成,依序接續 P6→P5
 
 已完成(璞玉整合輪):
+- **切片 P3「融資餘額動向」完成**:新模組 `stock_signal_system/data/margin_balance_trend.py`(`load_recent_margin_balance_days` 逐日回溯抓 TWSE MI_MARGN 融資金額,自動跳過假日;`summarize_margin_balance_trend` 純函式判讀連續增減天數,連續≥3天且累計≥300億減少→「融資急縮(籌碼清洗)」、單日≥50億增加→「融資急增(追價風險)」)。`hybrid.py` 新增「融資餘額動向」報告區塊。**範疇界定**:這是方法論原文的大盤市場層級指標,刻意不接線既有的個股層級孤島模組 `capital_flow/margin_change.py`(需要逐股 FinMind 融資資料,對每日候選掃描不划算,列為未來可選項目),PRD.md 已記錄此決定與理由。6 個新測試,175 測試全過、ruff 乾淨,已用真實資料端到端驗證(實測融資餘額 5469.4 億、正確跳過週末)
 - **資料源查證(2026-08-26)**:逐項查證 P3~P7 五項資料需求,四項找到真實免費 API、一項確認官方不公開改用替代方案:
   - P7 璞玉指數:`backend.taiwanindex.com.tw/api/indexes/IX0231/records`(從 TIP 官網前端 JS 反解出的非官方文件端點),已實測成功
   - P3 融資餘額(大盤):`www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN?response=json`,已實測成功
@@ -72,7 +73,7 @@
 
 ## 下一步
 
-- 依使用者指示的順序(P7→P3→P6→P5)繼續:P7 已完成,下一步實作 P3(接線 `capital_flow/margin_change.py` + 接 TWSE MI_MARGN 大盤融資趨勢)
+- 依使用者指示的順序(P7→P3→P6→P5)繼續:P7、P3 已完成,下一步實作 P6(外資期貨未平倉 + 官股分點買超)
 - 前一輪(K 線縮放/價位篩選)仍待使用者於每日排程後**在手機上實測**雙指縮放與單指平移
 
 ---
@@ -84,7 +85,7 @@
 | P1 | ◆超跌抄底(跌破季線+創新低+KD低檔背離),與 ★/☆ 分開標記 | 無(既有 OHLCV) | `hybrid.py`、`daily_stock_bridge.py`、`report_technical_chart_js.py`、`report_hybrid_interactive.py`、`tests/test_hybrid_scoring.py` | ✅ 已完成 |
 | P2 | 333 通用規則說明區塊(衛教式,不做個人化下單) | 無 | `hybrid.py` 報告 | ✅ 已完成 |
 | P7 | 璞玉指數 IX0231 收盤追蹤 + 大盤相對強弱 | ✅ TIP 官網逆解 API(已驗證) | `stock_signal_system/data/pristine_index.py`(新)、`hybrid.py` | ✅ 已完成 |
-| P3 | 融資餘額判讀(接既有孤島 `capital_flow/margin_change.py` + 大盤融資趨勢) | ✅ TWSE MI_MARGN API(已驗證) | `capital_flow/` 接線、新 margin trend | 🟡 下一個 |
+| P3 | 融資餘額動向(大盤市場層級,不含個股 `capital_flow/margin_change.py` 接線——列未來可選) | ✅ TWSE MI_MARGN API(已驗證) | `data/margin_balance_trend.py`(新)、`hybrid.py` | ✅ 已完成 |
 | P6 | 大盤情緒:外資期貨空單 + 官股分點買超 | ✅ TAIFEX OpenAPI(期貨部分已驗證);官股分點=資料整理非API | 新爬蟲積木 | ⬜ 待實作 |
 | P5(含P4) | 璞玉健康評分(EPS/ROE/股利 3 年連續)+ 自行重跑選股邏輯當母池(P4 完整清單官方不公開,併入此切片) | ✅ FinMind 財報(已驗證含EPS) | `models.py`、新評分函式 | ⬜ 待實作 |
 | P8 | 產業鏈上中下游群體共識判讀 | 需產業鏈對應表(尚未查證) | `industry.py` | ⬜ 待確認對應表 |
