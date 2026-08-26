@@ -52,12 +52,16 @@ INDUSTRY_CHAIN_NAMES: dict[str, str] = {
 }
 
 _TOKEN_RE = re.compile(
-    r'<div class="chain-title-panel">(上游|中游|下游)</div>'
-    r'|<div id="ic_link_([A-Za-z0-9]+)"[^>]*>(.*?)</div>',
-    re.S,
+    r'<div\b[^>]*class=["\'][^"\']*\bchain-title-panel\b[^"\']*["\'][^>]*>(上游|中游|下游)</div>'
+    r'|<div\b[^>]*id=["\']ic_link_([A-Za-z0-9]+)["\'][^>]*>(.*?)</div>',
+    re.I | re.S,
 )
-_COMPANY_BLOCK_SPLIT_RE = re.compile(r'<div id="companyList_([A-Za-z0-9]+)"')
-_COMPANY_LINK_RE = re.compile(r'<a href="company_basic\.php\?stk_code=(\d+)"[^>]*title="([^"]*)"')
+_COMPANY_BLOCK_SPLIT_RE = re.compile(
+    r'<div\b[^>]*id=["\']companyList_([A-Za-z0-9]+)["\'][^>]*>', re.I
+)
+_ANCHOR_RE = re.compile(r'<a\b[^>]*>', re.I | re.S)
+_HREF_RE = re.compile(r'href=["\']company_basic\.php\?stk_code=(\d+)["\']', re.I)
+_TITLE_RE = re.compile(r'title=["\']([^"\']*)["\']', re.I)
 _TAG_RE = re.compile(r"<[^>]+>")
 
 
@@ -118,7 +122,13 @@ def parse_industry_chain_html(html_text: str, ic_code: str) -> tuple[IndustryCha
             continue
         chunk = parts[i + 1] if i + 1 < len(parts) else ""
         subcategory_name = name_by_subcode.get(subcode, "")
-        for stock_code, raw_company_name in _COMPANY_LINK_RE.findall(chunk):
+        for anchor in _ANCHOR_RE.findall(chunk):
+            href_match = _HREF_RE.search(anchor)
+            title_match = _TITLE_RE.search(anchor)
+            if not href_match or not title_match:
+                continue
+            stock_code = href_match.group(1)
+            raw_company_name = title_match.group(1)
             key = (subcode, stock_code)
             if key in members:
                 continue
@@ -163,10 +173,14 @@ def find_chain_consensus_groups(
     (ic_code, tier) and keeps only groups with >= min_members distinct
     stocks — the "同一層同步訊號" consensus rule confirmed with the user."""
     groups: dict[tuple[str, str], dict[str, str]] = {}
+    normalized_index = {
+        _normalize_stock_code(stock_code): members for stock_code, members in index.items()
+    }
     for stock_code, company_name in signaling_symbols.items():
-        for member in index.get(stock_code, ()):
+        normalized_code = _normalize_stock_code(stock_code)
+        for member in normalized_index.get(normalized_code, ()):
             key = (member.ic_code, member.tier)
-            groups.setdefault(key, {})[stock_code] = company_name
+            groups.setdefault(key, {})[normalized_code] = company_name
 
     result = [
         ChainConsensusGroup(ic_code=ic_code, tier=tier, members=tuple(sorted(members.items())))
@@ -177,6 +191,11 @@ def find_chain_consensus_groups(
 
 
 def _clean_subcategory_name(raw_html: str) -> str:
-    text = raw_html.replace("<br/>", "").replace("<br>", "").replace("<br />", "")
+    text = re.sub(r"<br\s*/?>", "", raw_html, flags=re.I)
     text = _TAG_RE.sub("", text)
     return html.unescape(text).strip()
+
+
+def _normalize_stock_code(symbol: str) -> str:
+    """Normalize Taiwan symbols from either 2330 or 2330.TW form."""
+    return symbol.strip().upper().split(".", 1)[0]

@@ -110,6 +110,10 @@ class PipelineTest(unittest.TestCase):
                     with patch("stock_signal_system.pipeline.send_notification", return_value="disabled"):
                         run_pipeline(config, report_date=date(2026, 6, 12))
 
+            audit = (tmp_path / "tw_hybrid_2026-06-12.audit.json").read_text(encoding="utf-8")
+            self.assertIn('"timezone": "Asia/Taipei"', audit)
+            self.assertIn('"markdown_exists": true', audit)
+
             kwargs = hybrid_run.call_args.kwargs
             self.assertEqual(kwargs["stock_snapshot_path"], config.stock_path)
             self.assertEqual(kwargs["price_1h_path"], config.price_1h_path)

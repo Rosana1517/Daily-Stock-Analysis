@@ -861,8 +861,7 @@ def _industry_chain_consensus_section(rows: list[HybridRow], cache_dir: Path = P
     index or lookup fails."""
     signaling = {row.symbol: row.name for row in rows if row.best_entry or row.short_entry or row.dip_reversal}
     try:
-        index = build_industry_chain_index(cache_dir)
-        groups = find_chain_consensus_groups(signaling, index) if signaling else ()
+        groups = find_chain_consensus_groups(signaling, build_industry_chain_index(cache_dir)) if signaling else ()
     except Exception as exc:
         print(f"warning: industry_chain_consensus_failed={exc}", flush=True)
         groups = None

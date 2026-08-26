@@ -236,12 +236,17 @@ class HybridTest(unittest.TestCase):
                 universe_path=universe_path,
             )
 
-            report_path, csv_path, qlib_path, notification = run_tw_hybrid(
-                config,
-                date(2026, 4, 30),
-                news_path=None,
-                stock_snapshot_path=universe_path,
-            )
+            with patch("quant_research_platform.hybrid.load_recent_twse_institutional_days", return_value=[]), patch(
+                "quant_research_platform.hybrid.fetch_foreign_taiex_futures_position", return_value=None
+            ), patch("quant_research_platform.hybrid.fetch_pristine_index_history", return_value=[]), patch(
+                "quant_research_platform.hybrid.load_recent_margin_balance_days", return_value=[]
+            ), patch("quant_research_platform.hybrid.build_industry_chain_index", return_value={}):
+                report_path, csv_path, qlib_path, notification = run_tw_hybrid(
+                    config,
+                    date(2026, 4, 30),
+                    news_path=None,
+                    stock_snapshot_path=universe_path,
+                )
 
             self.assertTrue(report_path.exists())
             self.assertTrue(csv_path.exists())

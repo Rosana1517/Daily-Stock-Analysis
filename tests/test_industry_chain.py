@@ -160,6 +160,10 @@ class FindChainConsensusGroupsTest(unittest.TestCase):
         groups = find_chain_consensus_groups({"2345": "智易"}, self.index, min_members=1)
         self.assertEqual(groups, (ChainConsensusGroup("I000", "下游", (("2345", "智易"),)),))
 
+    def test_yahoo_tw_symbols_match_bare_tpex_codes(self):
+        groups = find_chain_consensus_groups({"2459.TW": "敦吉", "6470.TW": "宇智"}, self.index)
+        self.assertEqual(groups, (ChainConsensusGroup("I000", "上游", (("2459", "敦吉"), ("6470", "宇智"))),))
+
 
 if __name__ == "__main__":
     unittest.main()

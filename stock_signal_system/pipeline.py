@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass, replace
 from datetime import date
 from typing import Optional
@@ -124,9 +126,8 @@ def _run_quant_hybrid_pipeline(config: AppConfig, current_date: date) -> Pipelin
     )
     report = report_path.read_text(encoding="utf-8")
     html_report_path = save_report_html(config.report_dir, current_date, report)
-    public_report_url(config.report_public_base_url, html_report_path)
-    return PipelineResult(str(report_path), [], [], "disabled")
     report_url = public_report_url(config.report_public_base_url, html_report_path)
+    _save_tw_hybrid_audit(config.report_dir, current_date, report_path, html_report_path, report, config)
     notification_body = _quant_notification_body(report, str(report_path), config.notification_mode, report_url)
     notification_status = send_notification(
         title=current_date.isoformat() if config.notification_mode == "report_link" and report_url else f"Hybrid Quant 瘥?∠巨?勗? - {current_date.isoformat()}",
@@ -137,6 +138,75 @@ def _run_quant_hybrid_pipeline(config: AppConfig, current_date: date) -> Pipelin
         line_broadcast=config.line_broadcast,
     )
     return PipelineResult(str(report_path), [], [], notification_status)
+
+
+def _save_tw_hybrid_audit(
+    report_dir,
+    report_date: date,
+    markdown_path,
+    html_path,
+    report: str,
+    config: AppConfig,
+) -> None:
+    """Write the minimum Taiwan daily-review audit contract beside the report."""
+    data_gaps = []
+    if not config.price_1h_path:
+        data_gaps.append("price_1h_path 未設定，市場結構改用日線資料")
+    if not config.price_5m_path:
+        data_gaps.append("price_5m_path 未設定，流動性掃描改用日線資料")
+    if not config.quant_realtime_cache_path or not config.quant_realtime_cache_path.exists():
+        data_gaps.append("即時行情快取不存在或未設定")
+    audit = {
+        "report_date": report_date.isoformat(),
+        "timezone": "Asia/Taipei",
+        "branch": "market_day" if report_date.weekday() < 5 else "closed_market_weekend",
+        "session": "09:00-13:30 Asia/Taipei",
+        "market_scope": config.market_scope,
+        "artifacts": {
+            "markdown": str(markdown_path),
+            "html": str(html_path),
+        },
+        "sources": [
+            {"name": "TWSE", "url": "https://www.twse.com.tw/"},
+            {"name": "TPEx", "url": "https://www.tpex.org.tw/"},
+            {"name": "TPEx Industry Value Chain", "url": "https://ic.tpex.org.tw/"},
+            {"name": "RSS sources", "path": str(config.rss_sources_path) if config.rss_sources_path else None},
+        ],
+        "data_gaps": data_gaps,
+        "qa": {
+            "markdown_exists": markdown_path.exists(),
+            "html_exists": html_path.exists(),
+            "html_shell": _html_contains_document_shell(html_path),
+            "self_contained_html": _html_is_self_contained(html_path),
+            "mobile_css_present": _html_has_mobile_css(html_path),
+            "has_industry_chain_section": "## 產業鏈同步訊號" in report,
+            "has_data_gap_section": "## 資料待補清單" in report,
+            "no_investment_advice_claim": "保證獲利" not in report and "必買" not in report,
+        },
+    }
+    audit_path = report_dir / f"tw_hybrid_{report_date.isoformat()}.audit.json"
+    audit_path.write_text(json.dumps(audit, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _read_html_for_qa(html_path) -> str:
+    try:
+        return html_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return ""
+
+
+def _html_contains_document_shell(html_path) -> bool:
+    content = _read_html_for_qa(html_path).lower()
+    return "<html" in content and "</html>" in content
+
+
+def _html_is_self_contained(html_path) -> bool:
+    content = _read_html_for_qa(html_path)
+    return not bool(re.search(r"<(?:link|script|img)[^>]+(?:href|src)=https?://", content, re.I))
+
+
+def _html_has_mobile_css(html_path) -> bool:
+    return bool(re.search(r"@media[^{}]*max-width", _read_html_for_qa(html_path), re.I))
 
 
 def _first_report_sections(report: str, max_lines: int = 26) -> str:
