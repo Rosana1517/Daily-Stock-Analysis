@@ -823,18 +823,25 @@ def _margin_balance_section(report_date: date, cache_dir: Path = Path(".cache"))
 PRISTINE_LOOKBACK_SESSIONS = 5
 
 
-def _pristine_index_section(report_date: date, cache_dir: Path = Path(".cache")) -> list[str]:
+def _compute_pristine_relative_strength(report_date: date, cache_dir: Path = Path(".cache")):
+    """Fetches + computes the 璞玉指數 vs TAIEX relative-strength read once, so
+    both the markdown macro section and the interactive chart banner can
+    share the same result instead of hitting the network twice. Returns
+    None on any failure (network, parsing, insufficient history)."""
+    try:
+        points = fetch_pristine_index_history(cache_dir, as_of=report_date, lookback_days=30)
+        taiex_closes = _fetch_taiex_closes()
+        return evaluate_relative_strength(points, taiex_closes, lookback_sessions=PRISTINE_LOOKBACK_SESSIONS)
+    except Exception as exc:
+        print(f"warning: pristine_index_section_failed={exc}", flush=True)
+        return None
+
+
+def _pristine_index_section(strength) -> list[str]:
     """璞玉指數動向 report block: 臺灣璞玉指數(IX0231)近幾個交易日漲跌幅，
     對照 TAIEX 同期漲跌幅，判讀是否有「大盤重挫、璞玉抗跌」的資金避風港現象。
     Degrades to a placeholder line instead of failing the whole report when
     either data source is unavailable."""
-    try:
-        points = fetch_pristine_index_history(cache_dir, as_of=report_date, lookback_days=30)
-        taiex_closes = _fetch_taiex_closes()
-        strength = evaluate_relative_strength(points, taiex_closes, lookback_sessions=PRISTINE_LOOKBACK_SESSIONS)
-    except Exception as exc:
-        print(f"warning: pristine_index_section_failed={exc}", flush=True)
-        strength = None
     lines = ["## 璞玉指數動向", ""]
     if strength is None:
         lines.extend(["- 璞玉指數資料暫缺，今日無法判讀與大盤的相對強弱。", ""])
@@ -850,6 +857,18 @@ def _pristine_index_section(report_date: date, cache_dir: Path = Path(".cache"))
     )
     lines.append("")
     return lines
+
+
+def _pristine_banner_text(strength) -> str | None:
+    """One-line 璞玉 summary embedded into the interactive chart's technical
+    chart payload, so the 璞玉 read is visible inside 互動技術分析 itself and
+    not only in the standalone macro section above it."""
+    if strength is None:
+        return None
+    return (
+        f"{strength.verdict}（近{strength.lookback_sessions}日璞玉指數"
+        f" {strength.pristine_change_pct:+.2f}% vs TAIEX {strength.taiex_change_pct:+.2f}%）"
+    )
 
 
 def _industry_chain_consensus_section(rows: list[HybridRow], cache_dir: Path = Path(".cache")) -> list[str]:
@@ -973,7 +992,8 @@ def _save_report(
         "",
     ]
     # 第一階段：大盤溫度與璞玉主軸
-    lines.extend(_pristine_index_section(report_date))
+    pristine_strength = _compute_pristine_relative_strength(report_date)
+    lines.extend(_pristine_index_section(pristine_strength))
     lines.extend(_margin_balance_section(report_date))
     lines.extend(_foreign_futures_section())
     lines.extend(_foreign_flow_section(report_date))
@@ -1036,7 +1056,8 @@ def _save_report(
         lines.append(f"- [{industries}] {item.title}?{item.source}, {item.date.isoformat()}?")
     if not news_items:
         lines.append("- \u4eca\u65e5\u6c92\u6709\u53ef\u4f75\u5165\u5831\u544a\u7684 RSS \u65b0\u805e\u3002")
-    lines.extend(["", "```technical-chart-data", json.dumps(_technical_chart_payload(rows, bars_by_symbol, portfolio_decisions, focus_rows), ensure_ascii=False, separators=(",", ":")), "```"])
+    chart_payload = _technical_chart_payload(rows, bars_by_symbol, portfolio_decisions, focus_rows, pristine_note=_pristine_banner_text(pristine_strength))
+    lines.extend(["", "```technical-chart-data", json.dumps(chart_payload, ensure_ascii=False, separators=(",", ":")), "```"])
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -1490,8 +1511,10 @@ def _technical_chart_payload(
     bars_by_symbol: dict[str, list[Bar]],
     decisions: dict,
     focus_rows: list[HybridRow] | None = None,
+    pristine_note: str | None = None,
 ) -> dict:
     return {
+        "pristineNote": pristine_note,
         "defaults": {
             "maShort": 5,
             "maMid": 20,

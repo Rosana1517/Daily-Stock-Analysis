@@ -172,6 +172,10 @@ INTERACTIVE_CHART_JS = r"""
   }
 
   function init() {
+    const pristineNode = $("techPristineNote");
+    if (pristineNode && data.pristineNote) {
+      pristineNode.textContent = "璞玉觀點：" + data.pristineNote;
+    }
     Object.keys(initial).forEach((key) => { $(key).value = defaults[key] || initial[key]; });
     $("stockSelect").addEventListener("change", () => {
       state.activeSymbol = null;

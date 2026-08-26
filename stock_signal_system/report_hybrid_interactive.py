@@ -111,6 +111,14 @@ def hybrid_interactive_markdown_to_html(markdown: str, title: str) -> str:
     .strategy-panel summary::-webkit-details-marker {{ display: none; }}
     .strategy-panel summary::after {{ content: "展開"; float: right; color: var(--ink-soft); font-weight: 600; }}
     .strategy-panel[open] summary::after {{ content: "收合"; }}
+    .tech-pristine-note {{ display: none; padding: 10px 22px; background: #2a2115; color: #f1e3c1; font-size: 12.5px; font-family: var(--font-mono); border-bottom: 1px solid var(--line); }}
+    .tech-pristine-note:not(:empty) {{ display: block; }}
+    .filter-detail {{ margin: 10px 0 0; }}
+    .filter-detail p.control-note {{ margin: 0; padding: 12px 13px; }}
+    .advanced-field {{ padding: 12px 13px; margin: 0; }}
+    .advanced-field + .advanced-field {{ border-top: 1px solid var(--line); }}
+    .toggle-more {{ margin: 0 0 12px; }}
+    .toggle-more-body {{ margin: 0; border-top: 1px solid var(--line); border-radius: 0; }}
     .strategy-list {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; padding: 13px; }}
     .strategy-item {{ border: 1px solid var(--line); border-radius: 8px; background: var(--paper-card); padding: 10px 12px; font-size: 12px; min-height: 0; max-height: 92px; overflow: hidden; }}
     .strategy-item b {{ display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--ink); margin-bottom: 4px; line-height: 1.4; }}
@@ -193,6 +201,7 @@ def _interactive_chart_section() -> str:
         <h2>互動技術分析</h2>
         <div class="tech-meta">均線交叉、MACD、RSI、布林通道、K 線型態與量價檢查</div>
       </div>
+      <div id="techPristineNote" class="tech-pristine-note"></div>
       <div class="tech-grid">
         <aside class="tech-controls">
           <div class="field">
@@ -222,30 +231,37 @@ def _interactive_chart_section() -> str:
               <label class="tier-toggle"><input id="tierMidToggle" type="checkbox" checked>中價位（30~80 元）</label>
               <label class="tier-toggle"><input id="tierHighToggle" type="checkbox" checked>高價位（80 元以上）</label>
             </section>
-            <p class="filter-tip">三層是漏斗：品質底池 → 主力動向 → 發動確認，通過越多層可信度越高。買點標記(各自獨立)：☆短線買點＝剛突破 20MA+MACD 剛金叉(右側,第一優先);★最佳買點＝剛突破 60MA+MACD 剛金叉(右側,次優先);◆超跌抄底＝跌破季線且創波段新低但 KD 低檔背離(左側搶反彈,嚴設停損)。勾選多層時只顯示同時命中的股票;股價分類與漏斗層是「同時滿足」關係(綜合關注榜不受價位篩選影響,僅標示價位)。</p>
+            <p class="filter-tip">三層漏斗：品質底池 → 主力動向 → 發動確認，通過越多層可信度越高；☆★◆ 買點標記彼此獨立，互不影響。</p>
+            <details class="strategy-panel filter-detail">
+              <summary>訊號定義說明</summary>
+              <p class="control-note">☆短線買點＝剛突破 20MA+MACD 剛金叉(右側,第一優先)；★最佳買點＝剛突破 60MA+MACD 剛金叉(右側,次優先)；◆超跌抄底＝跌破季線且創波段新低但 KD 低檔背離(左側搶反彈,嚴設停損)。勾選多層時只顯示同時命中的股票；股價分類與漏斗層是「同時滿足」關係(綜合關注榜不受價位篩選影響，僅標示價位)。</p>
+            </details>
             <section class="chip-card">
               <h3>籌碼快照</h3>
               <div id="chipSnapshotPanel" class="chip-grid"></div>
             </section>
           </div>
-          <div class="field">
-            <label>均線參數</label>
-            <div class="number-row">
-              <label class="control-cell" for="maShort"><span>短均線</span><input id="maShort" type="number" min="2" max="80" title="短均線"><small>5 代表近 5 根 K 線平均，看短線動能。</small></label>
-              <label class="control-cell" for="maMid"><span>中均線</span><input id="maMid" type="number" min="3" max="120" title="中均線"><small>20 代表近 20 根平均，看波段方向。</small></label>
-              <label class="control-cell" for="maLong"><span>長均線</span><input id="maLong" type="number" min="5" max="240" title="長均線"><small>60 代表近 60 根平均，看主要趨勢。</small></label>
+          <details class="strategy-panel">
+            <summary>進階圖表參數（均線／RSI／布林，選填）</summary>
+            <div class="field advanced-field">
+              <label>均線參數</label>
+              <div class="number-row">
+                <label class="control-cell" for="maShort"><span>短均線</span><input id="maShort" type="number" min="2" max="80" title="短均線"><small>5 代表近 5 根 K 線平均，看短線動能。</small></label>
+                <label class="control-cell" for="maMid"><span>中均線</span><input id="maMid" type="number" min="3" max="120" title="中均線"><small>20 代表近 20 根平均，看波段方向。</small></label>
+                <label class="control-cell" for="maLong"><span>長均線</span><input id="maLong" type="number" min="5" max="240" title="長均線"><small>60 代表近 60 根平均，看主要趨勢。</small></label>
+              </div>
+              <p class="control-note">短均線看短線，中均線看波段，長均線看主要趨勢；短均線上穿中均線常代表黃金交叉。</p>
             </div>
-            <p class="control-note">短均線看短線，中均線看波段，長均線看主要趨勢；短均線上穿中均線常代表黃金交叉。</p>
-          </div>
-          <div class="field">
-            <label>RSI / 布林</label>
-            <div class="number-row">
-              <label class="control-cell" for="rsiLow"><span>RSI 低檔線</span><input id="rsiLow" type="number" min="1" max="50" title="RSI 低檔線"><small>20 以下常代表低檔或弱勢鈍化。</small></label>
-              <label class="control-cell" for="rsiHigh"><span>RSI 過熱線</span><input id="rsiHigh" type="number" min="50" max="99" title="RSI 過熱線"><small>80 以上常代表過熱或追高風險。</small></label>
-              <label class="control-cell" for="bollingerSigma"><span>布林倍數</span><input id="bollingerSigma" type="number" min="1" max="4" step="0.5" title="布林倍數"><small>2 代表上下緣約 2 倍標準差。</small></label>
+            <div class="field advanced-field">
+              <label>RSI / 布林</label>
+              <div class="number-row">
+                <label class="control-cell" for="rsiLow"><span>RSI 低檔線</span><input id="rsiLow" type="number" min="1" max="50" title="RSI 低檔線"><small>20 以下常代表低檔或弱勢鈍化。</small></label>
+                <label class="control-cell" for="rsiHigh"><span>RSI 過熱線</span><input id="rsiHigh" type="number" min="50" max="99" title="RSI 過熱線"><small>80 以上常代表過熱或追高風險。</small></label>
+                <label class="control-cell" for="bollingerSigma"><span>布林倍數</span><input id="bollingerSigma" type="number" min="1" max="4" step="0.5" title="布林倍數"><small>2 代表上下緣約 2 倍標準差。</small></label>
+              </div>
+              <p class="control-note">RSI 低檔線用來看低檔鈍化，過熱線用來看追高風險；布林倍數越大，突破門檻越嚴格。</p>
             </div>
-            <p class="control-note">RSI 低檔線用來看低檔鈍化，過熱線用來看追高風險；布林倍數越大，突破門檻越嚴格。</p>
-          </div>
+          </details>
         </aside>
         <div class="chart-wrap">
           <div class="chart-toolbar">
@@ -257,11 +273,16 @@ def _interactive_chart_section() -> str:
               <label><input type="checkbox" data-layer="volume" checked> 成交量</label>
               <label><input type="checkbox" data-layer="macd" checked> MACD</label>
               <label><input type="checkbox" data-layer="rsi" checked> RSI</label>
-              <label><input type="checkbox" data-layer="markers"> K 線型態標記</label>
-              <label><input type="checkbox" data-layer="limitUp"> 近十日漲停標記</label>
-              <label><input type="checkbox" data-layer="monthlyMacd"> 月均線 / MACD 金叉</label>
-              <label><input type="checkbox" data-layer="ma20Volume"> MA20 附近量價放大</label>
             </fieldset>
+            <details class="strategy-panel toggle-more">
+              <summary>更多標記（選用）</summary>
+              <fieldset class="toggles chart-toggles toggle-more-body">
+                <label><input type="checkbox" data-layer="markers"> K 線型態標記</label>
+                <label><input type="checkbox" data-layer="limitUp"> 近十日漲停標記</label>
+                <label><input type="checkbox" data-layer="monthlyMacd"> 月均線 / MACD 金叉</label>
+                <label><input type="checkbox" data-layer="ma20Volume"> MA20 附近量價放大</label>
+              </fieldset>
+            </details>
             <div id="stockSummaryPanel" class="stock-summary-grid"></div>
             <div id="chartInfoPanel" class="chart-info-panel"></div>
           </div>
