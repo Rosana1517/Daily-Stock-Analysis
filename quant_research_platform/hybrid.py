@@ -1059,15 +1059,13 @@ def _save_report(
     pristine_strength = _compute_pristine_relative_strength(report_date)
     lines.extend(_pristine_index_section(pristine_strength))
     lines.extend(_pristine_watchlist_section(rows, report_date))
-    # 融資餘額/外資期貨/外資動向/產業鏈同步訊號/RSS 產業訊號
-    # 這五個區塊改用卡片併排呈現（見 report_hybrid_interactive.py 的
-    # .report-grid），避免逐一全寬堆疊把頁面拉得太長。
-    lines.append('<div class="report-grid report-grid--cards">')
+    # 融資餘額/外資期貨/外資動向/RSS 產業訊號 這四個區塊兩兩併排（見
+    # report_hybrid_interactive.py 的 .report-grid--two），卡片夠寬、內容
+    # 不會擠成好幾行反而更高。產業鏈同步訊號長度不固定，緊接在後單獨佔一整排。
+    lines.append('<div class="report-grid report-grid--two">')
     lines.extend(_margin_balance_section(report_date))
     lines.extend(_foreign_futures_section())
     lines.extend(_foreign_flow_section(report_date))
-    # 第二階段：產業鏈與產業訊號
-    lines.extend(_industry_chain_consensus_section(rows))
     lines.extend([
         '<article class="report-card">',
         "## \u0052\u0053\u0053 \u7522\u696d\u8a0a\u865f",
@@ -1079,6 +1077,7 @@ def _save_report(
         "</article>",
     ])
     lines.append("</div>")
+    lines.extend(_industry_chain_consensus_section(rows))
     # 第三階段：個股選股與進場（互動 K 線圖為核心功能，緊接在優先順序表後）
     lines.extend([
         '<section class="report-card">',

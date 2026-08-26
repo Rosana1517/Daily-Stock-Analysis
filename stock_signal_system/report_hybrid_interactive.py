@@ -143,10 +143,9 @@ def hybrid_interactive_markdown_to_html(markdown: str, title: str) -> str:
     .rss-signal-card h3 {{ margin: 0 0 8px; font-size: 16px; font-family: var(--font-display); font-weight: 700; color: var(--ink); }}
     .rss-signal-card p {{ margin: 4px 0; color: var(--ink-soft); font-size: 13px; }}
     .rss-signal-card .rss-score {{ color: var(--brass-deep); font-weight: 800; font-family: var(--font-mono); }}
-    .report-grid {{ display: grid; gap: 14px; margin: 18px 0 22px; }}
+    .report-grid {{ display: grid; gap: 10px; margin: 16px 0 20px; align-items: start; }}
     .report-grid--two {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
-    .report-grid--cards {{ grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; }}
-    .report-grid--cards .report-card {{ margin: 0; height: 100%; }}
+    .report-grid--two .report-card {{ margin: 0; height: 100%; }}
     .report-card {{ border: 1px solid var(--line); border-radius: 14px; background: var(--paper-card); padding: 16px; overflow: hidden; box-shadow: 0 16px 32px -28px rgba(60,45,20,.4); }}
     .report-card h2 {{ margin-top: 0; margin-bottom: 12px; border-bottom: 0; padding-bottom: 0; padding-left: 0; border-left: 0; font-size: 18px; }}
     .report-card .table-wrap {{ margin-bottom: 0; }}
