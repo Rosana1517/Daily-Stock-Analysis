@@ -5,23 +5,91 @@ from __future__ import annotations
 import html
 import re
 
+GOOGLE_FONTS_LINK = """<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;700;900&display=swap" rel="stylesheet">"""
+
 BASIC_REPORT_CSS = """
-    body { margin: 0; background: #f6f7f9; color: #202124; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif; line-height: 1.7; }
-    main { max-width: 1040px; margin: 0 auto; padding: 28px 18px 56px; background: #fff; min-height: 100vh; }
-    h1 { font-size: 28px; margin: 0 0 20px; }
-    h2 { font-size: 21px; margin: 28px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #e5e7eb; }
-    h3 { font-size: 18px; margin: 22px 0 8px; }
-    p { margin: 8px 0; }
+    :root {
+      --ink: #1c1712;
+      --ink-soft: #5b5348;
+      --paper: #faf6ee;
+      --paper-card: #fffdf8;
+      --line: #e6ddc9;
+      --brass: #a97327;
+      --brass-deep: #7c5419;
+      --up: #b3261e;
+      --down: #1f7a4d;
+      --font-display: "Noto Serif TC", "Times New Text", serif;
+      --font-body: "Noto Sans TC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(ellipse 900px 480px at 12% -8%, rgba(169,115,39,.10), transparent 60%),
+        var(--paper);
+      color: var(--ink);
+      font-family: var(--font-body);
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+    }
+    main {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 34px 20px 64px;
+      background: var(--paper-card);
+      min-height: 100vh;
+      border-left: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      box-shadow: 0 0 0 1px rgba(28,23,18,.02);
+    }
+    h1 {
+      font-family: var(--font-display);
+      font-weight: 900;
+      font-size: 30px;
+      letter-spacing: .01em;
+      margin: 0 0 6px;
+      color: var(--ink);
+      position: relative;
+      padding-bottom: 16px;
+    }
+    h1::after {
+      content: "";
+      position: absolute; left: 0; bottom: 0;
+      width: 64px; height: 3px;
+      background: linear-gradient(90deg, var(--brass), transparent);
+      border-radius: 2px;
+    }
+    h2 {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 20px;
+      letter-spacing: .01em;
+      margin: 34px 0 12px;
+      padding: 0 0 8px 14px;
+      border-bottom: 1px solid var(--line);
+      border-left: 3px solid var(--brass);
+      color: #2a2115;
+    }
+    h3 { font-family: var(--font-display); font-weight: 700; font-size: 16px; margin: 22px 0 8px; color: #2a2115; }
+    p { margin: 8px 0; color: var(--ink-soft); }
     ul { padding-left: 22px; margin: 8px 0 16px; }
-    li { margin: 5px 0; }
-    .table-wrap { overflow-x: auto; margin: 10px 0 22px; border: 1px solid #e5e7eb; border-radius: 8px; }
-    table { width: 100%; border-collapse: collapse; min-width: 860px; font-size: 14px; }
-    th, td { padding: 9px 10px; border-bottom: 1px solid #edf0f3; text-align: left; vertical-align: top; }
-    th { background: #f8fafc; font-weight: 700; color: #111827; }
-    tr:nth-child(even) td { background: #fbfcfd; }
+    li { margin: 6px 0; color: var(--ink-soft); }
+    .table-wrap { overflow-x: auto; margin: 12px 0 24px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); }
+    table { width: 100%; border-collapse: collapse; min-width: 860px; font-size: 13.5px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-variant-numeric: tabular-nums; }
+    th { background: #f3ecdb; font-family: var(--font-mono); font-weight: 600; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--brass-deep); }
+    tr:nth-child(even) td { background: #fbf8f1; }
     tr:last-child td { border-bottom: 0; }
-    strong { font-weight: 700; }
-    @media (max-width: 560px) { main { padding: 20px 14px 44px; } h1 { font-size: 23px; } h2 { font-size: 19px; } }
+    tr:hover td { background: #f6efdd; }
+    strong { font-weight: 700; color: var(--ink); }
+    code { font-family: var(--font-mono); background: #f1ead6; padding: 1px 5px; border-radius: 4px; font-size: .92em; }
+    @media (max-width: 560px) {
+      main { padding: 22px 14px 48px; border-left: 0; border-right: 0; }
+      h1 { font-size: 24px; }
+      h2 { font-size: 18px; }
+    }
 """
 
 

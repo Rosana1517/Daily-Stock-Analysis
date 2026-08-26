@@ -16,7 +16,7 @@ from pathlib import Path
 from stock_signal_system.models import IndustrySignal, StockRecommendation
 from stock_signal_system.report_hybrid_dashboard import hybrid_markdown_to_html
 from stock_signal_system.report_hybrid_interactive import hybrid_interactive_markdown_to_html
-from stock_signal_system.report_markdown import BASIC_REPORT_CSS, markdown_title, render_markdown_body
+from stock_signal_system.report_markdown import BASIC_REPORT_CSS, GOOGLE_FONTS_LINK, markdown_title, render_markdown_body
 from stock_signal_system.report_retention import prune_report_artifacts
 from stock_signal_system.translation import zh_text
 
@@ -129,6 +129,7 @@ def markdown_to_html(markdown: str, title: str) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{html.escape(title)}</title>
+  {GOOGLE_FONTS_LINK}
   <style>
     {BASIC_REPORT_CSS}
   </style>

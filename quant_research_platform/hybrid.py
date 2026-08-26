@@ -961,11 +961,34 @@ def _save_report(
     else:
         data_limited_html.append("<li>目前沒有資料待補股票。</li>")
 
+    # 版面順序以璞玉方法論為主軸，依「大盤溫度 → 資金與籌碼面 → 產業面 →
+    # 個股選股與進場（含互動 K 線圖） → 操作建議與紀律 → 附錄」的閱讀動線排列，
+    # 而非依開發時間先後堆疊。璞玉指數動向緊接大盤濾網之後，作為每日開場的
+    # 主軸定調；333 翻倍計畫（部位管理原則）移到候選個股之後、附錄之前，緊接
+    # 在報告結論後，呼應「先看結論、再看紀律」的操作順序。
     lines = [
         f"# Hybrid \u53f0\u80a1\u6bcf\u65e5\u5206\u6790\u5831\u544a - {report_date.isoformat()}",
         "",
         _market_regime_line(regime_gate),
         "",
+    ]
+    # 第一階段：大盤溫度與璞玉主軸
+    lines.extend(_pristine_index_section(report_date))
+    lines.extend(_margin_balance_section(report_date))
+    lines.extend(_foreign_futures_section())
+    lines.extend(_foreign_flow_section(report_date))
+    # 第二階段：產業鏈與產業訊號
+    lines.extend(_industry_chain_consensus_section(rows))
+    lines.extend([
+        "## \u0052\u0053\u0053 \u7522\u696d\u8a0a\u865f",
+        "",
+        '<div class="rss-signal-grid">',
+        "".join(rss_cards_html),
+        "</div>",
+        "",
+    ])
+    # 第三階段：個股選股與進場（互動 K 線圖為核心功能，緊接在優先順序表後）
+    lines.extend([
         '<section class="report-card">',
         "<h2>選股優先順序表</h2>",
         '<div class="table-wrap"><table><thead><tr><th>優先級</th><th>組合</th><th>數量</th><th>風格判讀</th><th>建議動作</th><th>代表股票</th></tr></thead><tbody>',
@@ -974,17 +997,13 @@ def _save_report(
         '<p class="section-note">優先順序：<code>☆短線買點</code> &gt; <code>★最佳買點</code> &gt; <code>◆超跌抄底</code> &gt; <code>三者全中</code> &gt; <code>品質底池 + 主力動向</code> &gt; <code>品質底池 + 發動確認</code> &gt; <code>主力動向 + 發動確認</code> &gt; <code>單策略命中</code>。</p>',
         "</section>",
         '<div id="tech-section-marker"></div>',
-        *_foreign_flow_section(report_date),
-        *_pristine_index_section(report_date),
-        *_margin_balance_section(report_date),
-        *_foreign_futures_section(),
-        *_industry_chain_consensus_section(rows),
-        "## \u0052\u0053\u0053 \u7522\u696d\u8a0a\u865f",
-        "",
-        '<div class="rss-signal-grid">',
-        "".join(rss_cards_html),
-        "</div>",
-        "",
+    ])
+    lines.extend(_candidate_analysis_block(rows, portfolio_decisions, chip_snapshot_by_symbol))
+    # 第四階段：操作建議與紀律（結論 → 333 翻倍計畫部位管理）
+    lines.extend(_recommendation_section(recommendation_summary))
+    lines.extend(_position_management_playbook_section())
+    # 附錄：資料缺口、投組模擬、驗證指標、權重診斷、新聞
+    lines.extend([
         "## \u8cc7\u6599\u5f85\u88dc\u6e05\u55ae",
         "",
         "<ul>",
@@ -1003,9 +1022,10 @@ def _save_report(
         f"- \u52dd\u7387\uff1a{_format_rate(getattr(getattr(backtest, 'validation', None), 'win_rate', None))}",
         f"- False positive rate\uff1a{_format_rate(getattr(getattr(backtest, 'validation', None), 'false_positive_rate', None))}",
         f"- \u5e73\u5747\u5be6\u73fe\u5831\u916c\uff1a{_format_rate(getattr(getattr(backtest, 'validation', None), 'average_realized_return', None))}",
-    ]
+    ])
     if backtest.benchmark_return is not None:
         lines.append(f"- \u57fa\u6e96\u5831\u916c\uff1a{backtest.benchmark_return:.2%}")
+    lines.extend(_weight_diagnostics_section())
     lines.extend([
         "",
         "## \u65b0\u805e\u5feb\u8a0a",
@@ -1016,10 +1036,6 @@ def _save_report(
         lines.append(f"- [{industries}] {item.title}?{item.source}, {item.date.isoformat()}?")
     if not news_items:
         lines.append("- \u4eca\u65e5\u6c92\u6709\u53ef\u4f75\u5165\u5831\u544a\u7684 RSS \u65b0\u805e\u3002")
-    lines.extend(_recommendation_section(recommendation_summary))
-    lines.extend(_position_management_playbook_section())
-    lines.extend(_weight_diagnostics_section())
-    lines.extend(_candidate_analysis_block(rows, portfolio_decisions, chip_snapshot_by_symbol))
     lines.extend(["", "```technical-chart-data", json.dumps(_technical_chart_payload(rows, bars_by_symbol, portfolio_decisions, focus_rows), ensure_ascii=False, separators=(",", ":")), "```"])
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
