@@ -86,12 +86,16 @@ INTERACTIVE_CHART_JS = r"""
   }
 
   function currentStock() {
+    // 綜合關注榜不受側欄篩選（漏斗層／股價分類）影響，因此點擊時優先用
+    // symbol 直接查全量清單；只有沒有 activeSymbol 時才退回目前篩選後的
+    // stockSelect 清單。先前誤用 visibleStocks() 查找 activeSymbol，導致
+    // 被篩選條件排除在外的關注榜個股點了沒反應（K 線圖不會切換）。
+    if (state.activeSymbol) {
+      const direct = stockBySymbol(state.activeSymbol);
+      if (direct) return direct;
+    }
     const stocks = visibleStocks();
     if (!stocks.length) return null;
-    if (state.activeSymbol) {
-      const match = stocks.find((stock) => stock.symbol === state.activeSymbol);
-      if (match) return match;
-    }
     return stocks[Math.min(state.stockIndex, stocks.length - 1)] || null;
   }
 

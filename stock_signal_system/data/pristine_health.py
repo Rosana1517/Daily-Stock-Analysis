@@ -19,6 +19,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
+
+from stock_signal_system.data.finmind import FinMindClient
+
+# 財報/資產負債表/股利公告一年只更新幾次，用長 TTL 快取讓「璞玉選股名單」
+# 這種每日重跑的功能，除了第一天以外大多是重複使用快取，不必每天真的打
+# FinMind。FinMindClient 本身也有 >=6.5 秒/次的節流，掃全部候選池不可行
+# （見 hybrid.py 的 PRISTINE_WATCHLIST_MAX_CANDIDATES 上限說明）。
+FUNDAMENTALS_TTL_SECONDS = 30 * 24 * 3600
 
 
 @dataclass(frozen=True)
@@ -113,6 +122,79 @@ def build_dividend_years(dividend_rows: list[dict]) -> frozenset:
         if year is not None:
             years.add(year)
     return frozenset(years)
+
+
+def fetch_fundamentals_for_symbol(
+    symbol: str,
+    cache_dir: Path,
+    as_of_date: str,
+    current_close: float | None = None,
+    token: str | None = None,
+) -> StockFundamentals | None:
+    """Pulls the three FinMind datasets this module needs for one stock and
+    assembles a StockFundamentals. Returns None if FinMind has no rows for
+    this symbol at all; raises on network/HTTP failure so the caller can
+    log and skip (see hybrid.py's _pristine_watchlist_section) rather than
+    silently treating a real outage as "this stock has no data"."""
+    stock_id = symbol.split(".")[0]
+    client = FinMindClient(cache_dir, token=token)
+    start_date = f"{int(as_of_date[:4]) - 4}-01-01"
+    statements = client.taiwan_stock_financial_statements(stock_id, start_date, as_of_date, ttl_seconds=FUNDAMENTALS_TTL_SECONDS)
+    balance = client.taiwan_stock_balance_sheet(stock_id, start_date, as_of_date, ttl_seconds=FUNDAMENTALS_TTL_SECONDS)
+    dividends = client.taiwan_stock_dividend(stock_id, start_date, as_of_date, ttl_seconds=FUNDAMENTALS_TTL_SECONDS)
+    if not statements:
+        return None
+    return build_fundamentals_from_finmind_rows(symbol, statements, balance, dividends, current_close=current_close)
+
+
+def build_fundamentals_from_finmind_rows(
+    symbol: str,
+    statements: list[dict],
+    balance: list[dict],
+    dividends: list[dict],
+    current_close: float | None = None,
+) -> StockFundamentals:
+    """Pure assembly step split out from fetch_fundamentals_for_symbol so it
+    can be unit-tested offline with hand-built FinMind-shaped rows."""
+    eps_rows = [(str(row.get("date", "")), _to_float(row.get("value"))) for row in statements if row.get("type") == "EPS"]
+    eps_rows.sort(key=lambda item: item[0], reverse=True)
+    quarterly_eps = tuple(value for _, value in eps_rows[:REQUIRED_CONSECUTIVE_QUARTERS])
+    annual_eps = build_annual_eps(eps_rows)
+    dividend_years = build_dividend_years(dividends)
+
+    income_rows = [(str(row.get("date", "")), _to_float(row.get("value"))) for row in statements if row.get("type") == "IncomeAfterTaxes"]
+    income_rows.sort(key=lambda item: item[0], reverse=True)
+    ttm_net_income = sum(value for _, value in income_rows[:REQUIRED_CONSECUTIVE_QUARTERS]) if income_rows else None
+
+    equity = _latest_balance_value(balance, "Equity")
+    liabilities = _latest_balance_value(balance, "Liabilities")
+    total_assets = _latest_balance_value(balance, "TotalAssets")
+
+    pe_ratio = None
+    if current_close and quarterly_eps:
+        ttm_eps = sum(quarterly_eps)
+        if ttm_eps > 0:
+            pe_ratio = current_close / ttm_eps
+
+    return StockFundamentals(
+        symbol=symbol,
+        quarterly_eps=quarterly_eps,
+        annual_eps=annual_eps,
+        dividend_years=dividend_years,
+        equity=equity,
+        liabilities=liabilities,
+        total_assets=total_assets,
+        ttm_net_income=ttm_net_income,
+        pe_ratio=pe_ratio,
+    )
+
+
+def _latest_balance_value(rows: list[dict], type_name: str) -> float | None:
+    matches = [(str(row.get("date", "")), _to_float(row.get("value"))) for row in rows if row.get("type") == type_name]
+    if not matches:
+        return None
+    matches.sort(key=lambda item: item[0], reverse=True)
+    return matches[0][1]
 
 
 def _year_from_date(date_str: str) -> int | None:

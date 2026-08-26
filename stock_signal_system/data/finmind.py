@@ -17,22 +17,22 @@ class FinMindClient:
     def taiwan_stock_price(self, stock_id: str, start_date: str, end_date: str) -> list[dict]:
         return self._fetch_dataset("TaiwanStockPrice", stock_id, start_date, end_date)
 
-    def taiwan_stock_financial_statements(self, stock_id: str, start_date: str, end_date: str) -> list[dict]:
+    def taiwan_stock_financial_statements(self, stock_id: str, start_date: str, end_date: str, ttl_seconds: int = 3600 * 12) -> list[dict]:
         """Long-format quarterly income-statement rows (one row per {date, type}),
         e.g. type="EPS", type="IncomeAfterTaxes", type="Revenue"."""
-        return self._fetch_dataset("TaiwanStockFinancialStatements", stock_id, start_date, end_date)
+        return self._fetch_dataset("TaiwanStockFinancialStatements", stock_id, start_date, end_date, ttl_seconds=ttl_seconds)
 
-    def taiwan_stock_balance_sheet(self, stock_id: str, start_date: str, end_date: str) -> list[dict]:
+    def taiwan_stock_balance_sheet(self, stock_id: str, start_date: str, end_date: str, ttl_seconds: int = 3600 * 12) -> list[dict]:
         """Long-format quarterly balance-sheet rows, e.g. type="Equity",
         type="Liabilities", type="TotalAssets"."""
-        return self._fetch_dataset("TaiwanStockBalanceSheet", stock_id, start_date, end_date)
+        return self._fetch_dataset("TaiwanStockBalanceSheet", stock_id, start_date, end_date, ttl_seconds=ttl_seconds)
 
-    def taiwan_stock_dividend(self, stock_id: str, start_date: str, end_date: str) -> list[dict]:
+    def taiwan_stock_dividend(self, stock_id: str, start_date: str, end_date: str, ttl_seconds: int = 3600 * 12) -> list[dict]:
         """One row per dividend event, with CashEarningsDistribution /
         StockEarningsDistribution amounts and an ex-dividend `date`."""
-        return self._fetch_dataset("TaiwanStockDividend", stock_id, start_date, end_date)
+        return self._fetch_dataset("TaiwanStockDividend", stock_id, start_date, end_date, ttl_seconds=ttl_seconds)
 
-    def _fetch_dataset(self, dataset: str, stock_id: str, start_date: str, end_date: str) -> list[dict]:
+    def _fetch_dataset(self, dataset: str, stock_id: str, start_date: str, end_date: str, ttl_seconds: int = 3600 * 12) -> list[dict]:
         params = {
             "dataset": dataset,
             "data_id": stock_id,
@@ -45,7 +45,7 @@ class FinMindClient:
             FINMIND_DATA_URL,
             params=params,
             cache_key=f"finmind_{dataset}_{stock_id}_{start_date}_{end_date}",
-            ttl_seconds=3600 * 12,
+            ttl_seconds=ttl_seconds,
         )
         if payload.get("status") != 200:
             raise RuntimeError(f"FinMind error: {payload}")

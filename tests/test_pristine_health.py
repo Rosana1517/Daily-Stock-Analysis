@@ -6,6 +6,7 @@ from stock_signal_system.data.pristine_health import (
     StockFundamentals,
     build_annual_eps,
     build_dividend_years,
+    build_fundamentals_from_finmind_rows,
     compute_debt_ratio_pct,
     compute_roe_pct,
     describe_valuation,
@@ -112,6 +113,56 @@ class BuildDividendYearsTest(unittest.TestCase):
 
     def test_empty_rows_returns_empty_set(self):
         self.assertEqual(build_dividend_years([]), frozenset())
+
+
+class BuildFundamentalsFromFinmindRowsTest(unittest.TestCase):
+    def test_assembles_quarterly_and_annual_eps_from_long_format_statements(self):
+        statements = [
+            {"date": "2026-06-30", "type": "EPS", "value": 2.0},
+            {"date": "2026-03-31", "type": "EPS", "value": 2.2},
+            {"date": "2025-12-31", "type": "EPS", "value": 2.1},
+            {"date": "2025-09-30", "type": "EPS", "value": 1.9},
+            {"date": "2025-06-30", "type": "EPS", "value": 1.8},
+            {"date": "2026-06-30", "type": "IncomeAfterTaxes", "value": 100.0},
+            {"date": "2026-03-31", "type": "IncomeAfterTaxes", "value": 110.0},
+            {"date": "2025-12-31", "type": "IncomeAfterTaxes", "value": 105.0},
+            {"date": "2025-09-30", "type": "IncomeAfterTaxes", "value": 95.0},
+        ]
+        balance = [
+            {"date": "2026-06-30", "type": "Equity", "value": 1000.0},
+            {"date": "2026-06-30", "type": "Liabilities", "value": 300.0},
+            {"date": "2026-06-30", "type": "TotalAssets", "value": 1300.0},
+        ]
+        fundamentals = build_fundamentals_from_finmind_rows("2330", statements, balance, [])
+
+        self.assertEqual(fundamentals.quarterly_eps, (2.0, 2.2, 2.1, 1.9))
+        self.assertAlmostEqual(fundamentals.annual_eps[2026], 4.2)
+        self.assertEqual(fundamentals.equity, 1000.0)
+        self.assertEqual(fundamentals.liabilities, 300.0)
+        self.assertEqual(fundamentals.total_assets, 1300.0)
+        self.assertAlmostEqual(fundamentals.ttm_net_income, 410.0)
+
+    def test_computes_pe_ratio_from_current_close_and_ttm_eps(self):
+        statements = [{"date": f"2026-0{q}-01", "type": "EPS", "value": 1.0} for q in range(1, 5)]
+        fundamentals = build_fundamentals_from_finmind_rows("2330", statements, [], [], current_close=40.0)
+        self.assertAlmostEqual(fundamentals.pe_ratio, 10.0)
+
+    def test_pe_ratio_none_when_ttm_eps_not_positive(self):
+        statements = [{"date": "2026-01-01", "type": "EPS", "value": -1.0}]
+        fundamentals = build_fundamentals_from_finmind_rows("2330", statements, [], [], current_close=40.0)
+        self.assertIsNone(fundamentals.pe_ratio)
+
+    def test_missing_balance_sheet_rows_yield_none(self):
+        fundamentals = build_fundamentals_from_finmind_rows("2330", [], [], [])
+        self.assertIsNone(fundamentals.equity)
+        self.assertIsNone(fundamentals.liabilities)
+        self.assertIsNone(fundamentals.total_assets)
+        self.assertIsNone(fundamentals.ttm_net_income)
+
+    def test_dividend_years_pass_through(self):
+        dividends = [{"date": "2025-07-15", "CashEarningsDistribution": 2.0, "StockEarningsDistribution": 0.0}]
+        fundamentals = build_fundamentals_from_finmind_rows("2330", [], [], dividends)
+        self.assertEqual(fundamentals.dividend_years, frozenset({2025}))
 
 
 if __name__ == "__main__":

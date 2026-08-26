@@ -240,7 +240,9 @@ class HybridTest(unittest.TestCase):
                 "quant_research_platform.hybrid.fetch_foreign_taiex_futures_position", return_value=None
             ), patch("quant_research_platform.hybrid.fetch_pristine_index_history", return_value=[]), patch(
                 "quant_research_platform.hybrid.load_recent_margin_balance_days", return_value=[]
-            ), patch("quant_research_platform.hybrid.build_industry_chain_index", return_value={}):
+            ), patch("quant_research_platform.hybrid.build_industry_chain_index", return_value={}), patch(
+                "quant_research_platform.hybrid.fetch_fundamentals_for_symbol", return_value=None
+            ):
                 report_path, csv_path, qlib_path, notification = run_tw_hybrid(
                     config,
                     date(2026, 4, 30),

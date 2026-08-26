@@ -148,8 +148,8 @@ def hybrid_interactive_markdown_to_html(markdown: str, title: str) -> str:
     .report-card {{ border: 1px solid var(--line); border-radius: 14px; background: var(--paper-card); padding: 16px; overflow: hidden; box-shadow: 0 16px 32px -28px rgba(60,45,20,.4); }}
     .report-card h2 {{ margin-top: 0; margin-bottom: 12px; border-bottom: 0; padding-bottom: 0; padding-left: 0; border-left: 0; font-size: 18px; }}
     .report-card .table-wrap {{ margin-bottom: 0; }}
-    .report-card .table-wrap table {{ font-size: 12px; min-width: 760px; }}
-    .report-card .table-wrap th, .report-card .table-wrap td {{ padding: 7px 8px; line-height: 1.45; }}
+    .report-card .table-wrap table {{ font-size: 13.5px; min-width: 640px; }}
+    .report-card .table-wrap th, .report-card .table-wrap td {{ padding: 8px 10px; line-height: 1.5; }}
     .report-card .scroll-box {{ max-height: 380px; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; background: #f6f0e2; padding: 10px 12px; }}
     .report-card .section-note {{ margin: 0 0 8px; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }}
     .candidate-panel {{ margin: 14px 0 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper-card); overflow: hidden; }}
@@ -158,6 +158,15 @@ def hybrid_interactive_markdown_to_html(markdown: str, title: str) -> str:
     .candidate-panel summary::after {{ content: "展開"; float: right; color: var(--ink-soft); font-weight: 600; }}
     .candidate-panel[open] summary::after {{ content: "收合"; }}
     .candidate-panel .table-wrap {{ margin: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }}
+    .candidate-panel > .table-wrap table {{ font-size: 14px; min-width: 620px; }}
+    .candidate-panel > .table-wrap th, .candidate-panel > .table-wrap td {{ padding: 9px 11px; line-height: 1.5; }}
+    .candidate-detail-panel {{ border: 0; border-top: 1px solid var(--line); border-radius: 0; background: #f8f4e8; }}
+    .candidate-detail-panel summary {{ list-style: none; cursor: pointer; padding: 9px 13px; color: var(--ink-soft); font-size: 12.5px; font-weight: 700; }}
+    .candidate-detail-panel summary::-webkit-details-marker {{ display: none; }}
+    .candidate-detail-panel summary::after {{ content: "展開"; float: right; color: var(--ink-soft); font-weight: 600; }}
+    .candidate-detail-panel[open] summary::after {{ content: "收合"; }}
+    .candidate-detail-panel .table-wrap {{ margin: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }}
+    .candidate-detail-panel .table-wrap table {{ font-size: 12px; min-width: 860px; }}
     details > summary {{ cursor: pointer; font-weight: 700; }}
     details[open] > summary {{ margin-bottom: 8px; }}
     @media (max-width: 980px) {{ .stock-summary-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}

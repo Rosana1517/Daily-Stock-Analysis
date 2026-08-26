@@ -48,6 +48,7 @@ from stock_signal_system.data.foreign_flow_trend import summarize_market_foreign
 from stock_signal_system.data.foreign_futures_position import fetch_foreign_taiex_futures_position
 from stock_signal_system.data.industry_chain import INDUSTRY_CHAIN_NAMES, build_industry_chain_index, find_chain_consensus_groups
 from stock_signal_system.data.margin_balance_trend import load_recent_margin_balance_days, summarize_margin_balance_trend
+from stock_signal_system.data.pristine_health import compute_debt_ratio_pct, compute_roe_pct, describe_valuation, evaluate_pristine_screen, fetch_fundamentals_for_symbol
 from stock_signal_system.data.pristine_index import evaluate_relative_strength, fetch_pristine_index_history
 
 
@@ -408,6 +409,7 @@ def _enrich_report_chip_snapshots(
     try:
         twse_days = load_recent_twse_institutional_days(cache_dir, as_of=report_date, lookback_sessions=3)
         if not twse_days:
+            print("warning: chip_snapshot_enrichment_skipped reason=no_twse_institutional_days", flush=True)
             return chip_snapshot_by_symbol
         broker_summaries = load_histock_broker_summaries(
             cache_dir,
@@ -416,7 +418,8 @@ def _enrich_report_chip_snapshots(
             latest_volume_by_symbol,
             broker_lookback_sessions=min(3, len(twse_days)),
         )
-    except Exception:
+    except Exception as exc:
+        print(f"warning: chip_snapshot_enrichment_failed symbols={len(missing_symbols)} error={exc}", flush=True)
         return chip_snapshot_by_symbol
 
     for symbol, summary in broker_summaries.items():
@@ -904,6 +907,63 @@ def _industry_chain_consensus_section(rows: list[HybridRow], cache_dir: Path = P
     return lines
 
 
+PRISTINE_WATCHLIST_MAX_CANDIDATES = 15
+
+
+def _pristine_watchlist_section(rows: list[HybridRow], report_date: date, cache_dir: Path = Path(".cache")) -> list[str]:
+    """璞玉選股名單 report block: re-runs the official TIP 璞玉 EPS/dividend
+    screen (see pristine_health.py, P5) against today's candidates so
+    readers see which of them are genuine 璞玉-grade picks, not just a
+    standalone macro index number.
+
+    Deliberately scoped to only the top PRISTINE_WATCHLIST_MAX_CANDIDATES
+    candidates by hybrid_score, not the full daily candidate pool (~90
+    symbols): FinMind's fundamentals endpoints are rate-limited (the shared
+    client enforces >=6.5s between requests), so a full-pool scan would add
+    25+ minutes to every report run. Fundamentals are cached for 30 days
+    (see FUNDAMENTALS_TTL_SECONDS) since financial statements/dividends
+    barely change day to day, so most days reuse the cache and this stays
+    fast. Any symbol whose fetch fails is logged and skipped rather than
+    silently dropped — this is a scan of a bounded subset, not a claim that
+    non-listed candidates fail the screen."""
+    candidates = sorted(rows, key=lambda row: -(row.hybrid_score or 0.0))[:PRISTINE_WATCHLIST_MAX_CANDIDATES]
+    passed: list[tuple[HybridRow, object]] = []
+    for row in candidates:
+        try:
+            fundamentals = fetch_fundamentals_for_symbol(row.symbol, cache_dir, report_date.isoformat(), current_close=row.current_close)
+        except Exception as exc:
+            print(f"warning: pristine_watchlist_fetch_failed symbol={row.symbol} error={exc}", flush=True)
+            continue
+        if fundamentals is None:
+            continue
+        if evaluate_pristine_screen(fundamentals).passes:
+            passed.append((row, fundamentals))
+
+    lines = ["## 璞玉選股名單", ""]
+    lines.append(
+        f'<p class="section-note">依 TIP 官方揭露的璞玉篩選規則（最近4季+3年EPS皆為正、最近3年皆配息）'
+        f"重跑今日候選中 Hybrid 分數最高的 {len(candidates)} 檔（FinMind 財報有速率限制，僅掃描候選子集，非母池全篩）。</p>"
+    )
+    if not passed:
+        lines.extend(["- 今日檢視的候選中沒有通過璞玉篩選規則的標的。", ""])
+        return lines
+    lines.append(
+        '<div class="table-wrap"><table><thead><tr><th>股票</th><th>名稱</th><th>ROE</th><th>負債比</th><th>估值判讀</th></tr></thead><tbody>'
+    )
+    for row, fundamentals in passed:
+        roe = compute_roe_pct(fundamentals)
+        debt_ratio = compute_debt_ratio_pct(fundamentals)
+        roe_text = f"{roe:.1f}%" if roe is not None else "n/a"
+        debt_text = f"{debt_ratio:.1f}%" if debt_ratio is not None else "n/a"
+        lines.append(
+            f"<tr><td>{html.escape(row.symbol)}</td><td>{html.escape(row.name)}</td><td>{roe_text}</td>"
+            f"<td>{debt_text}</td><td>{html.escape(describe_valuation(fundamentals.pe_ratio))}</td></tr>"
+        )
+    lines.append("</tbody></table></div>")
+    lines.append("")
+    return lines
+
+
 def _market_regime_line(regime_gate: MarketRegimeGate | None) -> str:
     if regime_gate is None or not regime_gate.available:
         return '<p class="section-note">大盤濾網：資料暫缺，本日突破類訊號未受篩選限制。</p>'
@@ -994,6 +1054,7 @@ def _save_report(
     # 第一階段：大盤溫度與璞玉主軸
     pristine_strength = _compute_pristine_relative_strength(report_date)
     lines.extend(_pristine_index_section(pristine_strength))
+    lines.extend(_pristine_watchlist_section(rows, report_date))
     lines.extend(_margin_balance_section(report_date))
     lines.extend(_foreign_futures_section())
     lines.extend(_foreign_flow_section(report_date))
@@ -1217,11 +1278,20 @@ def _candidate_analysis_block(
     portfolio_decisions: dict[str, AgentDecision],
     chip_snapshot_by_symbol: dict[str, dict[str, object]],
 ) -> list[str]:
+    # 20 欄的單一表格太密、不易判讀，拆成「核心決策欄」常駐表格
+    # + 「漏斗與籌碼細節」巾套收合表格。股票代碼在兩張表都保留，
+    # 方便對照。
     lines = [
         '<details class="candidate-panel">',
         '<summary>候選股票分析</summary>',
         '<div class="table-wrap"><table>',
-        '<thead><tr><th>股票</th><th>名稱</th><th>產業</th><th>價位</th><th>Hybrid</th><th>品質底池</th><th>發動確認</th><th>主力動向</th><th>停損參考(頸線)</th><th>停利參考(量測目標)</th><th>前十大主力強度</th><th>前十大主力淨買超</th><th>官股買超</th><th>外資連買</th><th>主分點連買</th><th>主分點</th><th>籌碼日期</th><th>籌碼狀態</th><th>組合決策</th><th>風險註記</th></tr></thead>',
+        '<thead><tr><th>股票</th><th>名稱</th><th>產業</th><th>價位</th><th>Hybrid</th><th>停損參考(頸線)</th><th>停利參考(量測目標)</th><th>組合決策</th><th>風險註記</th></tr></thead>',
+        '<tbody>',
+    ]
+    detail_rows = [
+        '<summary>漏斗與籌碼細節（選用）</summary>',
+        '<div class="table-wrap"><table>',
+        '<thead><tr><th>股票</th><th>品質底池</th><th>發動確認</th><th>主力動向</th><th>前十大主力強度</th><th>前十大主力淨買超</th><th>官股買超</th><th>外資連買</th><th>主分點連買</th><th>主分點</th><th>籌碼日期</th><th>籌碼狀態</th></tr></thead>',
         '<tbody>',
     ]
     for row in rows:
@@ -1235,13 +1305,21 @@ def _candidate_analysis_block(
         branch_main_force_leader = str(snapshot.get("branch_main_force_leader", "")).strip() or row.branch_main_force_leader
         chip_data_date = str(snapshot.get("chip_data_date", "")).strip() or row.chip_data_date
         chip_data_source_status = str(snapshot.get("chip_data_source_status", "")).strip() or row.chip_data_source_status
-        legacy_label = "\u662f" if row.legacy_hit else "\u5426"
-        new_label = "\u662f" if row.new_strategy_hit else "\u5426"
-        chip_label = "\u662f" if row.chip_radar_hit else "\u5426"
+        legacy_label = "是" if row.legacy_hit else "否"
+        new_label = "是" if row.new_strategy_hit else "否"
+        chip_label = "是" if row.chip_radar_hit else "否"
         lines.append(
-            f"<tr><td>{html.escape(row.symbol)}</td><td>{html.escape(row.name)}</td><td>{html.escape(row.industry)}</td><td>{_price_tier(row.current_close)}</td><td>{row.hybrid_score:.1f}</td><td>{legacy_label}</td><td>{new_label}</td><td>{chip_label}</td><td>{_stop_loss_cell(row)}</td><td>{_take_profit_cell(row)}</td><td>{_chip_value(top10_main_force_buy_strength)}</td><td>{_chip_value(top10_main_force_net_buy, digits=0)}</td><td>{_chip_value(official_broker_net_buy, digits=0)}</td><td>{_chip_value(foreign_buy_streak_days, digits=0)}</td><td>{_chip_value(branch_main_force_buy_streak_days, digits=0)}</td><td>{html.escape(branch_main_force_leader or 'n/a')}</td><td>{html.escape(chip_data_date or 'n/a')}</td><td>{html.escape(chip_data_source_status or 'n/a')}</td><td>{html.escape(portfolio_decision_label(decision))}</td><td>{html.escape(row.risk_note)}</td></tr>"
+            f"<tr><td>{html.escape(row.symbol)}</td><td>{html.escape(row.name)}</td><td>{html.escape(row.industry)}</td><td>{_price_tier(row.current_close)}</td><td>{row.hybrid_score:.1f}</td><td>{_stop_loss_cell(row)}</td><td>{_take_profit_cell(row)}</td><td>{html.escape(portfolio_decision_label(decision))}</td><td>{html.escape(row.risk_note)}</td></tr>"
         )
-    lines.extend(['</tbody>', '</table></div>', '</details>'])
+        detail_rows.append(
+            f"<tr><td>{html.escape(row.symbol)}</td><td>{legacy_label}</td><td>{new_label}</td><td>{chip_label}</td><td>{_chip_value(top10_main_force_buy_strength)}</td><td>{_chip_value(top10_main_force_net_buy, digits=0)}</td><td>{_chip_value(official_broker_net_buy, digits=0)}</td><td>{_chip_value(foreign_buy_streak_days, digits=0)}</td><td>{_chip_value(branch_main_force_buy_streak_days, digits=0)}</td><td>{html.escape(branch_main_force_leader or 'n/a')}</td><td>{html.escape(chip_data_date or 'n/a')}</td><td>{html.escape(chip_data_source_status or 'n/a')}</td></tr>"
+        )
+    lines.extend(['</tbody>', '</table></div>'])
+    detail_rows.extend(['</tbody>', '</table></div>'])
+    lines.append('<details class="candidate-detail-panel">')
+    lines.extend(detail_rows)
+    lines.append('</details>')
+    lines.append('</details>')
     return lines
 
 
