@@ -24,6 +24,7 @@ from quant_research_platform.hybrid import (
     _overall_focus_label,
     _overall_focus_priority,
     _portfolio_rows,
+    _position_management_playbook_section,
     _price_tier,
     _quote_intraday_status,
     _realtime_score,
@@ -221,6 +222,23 @@ class ShortEntryTest(unittest.TestCase):
     def test_stale_20ma_breakout_is_not_short_entry(self):
         bars = [_bar(i, 100.0) for i in range(20)] + [_bar(20 + i, 101.0 + i) for i in range(10)]
         self.assertFalse(_is_short_entry(bars))
+
+
+class PositionManagementPlaybookSectionTest(unittest.TestCase):
+    def test_is_generic_education_with_no_personalized_advice(self):
+        lines = _position_management_playbook_section()
+        text = "\n".join(lines)
+
+        self.assertIn("333 翻倍計畫", text)
+        self.assertIn("30%", text)
+        self.assertIn("不追蹤個人部位", text)
+        self.assertIn("不下單", text)
+        self.assertIn("不提供個人化投資建議", text)
+        # Static explainer only — must not reference any specific symbol/holding.
+        self.assertNotIn(".TW", text)
+
+    def test_content_is_static_across_calls(self):
+        self.assertEqual(_position_management_playbook_section(), _position_management_playbook_section())
 
 
 class DipReversalTest(unittest.TestCase):

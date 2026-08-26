@@ -700,6 +700,24 @@ def _recommendation_section(summary) -> list[str]:
     return lines
 
 
+def _position_management_playbook_section() -> list[str]:
+    """333 翻倍計畫: a static, generic position-management explainer (no
+    per-user holdings, no buy/sell instructions). Educational reference only
+    — the system never tracks or advises on anyone's actual positions, per
+    the "no personalized investment advice" boundary in PRD.md."""
+    return [
+        "",
+        "## 部位管理原則（333 翻倍計畫，通用教育說明）",
+        "",
+        '<p class="section-note">以下為一般性資金管理概念，不是針對任何人實際持股的操作建議；本系統不追蹤個人部位、不下單、不提供個人化投資建議。</p>',
+        "- **核心概念**：與其死守套牢股等它漲回原價（腰斬 50% 需上漲 100% 才能解套），不如把每一趟操作的獲利目標設在約 30%（實務上可依技術壓力區在 25%~40% 間彈性調整）。",
+        "- **出場時機參考**：股價反彈接近月線／季線密集套牢區、或成交量異常暴增時，可考慮先了結一趟，而非等待更高點。",
+        "- **再進場參考**：出場後可等待拉回守穩支撐再重新加碼同一檔，或轉往另一檔剛跌深、打底完成的標的。",
+        "- **複利效果**：連續 3 趟每趟約 30% 的價差操作，理論上約可累積 1.3³ ≈ 2.2 倍（即接近 100% 總報酬），不需要苦等單一持股原地漲回。",
+        "- 以上僅為觀念說明，實際進出場時機、部位大小與風險承受度請自行判斷，或洽詢專業投資顧問。",
+    ]
+
+
 def _foreign_flow_section(report_date: date, cache_dir: Path = Path(".cache")) -> list[str]:
     """外資動向 report block: last ~10 sessions of market-wide foreign net
     buy/sell aggregated from cached TWSE T86 data. Degrades to a placeholder
@@ -863,6 +881,7 @@ def _save_report(
     if not news_items:
         lines.append("- \u4eca\u65e5\u6c92\u6709\u53ef\u4f75\u5165\u5831\u544a\u7684 RSS \u65b0\u805e\u3002")
     lines.extend(_recommendation_section(recommendation_summary))
+    lines.extend(_position_management_playbook_section())
     lines.extend(_weight_diagnostics_section())
     lines.extend(_candidate_analysis_block(rows, portfolio_decisions, chip_snapshot_by_symbol))
     lines.extend(["", "```technical-chart-data", json.dumps(_technical_chart_payload(rows, bars_by_symbol, portfolio_decisions, focus_rows), ensure_ascii=False, separators=(",", ":")), "```"])
