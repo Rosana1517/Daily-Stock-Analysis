@@ -409,6 +409,7 @@ INTERACTIVE_CHART_JS = r"""
     const metrics = [
       ["前十大主力強度", formatNumber(chip.top10MainForceBuyStrength, 1)],
       ["前十大主力淨買超", formatNumber(chip.top10MainForceNetBuy, 0)],
+      ["官股買超(股)", chip.officialBrokerNetBuy ? formatNumber(chip.officialBrokerNetBuy, 0) : "無官股買超紀錄"],
       ["外資連買天數", formatNumber(chip.foreignBuyStreakDays, 0)],
       ["主分點連買天數", formatNumber(chip.branchMainForceBuyStreakDays, 0)],
       ["主分點名稱", chip.branchMainForceLeader || "n/a"],

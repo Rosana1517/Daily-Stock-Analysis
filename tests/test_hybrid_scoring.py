@@ -61,6 +61,7 @@ def _make_row(symbol: str, industry: str, hybrid_score: float) -> HybridRow:
         take_profit_price=34.0,
         top10_main_force_buy_strength=None,
         top10_main_force_net_buy=None,
+        official_broker_net_buy=None,
         foreign_buy_streak_days=None,
         branch_main_force_buy_streak_days=None,
         branch_main_force_leader="",

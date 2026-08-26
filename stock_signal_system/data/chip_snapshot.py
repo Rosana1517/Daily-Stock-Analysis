@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from stock_signal_system.data.broker_source import fetch_histock_branch_snapshot
+from stock_signal_system.data.official_broker import is_official_bank_broker
 from stock_signal_system.data.rate_limit import RateLimitedHttpClient
 
 
@@ -39,6 +40,7 @@ class BrokerChipSummary:
     chip_data_date: str
     chip_data_source: str
     chip_data_source_status: str
+    official_broker_net_buy: int = 0
 
 
 def build_tw_chip_snapshot_csv(
@@ -87,6 +89,7 @@ def build_tw_chip_snapshot_csv(
             # compatibility grace period
             "top10_main_force_buy_strength_proxy",
             "institutional_main_force_strength_proxy",
+            "official_broker_net_buy",
         ]
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
@@ -170,6 +173,7 @@ def load_histock_broker_summaries(
             chip_data_date=summary.chip_data_date,
             chip_data_source=summary.chip_data_source,
             chip_data_source_status=f"{summary.chip_data_source_status}|rank={rank_by_symbol.get(symbol, 0)}",
+            official_broker_net_buy=summary.official_broker_net_buy,
         )
     return normalized
 
@@ -202,6 +206,7 @@ def _summarize_broker_snapshots(
     leader = top_buy_trades[0].broker if top_buy_trades else ""
     streak = _positive_leader_streak(valid, leader)
     strength = _top10_main_force_strength(total_net_buy, latest_volume)
+    official_net_buy = sum(trade.net_shares for trade in top_buy_trades if is_official_bank_broker(trade.broker))
     return BrokerChipSummary(
         symbol=symbol,
         top10_main_force_buy_strength=strength,
@@ -212,6 +217,7 @@ def _summarize_broker_snapshots(
         chip_data_date=(latest.trade_date.isoformat() if latest.trade_date else ""),
         chip_data_source="TWSE T86 official + HiStock branch",
         chip_data_source_status="official+broker",
+        official_broker_net_buy=official_net_buy,
     )
 
 
@@ -294,6 +300,7 @@ def _build_chip_rows_from_twse_days(
             "branch_main_force_leader": broker.branch_main_force_leader if broker else "",
             "top10_main_force_buy_strength_proxy": f"{proxy_strength:.1f}",
             "institutional_main_force_strength_proxy": f"{proxy_strength:.1f}",
+            "official_broker_net_buy": str(broker.official_broker_net_buy) if broker else "",
         }
         results.append(row)
     return results

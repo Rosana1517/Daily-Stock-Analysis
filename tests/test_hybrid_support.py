@@ -62,6 +62,7 @@ def _hybrid_row(
         take_profit_price=115.0,
         top10_main_force_buy_strength=70.0,
         top10_main_force_net_buy=1000.0,
+        official_broker_net_buy=None,
         foreign_buy_streak_days=4.0,
         branch_main_force_buy_streak_days=3.0,
         branch_main_force_leader="凱基-台北",

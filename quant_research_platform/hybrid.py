@@ -45,6 +45,7 @@ from quant_research_platform.universe import (
 from stock_signal_system.data.chip_snapshot import load_histock_broker_summaries, load_recent_twse_institutional_days
 from stock_signal_system.data.csv_sources import load_intraday_history, load_news
 from stock_signal_system.data.foreign_flow_trend import summarize_market_foreign_flow
+from stock_signal_system.data.foreign_futures_position import fetch_foreign_taiex_futures_position
 from stock_signal_system.data.margin_balance_trend import load_recent_margin_balance_days, summarize_margin_balance_trend
 from stock_signal_system.data.pristine_index import evaluate_relative_strength, fetch_pristine_index_history
 
@@ -75,6 +76,7 @@ class HybridRow:
     take_profit_price: float | None
     top10_main_force_buy_strength: float | None
     top10_main_force_net_buy: float | None
+    official_broker_net_buy: float | None
     foreign_buy_streak_days: float | None
     branch_main_force_buy_streak_days: float | None
     branch_main_force_leader: str
@@ -199,6 +201,7 @@ def run_tw_hybrid(
             take_profit_price=platform_measured_move_target(bars_by_symbol.get(symbol, [])),
             top10_main_force_buy_strength=_optional_float(chip_snapshot, "top10_main_force_buy_strength", "top10_main_force_buy_strength_proxy"),
             top10_main_force_net_buy=_optional_float(chip_snapshot, "top10_main_force_net_buy"),
+            official_broker_net_buy=_optional_float(chip_snapshot, "official_broker_net_buy"),
             foreign_buy_streak_days=_optional_float(chip_snapshot, "foreign_buy_streak_days"),
             branch_main_force_buy_streak_days=_optional_float(chip_snapshot, "branch_main_force_buy_streak_days"),
             branch_main_force_leader=str(chip_snapshot.get("branch_main_force_leader", "")).strip(),
@@ -755,6 +758,30 @@ def _foreign_flow_section(report_date: date, cache_dir: Path = Path(".cache")) -
     return lines
 
 
+def _foreign_futures_section(cache_dir: Path = Path(".cache")) -> list[str]:
+    """外資期貨未平倉 report block: TAIFEX only exposes the latest trading day
+    via this endpoint (no historical lookback), so this is a snapshot with a
+    caution note rather than a trend. Degrades to a placeholder line instead
+    of failing the whole report when data is unavailable."""
+    try:
+        position = fetch_foreign_taiex_futures_position(cache_dir)
+    except Exception as exc:
+        print(f"warning: foreign_futures_section_failed={exc}", flush=True)
+        position = None
+    lines = ["## 外資期貨未平倉", ""]
+    if position is None:
+        lines.extend(["- 外資期貨未平倉資料暫缺，今日無法判讀。", ""])
+        return lines
+    direction = "淨多單" if position.net_contracts >= 0 else "淨空單"
+    lines.append(
+        f"- {position.trade_date.isoformat()}：外資及陸資臺股期貨{direction} {abs(position.net_contracts):,} 口"
+        f"（多單 {position.long_contracts:,} 口、空單 {position.short_contracts:,} 口）"
+    )
+    lines.append(f'<p class="section-note">{position.caution_note}</p>')
+    lines.append("")
+    return lines
+
+
 def _margin_balance_section(report_date: date, cache_dir: Path = Path(".cache")) -> list[str]:
     """融資餘額動向 report block: market-wide margin financing balance trend
     from cached TWSE MI_MARGN data. 連續大減=籌碼清洗訊號、單日急增=散戶追價
@@ -916,6 +943,7 @@ def _save_report(
         *_foreign_flow_section(report_date),
         *_pristine_index_section(report_date),
         *_margin_balance_section(report_date),
+        *_foreign_futures_section(),
         "## \u0052\u0053\u0053 \u7522\u696d\u8a0a\u865f",
         "",
         '<div class="rss-signal-grid">',
@@ -1121,7 +1149,7 @@ def _candidate_analysis_block(
         '<details class="candidate-panel">',
         '<summary>候選股票分析</summary>',
         '<div class="table-wrap"><table>',
-        '<thead><tr><th>股票</th><th>名稱</th><th>產業</th><th>價位</th><th>Hybrid</th><th>品質底池</th><th>發動確認</th><th>主力動向</th><th>停損參考(頸線)</th><th>停利參考(量測目標)</th><th>前十大主力強度</th><th>前十大主力淨買超</th><th>外資連買</th><th>主分點連買</th><th>主分點</th><th>籌碼日期</th><th>籌碼狀態</th><th>組合決策</th><th>風險註記</th></tr></thead>',
+        '<thead><tr><th>股票</th><th>名稱</th><th>產業</th><th>價位</th><th>Hybrid</th><th>品質底池</th><th>發動確認</th><th>主力動向</th><th>停損參考(頸線)</th><th>停利參考(量測目標)</th><th>前十大主力強度</th><th>前十大主力淨買超</th><th>官股買超</th><th>外資連買</th><th>主分點連買</th><th>主分點</th><th>籌碼日期</th><th>籌碼狀態</th><th>組合決策</th><th>風險註記</th></tr></thead>',
         '<tbody>',
     ]
     for row in rows:
@@ -1129,6 +1157,7 @@ def _candidate_analysis_block(
         snapshot = chip_snapshot_by_symbol.get(row.symbol, {})
         top10_main_force_buy_strength = _optional_float(snapshot, "top10_main_force_buy_strength", "top10_main_force_buy_strength_proxy")
         top10_main_force_net_buy = _optional_float(snapshot, "top10_main_force_net_buy")
+        official_broker_net_buy = _optional_float(snapshot, "official_broker_net_buy")
         foreign_buy_streak_days = _optional_float(snapshot, "foreign_buy_streak_days")
         branch_main_force_buy_streak_days = _optional_float(snapshot, "branch_main_force_buy_streak_days")
         branch_main_force_leader = str(snapshot.get("branch_main_force_leader", "")).strip() or row.branch_main_force_leader
@@ -1138,7 +1167,7 @@ def _candidate_analysis_block(
         new_label = "\u662f" if row.new_strategy_hit else "\u5426"
         chip_label = "\u662f" if row.chip_radar_hit else "\u5426"
         lines.append(
-            f"<tr><td>{html.escape(row.symbol)}</td><td>{html.escape(row.name)}</td><td>{html.escape(row.industry)}</td><td>{_price_tier(row.current_close)}</td><td>{row.hybrid_score:.1f}</td><td>{legacy_label}</td><td>{new_label}</td><td>{chip_label}</td><td>{_stop_loss_cell(row)}</td><td>{_take_profit_cell(row)}</td><td>{_chip_value(top10_main_force_buy_strength)}</td><td>{_chip_value(top10_main_force_net_buy, digits=0)}</td><td>{_chip_value(foreign_buy_streak_days, digits=0)}</td><td>{_chip_value(branch_main_force_buy_streak_days, digits=0)}</td><td>{html.escape(branch_main_force_leader or 'n/a')}</td><td>{html.escape(chip_data_date or 'n/a')}</td><td>{html.escape(chip_data_source_status or 'n/a')}</td><td>{html.escape(portfolio_decision_label(decision))}</td><td>{html.escape(row.risk_note)}</td></tr>"
+            f"<tr><td>{html.escape(row.symbol)}</td><td>{html.escape(row.name)}</td><td>{html.escape(row.industry)}</td><td>{_price_tier(row.current_close)}</td><td>{row.hybrid_score:.1f}</td><td>{legacy_label}</td><td>{new_label}</td><td>{chip_label}</td><td>{_stop_loss_cell(row)}</td><td>{_take_profit_cell(row)}</td><td>{_chip_value(top10_main_force_buy_strength)}</td><td>{_chip_value(top10_main_force_net_buy, digits=0)}</td><td>{_chip_value(official_broker_net_buy, digits=0)}</td><td>{_chip_value(foreign_buy_streak_days, digits=0)}</td><td>{_chip_value(branch_main_force_buy_streak_days, digits=0)}</td><td>{html.escape(branch_main_force_leader or 'n/a')}</td><td>{html.escape(chip_data_date or 'n/a')}</td><td>{html.escape(chip_data_source_status or 'n/a')}</td><td>{html.escape(portfolio_decision_label(decision))}</td><td>{html.escape(row.risk_note)}</td></tr>"
         )
     lines.extend(['</tbody>', '</table></div>', '</details>'])
     return lines
@@ -1393,6 +1422,7 @@ def _placeholder_row(
         take_profit_price=None,
         top10_main_force_buy_strength=_optional_float(chip_snapshot, "top10_main_force_buy_strength", "top10_main_force_buy_strength_proxy"),
         top10_main_force_net_buy=_optional_float(chip_snapshot, "top10_main_force_net_buy"),
+        official_broker_net_buy=_optional_float(chip_snapshot, "official_broker_net_buy"),
         foreign_buy_streak_days=_optional_float(chip_snapshot, "foreign_buy_streak_days"),
         branch_main_force_buy_streak_days=_optional_float(chip_snapshot, "branch_main_force_buy_streak_days"),
         branch_main_force_leader=str(chip_snapshot.get("branch_main_force_leader", "")).strip(),
@@ -1498,6 +1528,7 @@ def _technical_chart_stock(row: HybridRow, bars: list[Bar], decision) -> dict:
         "chipSnapshot": {
             "top10MainForceBuyStrength": row.top10_main_force_buy_strength,
             "top10MainForceNetBuy": row.top10_main_force_net_buy,
+            "officialBrokerNetBuy": row.official_broker_net_buy,
             "foreignBuyStreakDays": row.foreign_buy_streak_days,
             "branchMainForceBuyStreakDays": row.branch_main_force_buy_streak_days,
             "branchMainForceLeader": row.branch_main_force_leader,
@@ -1544,6 +1575,7 @@ def _technical_chart_focus_stock(row: HybridRow, rank: int) -> dict:
         "priceTier": _price_tier(row.current_close),
         "top10MainForceBuyStrength": row.top10_main_force_buy_strength,
         "top10MainForceNetBuy": row.top10_main_force_net_buy,
+        "officialBrokerNetBuy": row.official_broker_net_buy,
     }
 
 
