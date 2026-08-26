@@ -254,6 +254,7 @@ INTERACTIVE_CHART_JS = r"""
     window.addEventListener("resize", render);
     syncStockSelect();
     renderFocusWatchlist();
+    renderPristineWatchlist();
     render();
   }
 
@@ -405,6 +406,34 @@ INTERACTIVE_CHART_JS = r"""
         state.hoveredBarIndex = null;
         state.pinnedBarIndex = null;
         renderFocusWatchlist();
+        render();
+      });
+    });
+  }
+
+  function renderPristineWatchlist() {
+    const node = $("pristineWatchlistPanel");
+    if (!node) return;
+    const items = data.pristineWatchlist || [];
+    if (!items.length) {
+      node.innerHTML = '<div style="padding:10px 8px; color:#64748b; font-size:12px;">今日候選中沒有通過璞玉篩選規則的標的。</div>';
+      return;
+    }
+    node.innerHTML = items.map((item) => `
+      <button type="button" class="focus-item${state.activeSymbol === item.symbol ? " is-active" : ""}" data-symbol="${escapeHtml(item.symbol || "")}">
+        <div class="focus-rank">${escapeHtml(String(item.rank || ""))}</div>
+        <div class="focus-body">
+          <div class="focus-title">${escapeHtml(item.symbol || "")} ${escapeHtml(item.name || "")}</div>
+          <div class="focus-note">ROE ${escapeHtml(item.roe || "n/a")} ／ 負債比 ${escapeHtml(item.debtRatio || "n/a")} ／ ${escapeHtml(item.valuation || "")}</div>
+        </div>
+      </button>
+    `).join("");
+    node.querySelectorAll("[data-symbol]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.activeSymbol = button.dataset.symbol || null;
+        state.hoveredBarIndex = null;
+        state.pinnedBarIndex = null;
+        renderPristineWatchlist();
         render();
       });
     });
@@ -573,6 +602,7 @@ INTERACTIVE_CHART_JS = r"""
     const stock = currentStock();
     if (!stock) {
       renderFocusWatchlist();
+      renderPristineWatchlist();
       const message = anyTierSelected() ? "目前沒有符合勾選條件的股票。" : "請至少勾選一種股價分類。";
       drawEmptyState(message);
       const panel = $("chartInfoPanel");
@@ -581,6 +611,7 @@ INTERACTIVE_CHART_JS = r"""
       return;
     }
     renderFocusWatchlist();
+    renderPristineWatchlist();
     renderChipSnapshot(stock);
     renderStockSummary(stock);
     renderStrategyContext(stock);

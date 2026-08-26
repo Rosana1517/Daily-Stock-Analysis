@@ -914,11 +914,12 @@ def _industry_chain_consensus_section(rows: list[HybridRow], cache_dir: Path = P
 PRISTINE_WATCHLIST_MAX_CANDIDATES = 15
 
 
-def _pristine_watchlist_section(rows: list[HybridRow], report_date: date, cache_dir: Path = Path(".cache")) -> list[str]:
-    """璞玉選股名單 report block: re-runs the official TIP 璞玉 EPS/dividend
-    screen (see pristine_health.py, P5) against today's candidates so
-    readers see which of them are genuine 璞玉-grade picks, not just a
-    standalone macro index number.
+def _compute_pristine_watchlist(rows: list[HybridRow], report_date: date, cache_dir: Path = Path(".cache")) -> tuple[list[HybridRow], list[tuple[HybridRow, object]]]:
+    """Re-runs the official TIP 璞玉 EPS/dividend screen (see
+    pristine_health.py, P5) against today's candidates. Returns
+    (candidates_checked, passed) so both the markdown table and the
+    interactive-chart sidebar list can share one fetch pass instead of
+    hitting FinMind twice.
 
     Deliberately scoped to only the top PRISTINE_WATCHLIST_MAX_CANDIDATES
     candidates by hybrid_score, not the full daily candidate pool (~90
@@ -942,7 +943,13 @@ def _pristine_watchlist_section(rows: list[HybridRow], report_date: date, cache_
             continue
         if evaluate_pristine_screen(fundamentals).passes:
             passed.append((row, fundamentals))
+    return candidates, passed
 
+
+def _pristine_watchlist_section(candidates: list[HybridRow], passed: list[tuple[HybridRow, object]]) -> list[str]:
+    """璞玉選股名單 report block: pure renderer over an already-computed
+    (candidates, passed) pair from _compute_pristine_watchlist — see that
+    function's docstring for the FinMind rate-limit scoping rationale."""
     lines = ["## 璞玉選股名單", ""]
     lines.append(
         f'<p class="section-note">依 TIP 官方揭露的璞玉篩選規則（最近4季+3年EPS皆為正、最近3年皆配息）'
@@ -966,6 +973,26 @@ def _pristine_watchlist_section(rows: list[HybridRow], report_date: date, cache_
     lines.append("</tbody></table></div>")
     lines.append("")
     return lines
+
+
+def _pristine_watchlist_payload(passed: list[tuple[HybridRow, object]]) -> list[dict]:
+    """JSON-friendly form of the 璞玉選股名單 passed list, embedded into the
+    technical-chart-data payload so 互動技術分析 can render it as a
+    clickable sidebar list (see #pristineWatchlistPanel), the same way
+    focusStocks drives 綜合關注榜."""
+    payload = []
+    for rank, (row, fundamentals) in enumerate(passed, start=1):
+        roe = compute_roe_pct(fundamentals)
+        debt_ratio = compute_debt_ratio_pct(fundamentals)
+        payload.append({
+            "rank": rank,
+            "symbol": row.symbol,
+            "name": row.name,
+            "roe": f"{roe:.1f}%" if roe is not None else "n/a",
+            "debtRatio": f"{debt_ratio:.1f}%" if debt_ratio is not None else "n/a",
+            "valuation": describe_valuation(fundamentals.pe_ratio),
+        })
+    return payload
 
 
 def _market_regime_line(regime_gate: MarketRegimeGate | None) -> str:
@@ -1058,7 +1085,8 @@ def _save_report(
     # 第一階段：大盤溫度與璞玉主軸
     pristine_strength = _compute_pristine_relative_strength(report_date)
     lines.extend(_pristine_index_section(pristine_strength))
-    lines.extend(_pristine_watchlist_section(rows, report_date))
+    pristine_candidates, pristine_passed = _compute_pristine_watchlist(rows, report_date)
+    lines.extend(_pristine_watchlist_section(pristine_candidates, pristine_passed))
     # 融資餘額/外資期貨/外資動向/RSS 產業訊號 這四個區塊兩兩併排（見
     # report_hybrid_interactive.py 的 .report-grid--two），卡片夠寬、內容
     # 不會擠成好幾行反而更高。產業鏈同步訊號長度不固定，緊接在後單獨佔一整排。
@@ -1127,7 +1155,14 @@ def _save_report(
         lines.append(f"- [{industries}] {item.title}?{item.source}, {item.date.isoformat()}?")
     if not news_items:
         lines.append("- \u4eca\u65e5\u6c92\u6709\u53ef\u4f75\u5165\u5831\u544a\u7684 RSS \u65b0\u805e\u3002")
-    chart_payload = _technical_chart_payload(rows, bars_by_symbol, portfolio_decisions, focus_rows, pristine_note=_pristine_banner_text(pristine_strength))
+    chart_payload = _technical_chart_payload(
+        rows,
+        bars_by_symbol,
+        portfolio_decisions,
+        focus_rows,
+        pristine_note=_pristine_banner_text(pristine_strength),
+        pristine_watchlist=_pristine_watchlist_payload(pristine_passed),
+    )
     lines.extend(["", "```technical-chart-data", json.dumps(chart_payload, ensure_ascii=False, separators=(",", ":")), "```"])
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -1600,9 +1635,11 @@ def _technical_chart_payload(
     decisions: dict,
     focus_rows: list[HybridRow] | None = None,
     pristine_note: str | None = None,
+    pristine_watchlist: list[dict] | None = None,
 ) -> dict:
     return {
         "pristineNote": pristine_note,
+        "pristineWatchlist": pristine_watchlist or [],
         "defaults": {
             "maShort": 5,
             "maMid": 20,

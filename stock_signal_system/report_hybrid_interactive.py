@@ -220,6 +220,10 @@ def _interactive_chart_section() -> str:
               <h3>綜合關注榜</h3>
               <div id="focusWatchlistPanel" class="focus-list"></div>
             </section>
+            <section class="focus-card">
+              <h3>璞玉選股名單</h3>
+              <div id="pristineWatchlistPanel" class="focus-list"></div>
+            </section>
             <select id="stockSelect"></select>
             <div class="stock-filter-stack">
               <section class="stock-filter-item">
