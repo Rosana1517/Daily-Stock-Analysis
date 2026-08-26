@@ -452,9 +452,16 @@ INTERACTIVE_CHART_JS = r"""
       ["主分點名稱", chip.branchMainForceLeader || "n/a"],
       ["籌碼資料日期", chip.chipDataDate || "n/a"],
       ["籌碼來源狀態", chip.chipDataSourceStatus || "n/a"],
-      ["前十大主力券商", chip.top10MainForceBrokers || "n/a"]
+      ["前十大主力券商", formatBrokerList(chip.top10MainForceBrokers)]
     ];
     node.innerHTML = metrics.map(([label, value]) => `<div class="chip-metric"><b>${escapeHtml(label)}</b><span>${escapeHtml(String(value))}</span></div>`).join("");
+  }
+
+  function formatBrokerList(text, limit = 3) {
+    const names = String(text || "").split("、").map((name) => name.trim()).filter(Boolean);
+    if (!names.length) return "n/a";
+    if (names.length <= limit) return names.join("、");
+    return `${names.slice(0, limit).join("、")} 等 ${names.length} 家`;
   }
 
   function renderStockSummary(stock) {

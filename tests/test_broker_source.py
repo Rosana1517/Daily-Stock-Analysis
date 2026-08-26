@@ -35,6 +35,38 @@ class BrokerSourceTest(unittest.TestCase):
         self.assertEqual(snapshot.sell_trades[0].broker, "賣超券商A")
         self.assertEqual(snapshot.sell_trades[0].net_shares, -794)
 
+    def test_parse_histock_branch_html_handles_empty_count_cells(self):
+        # 真實頁面裡，一檔券商當天若只出現在買方或賣方，另一側的儲存格會是
+        # 完全空的 <td></td>（不是 0）。這種列以前會讓正則配對失敗，導致
+        # finditer 從下一列重新配對，把多列券商名稱黏在一起（見
+        # project_state.md 2026-08-27 的查證記錄）。
+        html = """
+        <table>
+          <tr>
+            <td><a href="/stock/brokertrace.aspx?bno=1470&amp;no=2330" target="_blank">賣超券商A</a></td>
+            <td class="hidecell"></td><td class="hidecell">190</td><td>-189</td><td></td>
+            <td><a href="/stock/brokertrace.aspx?bno=1650&amp;no=2330" target="_blank">買超券商A</a></td>
+            <td class="hidecell">584</td><td class="hidecell">391</td><td>192</td><td>2371.94</td>
+          </tr>
+          <tr>
+            <td><a href="/stock/brokertrace.aspx?bno=9200&amp;no=2330" target="_blank">賣超券商B</a></td>
+            <td class="hidecell">132</td><td class="hidecell">654</td><td>-522</td><td>2359.74</td>
+            <td><a href="/stock/brokertrace.aspx?bno=9800&amp;no=2330" target="_blank">買超券商B</a></td>
+            <td class="hidecell">2,892</td><td class="hidecell">478</td><td>2,414</td><td>2365.37</td>
+          </tr>
+        </table>
+        """
+
+        snapshot = parse_histock_branch_html(html, "2330", "https://histock.tw/stock/branch.aspx?no=2330")
+
+        self.assertEqual(len(snapshot.buy_trades), 2)
+        self.assertEqual(len(snapshot.sell_trades), 2)
+        self.assertEqual(snapshot.sell_trades[0].broker, "賣超券商A")
+        self.assertEqual(snapshot.sell_trades[0].buy_shares, 0)
+        self.assertEqual(snapshot.sell_trades[0].average_price, 0.0)
+        self.assertEqual(snapshot.buy_trades[1].broker, "買超券商B")
+        self.assertEqual(snapshot.buy_trades[1].net_shares, 2414)
+
     def test_parse_histock_branch_html_returns_degraded_when_rows_missing(self):
         snapshot = parse_histock_branch_html("<html><body>empty</body></html>", "2330", "https://histock.tw/stock/branch.aspx?no=2330")
 

@@ -13,17 +13,22 @@ HISTOCK_BRANCH_URL = "https://histock.tw/stock/branch.aspx"
 
 _UPDATED_AT_RE = re.compile(r"更新時間[:：]\s*(\d{4})[./-](\d{2})[./-](\d{2})")
 _ROW_RE = re.compile(
+    # 數字欄位用 * 而非 +：真實頁面裡，一檔券商當天若只出現在買方或賣方，
+    # 另一側的買/賣/均價儲存格會是完全空的 <td></td>（不是 0，是空字串）。
+    # 原本用 + 要求至少一位數字，遇到空儲存格整列就配不上，導致 finditer
+    # 從下一列重新配對，結果把好幾列的券商名稱黏在一起（見 project_state.md
+    # 2026-08-27 的查證記錄）。
     r"<tr[^>]*>\s*"
     r"<td>\s*<a[^>]*?/stock/brokertrace\.aspx\?bno=[^\"']+(?:&amp;|&)no=\d+[^\"']*\"[^>]*>(?P<sell_broker>.*?)</a>\s*</td>\s*"
-    r"<td[^>]*>(?P<sell_buy>[\d,]+)</td>\s*"
-    r"<td[^>]*>(?P<sell_sell>[\d,]+)</td>\s*"
-    r"<td[^>]*>(?P<sell_net>-?[\d,]+)</td>\s*"
-    r"<td[^>]*>(?P<sell_avg>[\d,.]+)</td>\s*"
+    r"<td[^>]*>(?P<sell_buy>[\d,]*)</td>\s*"
+    r"<td[^>]*>(?P<sell_sell>[\d,]*)</td>\s*"
+    r"<td[^>]*>(?P<sell_net>-?[\d,]*)</td>\s*"
+    r"<td[^>]*>(?P<sell_avg>[\d,.]*)</td>\s*"
     r"<td>\s*<a[^>]*?/stock/brokertrace\.aspx\?bno=[^\"']+(?:&amp;|&)no=\d+[^\"']*\"[^>]*>(?P<buy_broker>.*?)</a>\s*</td>\s*"
-    r"<td[^>]*>(?P<buy_buy>[\d,]+)</td>\s*"
-    r"<td[^>]*>(?P<buy_sell>[\d,]+)</td>\s*"
-    r"<td[^>]*>(?P<buy_net>-?[\d,]+)</td>\s*"
-    r"<td[^>]*>(?P<buy_avg>[\d,.]+)</td>\s*"
+    r"<td[^>]*>(?P<buy_buy>[\d,]*)</td>\s*"
+    r"<td[^>]*>(?P<buy_sell>[\d,]*)</td>\s*"
+    r"<td[^>]*>(?P<buy_net>-?[\d,]*)</td>\s*"
+    r"<td[^>]*>(?P<buy_avg>[\d,.]*)</td>\s*"
     r"</tr>",
     flags=re.IGNORECASE | re.DOTALL,
 )
