@@ -380,6 +380,9 @@ def _load_chip_snapshot_lookup(*paths: Path | None) -> dict[str, dict]:
     return lookup
 
 
+HISTOCK_BROKER_PUBLISH_LAG_SESSIONS = 2
+
+
 def _enrich_report_chip_snapshots(
     rows: list[HybridRow],
     chip_snapshot_by_symbol: dict[str, dict],
@@ -407,16 +410,23 @@ def _enrich_report_chip_snapshots(
         latest_volume_by_symbol[row.symbol] = int(bars[-1].volume) if bars else 0
 
     try:
-        twse_days = load_recent_twse_institutional_days(cache_dir, as_of=report_date, lookback_sessions=3)
-        if not twse_days:
-            print("warning: chip_snapshot_enrichment_skipped reason=no_twse_institutional_days", flush=True)
+        # HiStock 分點買賣資料實測有約 2 個交易日的公告延遲——同一天或前一天
+        # 查詢一律回傳空表(不是網站改版壞掉，是資料還沒公布，見
+        # project_state.md 的查證記錄)。往前多抓幾天、跳過最近
+        # HISTOCK_BROKER_PUBLISH_LAG_SESSIONS 天，才不會每天都注定撲空。
+        twse_days = load_recent_twse_institutional_days(
+            cache_dir, as_of=report_date, lookback_sessions=3 + HISTOCK_BROKER_PUBLISH_LAG_SESSIONS
+        )
+        settled_days = twse_days[HISTOCK_BROKER_PUBLISH_LAG_SESSIONS:]
+        if not settled_days:
+            print("warning: chip_snapshot_enrichment_skipped reason=no_settled_twse_institutional_days", flush=True)
             return chip_snapshot_by_symbol
         broker_summaries = load_histock_broker_summaries(
             cache_dir,
-            twse_days,
+            settled_days,
             tuple(missing_symbols),
             latest_volume_by_symbol,
-            broker_lookback_sessions=min(3, len(twse_days)),
+            broker_lookback_sessions=min(3, len(settled_days)),
         )
     except Exception as exc:
         print(f"warning: chip_snapshot_enrichment_failed symbols={len(missing_symbols)} error={exc}", flush=True)
