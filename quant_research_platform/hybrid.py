@@ -737,9 +737,9 @@ def _foreign_flow_section(report_date: date, cache_dir: Path = Path(".cache")) -
     except Exception as exc:
         print(f"warning: foreign_flow_trend_failed={exc}", flush=True)
         trend = None
-    lines = ["## 外資動向", ""]
+    lines = ['<article class="report-card">', "## 外資動向", ""]
     if trend is None:
-        lines.extend(["- 外資資料暫缺，今日無法判讀外資動向。", ""])
+        lines.extend(["- 外資資料暫缺，今日無法判讀外資動向。", "", "</article>"])
         return lines
     streak_text = (
         f"連續買超 {trend.streak_days} 天"
@@ -759,6 +759,7 @@ def _foreign_flow_section(report_date: date, cache_dir: Path = Path(".cache")) -
     lines.append("</tbody></table></div>")
     lines.append('<p class="section-note">資料來源：TWSE T86 三大法人個股買賣超彙總（股數換算為張），僅含上市普通股。</p>')
     lines.append("")
+    lines.append("</article>")
     return lines
 
 
@@ -772,9 +773,9 @@ def _foreign_futures_section(cache_dir: Path = Path(".cache")) -> list[str]:
     except Exception as exc:
         print(f"warning: foreign_futures_section_failed={exc}", flush=True)
         position = None
-    lines = ["## 外資期貨未平倉", ""]
+    lines = ['<article class="report-card">', "## 外資期貨未平倉", ""]
     if position is None:
-        lines.extend(["- 外資期貨未平倉資料暫缺，今日無法判讀。", ""])
+        lines.extend(["- 外資期貨未平倉資料暫缺，今日無法判讀。", "", "</article>"])
         return lines
     direction = "淨多單" if position.net_contracts >= 0 else "淨空單"
     lines.append(
@@ -783,6 +784,7 @@ def _foreign_futures_section(cache_dir: Path = Path(".cache")) -> list[str]:
     )
     lines.append(f'<p class="section-note">{position.caution_note}</p>')
     lines.append("")
+    lines.append("</article>")
     return lines
 
 
@@ -797,9 +799,9 @@ def _margin_balance_section(report_date: date, cache_dir: Path = Path(".cache"))
     except Exception as exc:
         print(f"warning: margin_balance_section_failed={exc}", flush=True)
         trend = None
-    lines = ["## 融資餘額動向", ""]
+    lines = ['<article class="report-card">', "## 融資餘額動向", ""]
     if trend is None:
-        lines.extend(["- 融資餘額資料暫缺，今日無法判讀散戶籌碼動向。", ""])
+        lines.extend(["- 融資餘額資料暫缺，今日無法判讀散戶籌碼動向。", "", "</article>"])
         return lines
     streak_text = (
         f"連續增加 {trend.streak_days} 天"
@@ -820,6 +822,7 @@ def _margin_balance_section(report_date: date, cache_dir: Path = Path(".cache"))
     lines.append("</tbody></table></div>")
     lines.append('<p class="section-note">資料來源：TWSE 信用交易統計（融資金額，仟元換算為億元）；市場層級判讀，非個股因子。</p>')
     lines.append("")
+    lines.append("</article>")
     return lines
 
 
@@ -887,12 +890,12 @@ def _industry_chain_consensus_section(rows: list[HybridRow], cache_dir: Path = P
     except Exception as exc:
         print(f"warning: industry_chain_consensus_failed={exc}", flush=True)
         groups = None
-    lines = ["## 產業鏈同步訊號", ""]
+    lines = ['<article class="report-card">', "## 產業鏈同步訊號", ""]
     if groups is None:
-        lines.extend(["- 產業鏈對照表暫缺，今日無法判讀同步訊號。", ""])
+        lines.extend(["- 產業鏈對照表暫缺，今日無法判讀同步訊號。", "", "</article>"])
         return lines
     if not groups:
-        lines.extend(["- 今日無產業鏈同步訊號。", ""])
+        lines.extend(["- 今日無產業鏈同步訊號。", "", "</article>"])
         return lines
     for group in groups:
         chain_name = INDUSTRY_CHAIN_NAMES.get(group.ic_code, group.ic_code)
@@ -904,6 +907,7 @@ def _industry_chain_consensus_section(rows: list[HybridRow], cache_dir: Path = P
         "不代表整條產業鏈全部成分股的狀態。資料來源：ic.tpex.org.tw 產業價值鏈資訊平台。</p>"
     )
     lines.append("")
+    lines.append("</article>")
     return lines
 
 
@@ -1055,19 +1059,26 @@ def _save_report(
     pristine_strength = _compute_pristine_relative_strength(report_date)
     lines.extend(_pristine_index_section(pristine_strength))
     lines.extend(_pristine_watchlist_section(rows, report_date))
+    # 融資餘額/外資期貨/外資動向/產業鏈同步訊號/RSS 產業訊號
+    # 這五個區塊改用卡片併排呈現（見 report_hybrid_interactive.py 的
+    # .report-grid），避免逐一全寬堆疊把頁面拉得太長。
+    lines.append('<div class="report-grid report-grid--cards">')
     lines.extend(_margin_balance_section(report_date))
     lines.extend(_foreign_futures_section())
     lines.extend(_foreign_flow_section(report_date))
     # 第二階段：產業鏈與產業訊號
     lines.extend(_industry_chain_consensus_section(rows))
     lines.extend([
+        '<article class="report-card">',
         "## \u0052\u0053\u0053 \u7522\u696d\u8a0a\u865f",
         "",
         '<div class="rss-signal-grid">',
         "".join(rss_cards_html),
         "</div>",
         "",
+        "</article>",
     ])
+    lines.append("</div>")
     # 第三階段：個股選股與進場（互動 K 線圖為核心功能，緊接在優先順序表後）
     lines.extend([
         '<section class="report-card">',
