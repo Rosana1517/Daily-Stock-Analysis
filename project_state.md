@@ -2,13 +2,21 @@
 
 ## 當前階段
 
-正在做:璞玉方法論整合(模式 C)—— 切片 P1、P2 完成,P3 起待確認資料源
+正在做:璞玉方法論整合(模式 C)—— P1/P2 已完成;逐項查證 P3~P7 資料源後,依 P7→P3→P6→P5 順序實作中(P7 完成)
 
 已完成(璞玉整合輪):
+- **資料源查證(2026-08-26)**:逐項查證 P3~P7 五項資料需求,四項找到真實免費 API、一項確認官方不公開改用替代方案:
+  - P7 璞玉指數:`backend.taiwanindex.com.tw/api/indexes/IX0231/records`(從 TIP 官網前端 JS 反解出的非官方文件端點),已實測成功
+  - P3 融資餘額(大盤):`www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN?response=json`,已實測成功
+  - P6 外資期貨未平倉:期交所官方 OpenAPI `MarketDataOfMajorInstitutionalTradersDetailsOfFuturesContractsBytheDate`
+  - P5 EPS/ROE/股利:FinMind `TaiwanStockFinancialStatements`(已實測含 EPS,免 token 基本額度可用)、`TaiwanStockBalanceSheet`、`TaiwanStockDividend`
+  - P4 完整331檔成分股清單:確認官方不對外公開(下載 TIP 指數概覽 PDF 用 pdfplumber 解析,只揭露權重前十大),改為**併入 P5**——用 FinMind 財報資料重跑官方公開的選股邏輯,不強求取得原始清單
+  - 詳見 PRD.md 8.6 節「資料源查證結果」表格
+- **切片 P7「璞玉指數動向」完成**:新模組 `stock_signal_system/data/pristine_index.py`(`fetch_pristine_index_history` 抓每日指數點位、`evaluate_relative_strength` 純函式比較近5個交易日璞玉 vs TAIEX 漲跌幅並判讀「璞玉抗跌(資金避風港)/璞玉走弱/同步」)。`hybrid.py` 報告新增「璞玉指數動向」區塊(重用 `market_regime_gate._fetch_taiex_closes` 取 TAIEX,抓取失敗降級為「資料暫缺」不中斷報告)。7 個新測試(純函式判讀四情境 + 日期解析),169 測試全過、ruff 乾淨,已用真實資料端到端驗證(實測顯示璞玉+0.94% vs TAIEX+2.49%,判讀「璞玉走弱」)
 - **切片 P2「333 部位管理原則」完成**:報告新增靜態文字區塊(`_position_management_playbook_section`),說明 30% 分趟出場+拉回再進場的通用資金管理觀念與 1.3³≈2.2 倍複利算法。純教育性質、零資料源、內容不含任何股票代號或個人化指令,明確聲明「不追蹤個人部位、不下單、不提供個人化投資建議」。插入位置在報告「推薦追蹤(勝率閉環)」之後。新增 2 個測試(文案含免責聲明字句 + 內容跨呼叫穩定不變),162 測試全過、ruff 乾淨,已用 UTF-8 檔案輸出人工核對文案(避免終端機 cp950 編碼誤判)
 - **切片 P1「◆超跌抄底」完成**:`HybridRow` 新增 `dip_reversal` 欄位,判定=跌破 60MA + 收盤創近 20 日新低 + KD 低檔背離(K<40 且 K 未同步破底);純用既有 OHLCV,新增 `_stochastic_k_series`/`_is_dip_reversal`。與 ★/☆ 完全獨立、可同時標記;綜合關注榜 priority=2(☆0/★1 之後、三者全中之前)、LINE 前綴 ◆、圖表 payload 帶 `dipReversal`、報告與 JS/HTML 文案同步。新增 7 個測試(3 正 3 反 + 顯示/排序),160 測試全過、ruff 乾淨、端到端渲染驗證通過
 - 完成六階段方法論 vs 現架構的比對分析(見下方「璞玉整合切片計劃」),確立三項設計決策:分切片逐步做、★/☆ 剛突破與 ◆ 超跌抄底分開標記、333 做成通用規則說明
-- 比對重點發現:`data/capital_flow/`(含 `margin_change.py` 融資分析)是**已寫好但沒接線的孤島模組**(僅自己的測試在用),P3 可直接接不用重寫;外資期貨空單、璞玉指數 IX0231、官股分點、EPS/ROE/股利 3 年皆為現況完全沒有、需新資料源
+- 比對重點發現:`data/capital_flow/`(含 `margin_change.py` 融資分析)是**已寫好但沒接線的孤島模組**(僅自己的測試在用),P3 可直接接不用重寫
 
 已完成(2026-07 新功能輪):
 - 三次調整(2026-07-20):
@@ -64,7 +72,7 @@
 
 ## 下一步
 
-- P1、P2 皆為零資料源切片,已全數完成;P3 起每個都需要先確認新資料源才動工(見下方切片計劃表)
+- 依使用者指示的順序(P7→P3→P6→P5)繼續:P7 已完成,下一步實作 P3(接線 `capital_flow/margin_change.py` + 接 TWSE MI_MARGN 大盤融資趨勢)
 - 前一輪(K 線縮放/價位篩選)仍待使用者於每日排程後**在手機上實測**雙指縮放與單指平移
 
 ---
@@ -75,12 +83,11 @@
 |---|---|---|---|---|
 | P1 | ◆超跌抄底(跌破季線+創新低+KD低檔背離),與 ★/☆ 分開標記 | 無(既有 OHLCV) | `hybrid.py`、`daily_stock_bridge.py`、`report_technical_chart_js.py`、`report_hybrid_interactive.py`、`tests/test_hybrid_scoring.py` | ✅ 已完成 |
 | P2 | 333 通用規則說明區塊(衛教式,不做個人化下單) | 無 | `hybrid.py` 報告 | ✅ 已完成 |
-| P3 | 融資餘額判讀(接既有孤島 `capital_flow/margin_change.py` + 大盤融資趨勢) | 需融資餘額資料源 | `capital_flow/` 接線、新 margin trend | ⬜ 待確認資料源 |
-| P4 | 璞玉成分股母池(加「限定母池」來源) | 需 331 檔成分股清單 CSV | `universe.py`、`configs/` | ⬜ 待提供清單 |
-| P5 | 璞玉健康評分(EPS/ROE/股利 3 年連續) | 需 FinMind 財報 | `models.py`、新評分函式 | ⬜ 待確認資料源 |
-| P6 | 大盤情緒:外資期貨空單 + 官股分點買超 | 需期交所 + 分點資料 | 新爬蟲積木 | ⬜ 待確認資料源 |
-| P7 | 璞玉指數 IX0231 收盤追蹤 + 大盤相對強弱 | 需 TIP 官網 | 新爬蟲、大盤區塊 | ⬜ 待確認資料源 |
-| P8 | 產業鏈上中下游群體共識判讀 | 需產業鏈對應表 | `industry.py` | ⬜ 待確認對應表 |
+| P7 | 璞玉指數 IX0231 收盤追蹤 + 大盤相對強弱 | ✅ TIP 官網逆解 API(已驗證) | `stock_signal_system/data/pristine_index.py`(新)、`hybrid.py` | ✅ 已完成 |
+| P3 | 融資餘額判讀(接既有孤島 `capital_flow/margin_change.py` + 大盤融資趨勢) | ✅ TWSE MI_MARGN API(已驗證) | `capital_flow/` 接線、新 margin trend | 🟡 下一個 |
+| P6 | 大盤情緒:外資期貨空單 + 官股分點買超 | ✅ TAIFEX OpenAPI(期貨部分已驗證);官股分點=資料整理非API | 新爬蟲積木 | ⬜ 待實作 |
+| P5(含P4) | 璞玉健康評分(EPS/ROE/股利 3 年連續)+ 自行重跑選股邏輯當母池(P4 完整清單官方不公開,併入此切片) | ✅ FinMind 財報(已驗證含EPS) | `models.py`、新評分函式 | ⬜ 待實作 |
+| P8 | 產業鏈上中下游群體共識判讀 | 需產業鏈對應表(尚未查證) | `industry.py` | ⬜ 待確認對應表 |
 
 ---
 

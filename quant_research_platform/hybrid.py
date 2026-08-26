@@ -36,7 +36,7 @@ from quant_research_platform.qlib_adapter import (
     run_qlib_engine_portfolio_backtest,
 )
 from quant_research_platform.signals import build_signals
-from quant_research_platform.market_regime_gate import MarketRegimeGate, evaluate_market_regime_gate
+from quant_research_platform.market_regime_gate import MarketRegimeGate, _fetch_taiex_closes, evaluate_market_regime_gate
 from quant_research_platform.universe import (
     build_candidate_selection_plan,
     platform_measured_move_target,
@@ -45,6 +45,7 @@ from quant_research_platform.universe import (
 from stock_signal_system.data.chip_snapshot import load_histock_broker_summaries, load_recent_twse_institutional_days
 from stock_signal_system.data.csv_sources import load_intraday_history, load_news
 from stock_signal_system.data.foreign_flow_trend import summarize_market_foreign_flow
+from stock_signal_system.data.pristine_index import evaluate_relative_strength, fetch_pristine_index_history
 
 
 @dataclass(frozen=True)
@@ -753,6 +754,38 @@ def _foreign_flow_section(report_date: date, cache_dir: Path = Path(".cache")) -
     return lines
 
 
+PRISTINE_LOOKBACK_SESSIONS = 5
+
+
+def _pristine_index_section(report_date: date, cache_dir: Path = Path(".cache")) -> list[str]:
+    """璞玉指數動向 report block: 臺灣璞玉指數(IX0231)近幾個交易日漲跌幅，
+    對照 TAIEX 同期漲跌幅，判讀是否有「大盤重挫、璞玉抗跌」的資金避風港現象。
+    Degrades to a placeholder line instead of failing the whole report when
+    either data source is unavailable."""
+    try:
+        points = fetch_pristine_index_history(cache_dir, as_of=report_date, lookback_days=30)
+        taiex_closes = _fetch_taiex_closes()
+        strength = evaluate_relative_strength(points, taiex_closes, lookback_sessions=PRISTINE_LOOKBACK_SESSIONS)
+    except Exception as exc:
+        print(f"warning: pristine_index_section_failed={exc}", flush=True)
+        strength = None
+    lines = ["## 璞玉指數動向", ""]
+    if strength is None:
+        lines.extend(["- 璞玉指數資料暫缺，今日無法判讀與大盤的相對強弱。", ""])
+        return lines
+    lines.append(
+        f"- 判讀：**{strength.verdict}**（近 {strength.lookback_sessions} 個交易日璞玉指數"
+        f" {strength.pristine_change_pct:+.2f}%，TAIEX {strength.taiex_change_pct:+.2f}%）"
+    )
+    lines.append(
+        '<p class="section-note">臺灣璞玉指數為官方低估值優質非熱門股組合；'
+        '若大盤重挫但璞玉指數展現抗跌韌性，代表非熱門優質成分股正發揮防禦與資金避風港效果，'
+        '可視為尋找低估值個股的參考時機。資料來源：臺灣指數公司(TIP)。</p>'
+    )
+    lines.append("")
+    return lines
+
+
 def _market_regime_line(regime_gate: MarketRegimeGate | None) -> str:
     if regime_gate is None or not regime_gate.available:
         return '<p class="section-note">大盤濾網：資料暫缺，本日突破類訊號未受篩選限制。</p>'
@@ -843,6 +876,7 @@ def _save_report(
         "</section>",
         '<div id="tech-section-marker"></div>',
         *_foreign_flow_section(report_date),
+        *_pristine_index_section(report_date),
         "## \u0052\u0053\u0053 \u7522\u696d\u8a0a\u865f",
         "",
         '<div class="rss-signal-grid">',
