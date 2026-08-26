@@ -2,9 +2,10 @@
 
 ## 當前階段
 
-正在做:璞玉方法論整合(模式 C)—— P1/P2/P7/P3/P6 已完成,依序接續 P5(含P4)
+正在做:璞玉方法論整合(模式 C)—— P1/P2/P7/P3/P6/P5(含P4)全部完成,P8 待確認產業鏈對應表
 
 已完成(璞玉整合輪):
+- **切片 P5(含P4)「璞玉健康指標」完成**:新模組 `stock_signal_system/data/pristine_health.py`,`finmind.py` 擴充 3 個新方法(財報/資產負債表/股利)。核心是 `evaluate_pristine_screen` 純函式重跑 TIP 官方揭露的硬篩選規則(4季+3年EPS皆正、3年皆配息),取代原本要拿 331 檔完整清單的需求(P4 併入於此)。**刻意不做完整加權璞玉評分**——公式裡「產業地位/AI含金量」20% 與「市場非擁擠度百分位」10% 需要主觀產業標記與全市場排名,本專案沒這些資料,寧可誠實只提供可算出的子項(EPS/股利篩選、ROE%、負債比%、PE估值判讀)也不編造假精確總分。**刻意不接線進每日報告**——FinMind 逐股查詢有速率限制,對每日候選掃描不划算,列為未來可選的批次工具(尚無 CLI 指令)。18 個新測試,206 測試全過、ruff 乾淨,已用真實資料端到端驗證(台積電 2330 通過篩選,ROE 34.5%、負債比 30.9%,與已知財務常識相符)
 - **切片 P6「外資期貨未平倉 + 官股分點買超」完成**:
   - 外資期貨(大盤層級):新模組 `stock_signal_system/data/foreign_futures_position.py`,接期交所 OpenAPI(只回最新一日,無歷史參數)。**刻意不產生多空判讀**,只顯示口數 + 固定提醒文字(方法論原文明確警告高檔空單常是搭配槓桿ETF的無風險套利,不是崩盤前兆),避免落入原文警告的誤判陷阱。`hybrid.py` 新增「外資期貨未平倉」報告區塊
   - 官股分點(個股層級):**零新增網路請求**——重用已在生產環境接線的 `broker_source.py`(HiStock 分點資料),新增 `stock_signal_system/data/official_broker.py` 靜態官股銀行關鍵字表,在 `chip_snapshot.py` 的 `_summarize_broker_snapshots` 內從既有的 top10 買超分點中拆出官股淨買超金額(`BrokerChipSummary.official_broker_net_buy`),經 CSV 欄位 `official_broker_net_buy` 傳遞到 `HybridRow`,顯示於候選股票分析表新增的「官股買超」欄與圖表籌碼快照面板
@@ -78,7 +79,8 @@
 
 ## 下一步
 
-- 依使用者指示的順序(P7→P3→P6→P5)繼續:P7、P3、P6 已完成,下一步實作 P5(含 P4:EPS/ROE/股利健檢 + 自行重跑選股邏輯當母池)
+- 依使用者指示的順序(P7→P3→P6→P5)**全部完成**。剩 P8(產業鏈上中下游群體共識判讀)待使用者提供或確認產業鏈對應表才能動工,以及 P5 若要接進實際使用(CLI 指令或排程)需另外決定頻率
+- 使用者要求「做完一起 push」——本輪 P7/P3/P6/P5 五個 commit 尚未推送,待全部確認後一次推送
 - 前一輪(K 線縮放/價位篩選)仍待使用者於每日排程後**在手機上實測**雙指縮放與單指平移
 
 ---
@@ -92,7 +94,7 @@
 | P7 | 璞玉指數 IX0231 收盤追蹤 + 大盤相對強弱 | ✅ TIP 官網逆解 API(已驗證) | `stock_signal_system/data/pristine_index.py`(新)、`hybrid.py` | ✅ 已完成 |
 | P3 | 融資餘額動向(大盤市場層級,不含個股 `capital_flow/margin_change.py` 接線——列未來可選) | ✅ TWSE MI_MARGN API(已驗證) | `data/margin_balance_trend.py`(新)、`hybrid.py` | ✅ 已完成 |
 | P6 | 大盤情緒:外資期貨空單 + 官股分點買超 | ✅ TAIFEX OpenAPI(期貨);官股分點=重用既有 broker_source.py,零新請求 | `data/foreign_futures_position.py`(新)、`data/official_broker.py`(新)、`chip_snapshot.py`、`hybrid.py` | ✅ 已完成 |
-| P5(含P4) | 璞玉健康評分(EPS/ROE/股利 3 年連續)+ 自行重跑選股邏輯當母池(P4 完整清單官方不公開,併入此切片) | ✅ FinMind 財報(已驗證含EPS) | `models.py`、新評分函式 | ⬜ 待實作 |
+| P5(含P4) | 璞玉健康評分(EPS/ROE/股利 3 年連續)+ 自行重跑選股邏輯當母池(P4 完整清單官方不公開,併入此切片) | ✅ FinMind 財報(已驗證含EPS/ROE/股利) | `data/pristine_health.py`(新)、`data/finmind.py` | ✅ 已完成(核心邏輯,未接每日報告) |
 | P8 | 產業鏈上中下游群體共識判讀 | 需產業鏈對應表(尚未查證) | `industry.py` | ⬜ 待確認對應表 |
 
 ---
