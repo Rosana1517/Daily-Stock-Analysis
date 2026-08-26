@@ -83,6 +83,7 @@ class HybridRow:
     technical_evidence: tuple[str, ...]
     best_entry: bool = False
     short_entry: bool = False
+    dip_reversal: bool = False
 
 
 def run_tw_hybrid(
@@ -206,6 +207,7 @@ def run_tw_hybrid(
             technical_evidence=_technical_evidence(symbol, tech, bars_by_symbol.get(symbol, [])),
             best_entry=_is_best_entry(bars_by_symbol.get(symbol, [])),
             short_entry=_is_short_entry(bars_by_symbol.get(symbol, [])),
+            dip_reversal=_is_dip_reversal(bars_by_symbol.get(symbol, [])),
         )
     report_symbols = []
     for symbol in (*analysis_symbols, *selection_plan.selected_symbols):
@@ -227,6 +229,7 @@ def run_tw_hybrid(
         key=lambda item: (
             not item.short_entry,
             not item.best_entry,
+            not item.dip_reversal,
             not item.new_strategy_hit,
             not item.chip_radar_hit,
             not item.legacy_hit,
@@ -248,6 +251,7 @@ def run_tw_hybrid(
         key=lambda item: (
             not item.short_entry,
             not item.best_entry,
+            not item.dip_reversal,
             not item.new_strategy_hit,
             not item.chip_radar_hit,
             not item.legacy_hit,
@@ -817,7 +821,7 @@ def _save_report(
         '<div class="table-wrap"><table><thead><tr><th>優先級</th><th>組合</th><th>數量</th><th>風格判讀</th><th>建議動作</th><th>代表股票</th></tr></thead><tbody>',
         "".join(priority_rows_html),
         "</tbody></table></div>",
-        '<p class="section-note">優先順序：<code>☆短線買點</code> &gt; <code>★最佳買點</code> &gt; <code>三者全中</code> &gt; <code>品質底池 + 主力動向</code> &gt; <code>品質底池 + 發動確認</code> &gt; <code>主力動向 + 發動確認</code> &gt; <code>單策略命中</code>。</p>',
+        '<p class="section-note">優先順序：<code>☆短線買點</code> &gt; <code>★最佳買點</code> &gt; <code>◆超跌抄底</code> &gt; <code>三者全中</code> &gt; <code>品質底池 + 主力動向</code> &gt; <code>品質底池 + 發動確認</code> &gt; <code>主力動向 + 發動確認</code> &gt; <code>單策略命中</code>。</p>',
         "</section>",
         '<div id="tech-section-marker"></div>',
         *_foreign_flow_section(report_date),
@@ -1067,21 +1071,23 @@ def _overall_focus_priority(row: HybridRow) -> int:
         return 0
     if row.best_entry:
         return 1
-    if row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit:
+    if row.dip_reversal:
         return 2
-    if row.legacy_hit and row.chip_radar_hit and not row.new_strategy_hit:
+    if row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit:
         return 3
-    if row.legacy_hit and row.new_strategy_hit and not row.chip_radar_hit:
+    if row.legacy_hit and row.chip_radar_hit and not row.new_strategy_hit:
         return 4
-    if row.new_strategy_hit and row.chip_radar_hit and not row.legacy_hit:
+    if row.legacy_hit and row.new_strategy_hit and not row.chip_radar_hit:
         return 5
-    if row.new_strategy_hit and not row.legacy_hit and not row.chip_radar_hit:
+    if row.new_strategy_hit and row.chip_radar_hit and not row.legacy_hit:
         return 6
-    if row.chip_radar_hit and not row.legacy_hit and not row.new_strategy_hit:
+    if row.new_strategy_hit and not row.legacy_hit and not row.chip_radar_hit:
         return 7
-    if row.legacy_hit and not row.new_strategy_hit and not row.chip_radar_hit:
+    if row.chip_radar_hit and not row.legacy_hit and not row.new_strategy_hit:
         return 8
-    return 9
+    if row.legacy_hit and not row.new_strategy_hit and not row.chip_radar_hit:
+        return 9
+    return 10
 
 
 def _overall_focus_label(row: HybridRow) -> str:
@@ -1091,6 +1097,8 @@ def _overall_focus_label(row: HybridRow) -> str:
         return '☆短線買點'
     if row.best_entry:
         return '★最佳買點'
+    if row.dip_reversal:
+        return '◆超跌抄底'
     if row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit:
         return '三者全中'
     if row.legacy_hit and row.chip_radar_hit and not row.new_strategy_hit:
@@ -1115,6 +1123,8 @@ def _overall_focus_reason(row: HybridRow) -> str:
         return '收盤剛突破 20MA 且 MACD 剛形成黃金交叉'
     if row.best_entry:
         return '收盤剛突破 60MA 且 MACD 剛形成黃金交叉'
+    if row.dip_reversal:
+        return '跌破季線且創波段新低，但 KD 低檔背離(價破底、K 沒破底)'
     if row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit:
         return '品質、籌碼、發動點三者都成立'
     if row.legacy_hit and row.chip_radar_hit and not row.new_strategy_hit:
@@ -1139,6 +1149,8 @@ def _overall_focus_action(row: HybridRow) -> str:
         return '短線買點，第一優先'
     if row.best_entry:
         return '最佳買點，次優先'
+    if row.dip_reversal:
+        return '左側超跌搶反彈，分批試單、嚴設停損'
     if row.legacy_hit and row.new_strategy_hit and row.chip_radar_hit:
         return '主清單，優先看'
     if row.legacy_hit and row.chip_radar_hit and not row.new_strategy_hit:
@@ -1377,6 +1389,7 @@ def _technical_chart_stock(row: HybridRow, bars: list[Bar], decision) -> dict:
             "chipRadar": row.chip_radar_hit,
             "bestEntry": row.best_entry,
             "shortEntry": row.short_entry,
+            "dipReversal": row.dip_reversal,
         },
         "priceTier": _price_tier(row.current_close),
         "signalSource": row.signal_source,
@@ -1435,6 +1448,7 @@ def _technical_chart_focus_stock(row: HybridRow, rank: int) -> dict:
         "legacyHit": row.legacy_hit,
         "bestEntry": row.best_entry,
         "shortEntry": row.short_entry,
+        "dipReversal": row.dip_reversal,
         "priceTier": _price_tier(row.current_close),
         "top10MainForceBuyStrength": row.top10_main_force_buy_strength,
         "top10MainForceNetBuy": row.top10_main_force_net_buy,
@@ -1711,6 +1725,56 @@ def _is_short_entry(bars: list[Bar]) -> bool:
     the 20MA AND the MACD golden cross is fresh. Ranked just below ★."""
     closes = [bar.close for bar in bars]
     return _fresh_ma_breakout(closes, 20) and _fresh_macd_golden_cross(closes)
+
+
+DIP_LOOKBACK = 20
+DIP_K_PERIOD = 9
+DIP_K_LOW = 40.0
+
+
+def _stochastic_k_series(bars: list[Bar], period: int = DIP_K_PERIOD) -> list[float | None]:
+    """Rolling %K of the stochastic oscillator, aligned to bars (None until the
+    period fills)."""
+    out: list[float | None] = []
+    for index in range(len(bars)):
+        if index + 1 < period:
+            out.append(None)
+            continue
+        window = bars[index + 1 - period : index + 1]
+        highest = max(bar.high for bar in window)
+        lowest = min(bar.low for bar in window)
+        if highest <= lowest:
+            out.append(50.0)
+        else:
+            out.append((window[-1].close - lowest) / (highest - lowest) * 100.0)
+    return out
+
+
+def _is_dip_reversal(bars: list[Bar]) -> bool:
+    """◆超跌抄底 (left-side signal): the close is below its 60-day MA (dropped
+    under the season line), the latest close is the lowest close of the last
+    DIP_LOOKBACK sessions (a fresh swing low), yet the stochastic K is low
+    (< DIP_K_LOW) but NOT itself at a new low over that window — i.e. price
+    made a lower low while K held a higher low (bullish low-level divergence).
+    Purely OHLCV-based, independent of the ★/☆ breakout flags; a stock may
+    carry several entry markers at once."""
+    closes = [bar.close for bar in bars]
+    if len(closes) < 61:
+        return False
+    ma60 = sum(closes[-60:]) / 60.0
+    if closes[-1] >= ma60:
+        return False
+    window_closes = closes[-DIP_LOOKBACK:]
+    if closes[-1] > min(window_closes):
+        return False
+    k_series = _stochastic_k_series(bars)
+    window_k = [value for value in k_series[-DIP_LOOKBACK:] if value is not None]
+    latest_k = k_series[-1]
+    if latest_k is None or len(window_k) < 2:
+        return False
+    if latest_k >= DIP_K_LOW:
+        return False
+    return latest_k > min(window_k)
 
 
 def _macd_latest(values: list[float], fast: int, slow: int, signal: int) -> tuple[float | None, float | None]:

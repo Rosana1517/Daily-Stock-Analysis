@@ -508,14 +508,15 @@ INTERACTIVE_CHART_JS = r"""
       flags.chipRadar ? "主力動向命中" : null,
       flags.newStrategy ? "發動確認命中" : null,
       flags.shortEntry ? "☆短線買點" : null,
-      flags.bestEntry ? "★最佳買點" : null
+      flags.bestEntry ? "★最佳買點" : null,
+      flags.dipReversal ? "◆超跌抄底" : null
     ].filter(Boolean).join(" / ") || "未命中";
     node.innerHTML = `
       <div class="strategy-list" style="padding-top:12px;">
         <div class="strategy-item"><b>目前篩選模式</b><span>${escapeHtml(labels.join(" + ") || "未勾選策略")}</span></div>
         <div class="strategy-item"><b>該股實際命中</b><span>${escapeHtml(hits)}</span></div>
         <div class="strategy-item"><b>漏斗三層</b><span>品質底池（哪些值得看）→ 主力動向（誰在買）→ 發動確認（何時買，K 值 &lt; 40、MA20 上升、盤整突破）。</span></div>
-        <div class="strategy-item"><b>☆/★ 買點定義</b><span>☆短線買點＝收盤剛突破 20MA 且 MACD 剛金叉（第一優先）；★最佳買點＝剛突破 60MA 且 MACD 剛金叉（次優先）；同時命中顯示 ☆★。</span></div>
+        <div class="strategy-item"><b>買點定義</b><span>☆短線買點＝收盤剛突破 20MA + MACD 剛金叉（右側，第一優先）；★最佳買點＝剛突破 60MA + MACD 剛金叉（右側，次優先）；◆超跌抄底＝跌破季線且創波段新低但 KD 低檔背離（左側搶反彈，嚴設停損）。三種各自獨立標記。</span></div>
       </div>
     `;
   }

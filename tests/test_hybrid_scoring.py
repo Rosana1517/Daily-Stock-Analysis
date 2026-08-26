@@ -17,6 +17,7 @@ from quant_research_platform.hybrid import (
     _fresh_ma_breakout,
     _industry_bias,
     _is_best_entry,
+    _is_dip_reversal,
     _is_short_entry,
     _kronos_score,
     _ma_position_status,
@@ -222,6 +223,38 @@ class ShortEntryTest(unittest.TestCase):
         self.assertFalse(_is_short_entry(bars))
 
 
+class DipReversalTest(unittest.TestCase):
+    def _hi(self, i, close, high, low):
+        return _bar(i, close, high=high, low=low)
+
+    def test_below_season_line_new_low_with_kd_divergence_is_dip(self):
+        # 50 flat-high bars keep the 60MA elevated; a panic wick at idx 50 sets a
+        # deep low that later scrolls out of the 9-day K window, so the final bar
+        # makes a lower CLOSE while its K holds above its earlier trough (bullish
+        # low-level divergence).
+        bars = [_bar(i, 100.0, high=101.0, low=99.0) for i in range(50)]
+        bars.append(self._hi(50, 85.0, 100.0, 60.0))
+        for i, c, h, low in [
+            (51, 88, 90, 86), (52, 87, 89, 85), (53, 86, 88, 84), (54, 86, 88, 84),
+            (55, 85, 87, 83), (56, 84.5, 86, 83), (57, 84, 86, 82.5), (58, 83.5, 85, 82),
+            (59, 83, 85, 82), (60, 82.5, 84, 81.5), (61, 82.0, 84, 81.0),
+        ]:
+            bars.append(self._hi(i, float(c), float(h), float(low)))
+        self.assertTrue(_is_dip_reversal(bars))
+
+    def test_monotonic_decline_without_divergence_is_not_dip(self):
+        # Each bar closes at its low, so K keeps making new lows too — no divergence.
+        bars = [_bar(i, 100.0) for i in range(50)] + [_bar(50 + i, 100.0 - 2 * (i + 1)) for i in range(12)]
+        self.assertFalse(_is_dip_reversal(bars))
+
+    def test_close_above_season_line_is_not_dip(self):
+        bars = [_bar(i, 100.0) for i in range(62)] + [_bar(62, 105.0)]
+        self.assertFalse(_is_dip_reversal(bars))
+
+    def test_insufficient_history_is_not_dip(self):
+        self.assertFalse(_is_dip_reversal([_bar(i, 100.0) for i in range(40)]))
+
+
 class FreshMaBreakoutTest(unittest.TestCase):
     def test_cross_on_latest_bar_is_fresh(self):
         closes = [100.0] * 20 + [98.0, 103.0]
@@ -252,19 +285,28 @@ class BestEntryDisplayTest(unittest.TestCase):
         self.assertEqual(_overall_focus_label(row), "☆★雙重買點")
         self.assertEqual(_overall_focus_priority(row), 0)
 
+    def test_dip_reversal_row_ranks_below_breakouts_above_combos(self):
+        dip = replace(_make_row("2603.TW", "航運", 60.0), dip_reversal=True)
+        combo = replace(_make_row("2609.TW", "航運", 90.0), legacy_hit=True, new_strategy_hit=True, chip_radar_hit=True)
+        self.assertEqual(_overall_focus_label(dip), "◆超跌抄底")
+        self.assertEqual(_overall_focus_priority(dip), 2)   # after ☆(0)/★(1)
+        self.assertEqual(_overall_focus_priority(combo), 3)  # 三者全中 pushed below ◆
+
     def test_notification_summary_marks_entries_with_star_symbols(self):
         starred = replace(_make_row("2330.TW", "半導體", 80.0), best_entry=True)
         short = replace(_make_row("2454.TW", "半導體", 76.0), short_entry=True)
         both = replace(_make_row("2603.TW", "航運", 74.0), best_entry=True, short_entry=True)
+        dip = replace(_make_row("2882.TW", "金融", 72.0), dip_reversal=True)
         plain = _make_row("2317.TW", "電子", 70.0)
 
-        summary = notification_summary([starred, short, both, plain], Path("reports/x.md"))
+        summary = notification_summary([starred, short, both, dip, plain], Path("reports/x.md"))
 
         self.assertIn("★2330.TW", summary)
         self.assertIn("☆2454.TW", summary)
         self.assertIn("☆★2603.TW", summary)
+        self.assertIn("◆2882.TW", summary)
         self.assertNotIn("★2317.TW", summary)
-        self.assertNotIn("☆2317.TW", summary)
+        self.assertNotIn("◆2317.TW", summary)
 
 
 class PriceTierTest(unittest.TestCase):

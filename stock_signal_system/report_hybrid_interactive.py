@@ -204,7 +204,7 @@ def _interactive_chart_section() -> str:
               <label class="tier-toggle"><input id="tierMidToggle" type="checkbox" checked>中價位（30~80 元）</label>
               <label class="tier-toggle"><input id="tierHighToggle" type="checkbox" checked>高價位（80 元以上）</label>
             </section>
-            <p class="filter-tip">三層是漏斗：品質底池 → 主力動向 → 發動確認，通過越多層可信度越高。買點標記：☆短線買點＝收盤剛突破 20MA 且 MACD 剛金叉（第一優先）；★最佳買點＝剛突破 60MA 且 MACD 剛金叉（次優先）；同時命中顯示 ☆★。勾選多層時只顯示同時命中的股票；股價分類與漏斗層是「同時滿足」關係（綜合關注榜不受價位篩選影響，僅標示價位）。</p>
+            <p class="filter-tip">三層是漏斗：品質底池 → 主力動向 → 發動確認，通過越多層可信度越高。買點標記(各自獨立)：☆短線買點＝剛突破 20MA+MACD 剛金叉(右側,第一優先);★最佳買點＝剛突破 60MA+MACD 剛金叉(右側,次優先);◆超跌抄底＝跌破季線且創波段新低但 KD 低檔背離(左側搶反彈,嚴設停損)。勾選多層時只顯示同時命中的股票;股價分類與漏斗層是「同時滿足」關係(綜合關注榜不受價位篩選影響,僅標示價位)。</p>
             <section class="chip-card">
               <h3>籌碼快照</h3>
               <div id="chipSnapshotPanel" class="chip-grid"></div>
