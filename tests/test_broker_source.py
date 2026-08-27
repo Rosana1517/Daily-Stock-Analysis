@@ -2,8 +2,23 @@ from __future__ import annotations
 
 import unittest
 from datetime import date
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
-from stock_signal_system.data.broker_source import parse_histock_branch_html
+from stock_signal_system.data.broker_source import fetch_histock_branch_snapshot, parse_histock_branch_html
+
+_DEGRADED_HTML = '<div class="cfdate">2017.10.18</div><script>var jsonDatas = eval();</script>'
+_OK_HTML = """
+<table>
+  <tr>
+    <td><a href="/stock/brokertrace.aspx?bno=1470&amp;no=2330" target="_blank">賣超券商A</a></td>
+    <td class="hidecell">132</td><td class="hidecell">654</td><td>-522</td><td>2359.74</td>
+    <td><a href="/stock/brokertrace.aspx?bno=9800&amp;no=2330" target="_blank">買超券商A</a></td>
+    <td class="hidecell">2,892</td><td class="hidecell">478</td><td>2,414</td><td>2365.37</td>
+  </tr>
+</table>
+"""
 
 
 class BrokerSourceTest(unittest.TestCase):
@@ -73,6 +88,36 @@ class BrokerSourceTest(unittest.TestCase):
         self.assertEqual(snapshot.source_status, "degraded")
         self.assertEqual(snapshot.buy_trades, ())
         self.assertEqual(snapshot.sell_trades, ())
+
+    def test_fetch_histock_branch_snapshot_retries_on_degraded_sentinel_response(self):
+        # HiStock 有時會回傳一個空的 sentinel 版型（見 broker_source.py 的
+        # HISTOCK_BROKER_MAX_ATTEMPTS 註解），即使該日已公告也一樣。重試應該
+        # 在收到 degraded 結果後再打一次，換到正常回應就直接用。
+        with TemporaryDirectory() as tmp:
+            with patch(
+                "stock_signal_system.data.broker_source.RateLimitedHttpClient.get_text",
+                side_effect=[_DEGRADED_HTML, _OK_HTML],
+            ) as mock_get_text, patch("stock_signal_system.data.broker_source.time.sleep"):
+                snapshot = fetch_histock_branch_snapshot(
+                    "2330", Path(tmp), trade_date=date(2026, 8, 24), max_attempts=3, retry_delay_seconds=0
+                )
+
+        self.assertEqual(mock_get_text.call_count, 2)
+        self.assertEqual(snapshot.source_status, "ok")
+        self.assertEqual(len(snapshot.buy_trades), 1)
+
+    def test_fetch_histock_branch_snapshot_gives_up_after_max_attempts(self):
+        with TemporaryDirectory() as tmp:
+            with patch(
+                "stock_signal_system.data.broker_source.RateLimitedHttpClient.get_text",
+                return_value=_DEGRADED_HTML,
+            ) as mock_get_text, patch("stock_signal_system.data.broker_source.time.sleep"):
+                snapshot = fetch_histock_branch_snapshot(
+                    "2330", Path(tmp), trade_date=date(2026, 8, 24), max_attempts=3, retry_delay_seconds=0
+                )
+
+        self.assertEqual(mock_get_text.call_count, 3)
+        self.assertEqual(snapshot.source_status, "degraded")
 
 
 if __name__ == "__main__":

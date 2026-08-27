@@ -960,13 +960,13 @@ def _pristine_watchlist_section(candidates: list[HybridRow], passed: list[tuple[
     """璞玉選股名單 report block: pure renderer over an already-computed
     (candidates, passed) pair from _compute_pristine_watchlist — see that
     function's docstring for the FinMind rate-limit scoping rationale."""
-    lines = ["## 璞玉選股名單", ""]
+    lines = ['<article class="report-card">', "## 璞玉選股名單", ""]
     lines.append(
         f'<p class="section-note">依 TIP 官方揭露的璞玉篩選規則（最近4季+3年EPS皆為正、最近3年皆配息）'
         f"重跑今日候選中 Hybrid 分數最高的 {len(candidates)} 檔（FinMind 財報有速率限制，僅掃描候選子集，非母池全篩）。</p>"
     )
     if not passed:
-        lines.extend(["- 今日檢視的候選中沒有通過璞玉篩選規則的標的。", ""])
+        lines.extend(["- 今日檢視的候選中沒有通過璞玉篩選規則的標的。", "", "</article>"])
         return lines
     lines.append(
         '<div class="table-wrap"><table><thead><tr><th>股票</th><th>名稱</th><th>ROE</th><th>負債比</th><th>估值判讀</th></tr></thead><tbody>'
@@ -982,6 +982,7 @@ def _pristine_watchlist_section(candidates: list[HybridRow], passed: list[tuple[
         )
     lines.append("</tbody></table></div>")
     lines.append("")
+    lines.append("</article>")
     return lines
 
 
@@ -1092,21 +1093,38 @@ def _save_report(
         _market_regime_line(regime_gate),
         "",
     ]
-    # 第一階段：大盤溫度與璞玉主軸
+    # 第一階段：大盤溫度與璞玉主軸。璞玉選股名單、選股優先順序表、互動技術分析
+    # (K 線圖) 都是「今天該關注哪些股票」的同一組決策動作，收在璞玉指數動向正下方
+    # 並排呈現，讓讀者一次看完選股主軸再往下看資金/籌碼/產業面。
     pristine_strength = _compute_pristine_relative_strength(report_date)
     lines.extend(_pristine_index_section(pristine_strength))
     pristine_candidates, pristine_passed = _compute_pristine_watchlist(rows, report_date)
+    lines.append('<div class="report-grid report-grid--two">')
     lines.extend(_pristine_watchlist_section(pristine_candidates, pristine_passed))
-    # 融資餘額/外資期貨/外資動向/RSS 產業訊號 這四個區塊兩兩併排（見
-    # report_hybrid_interactive.py 的 .report-grid--two），卡片夠寬、內容
-    # 不會擠成好幾行反而更高。產業鏈同步訊號長度不固定，緊接在後單獨佔一整排。
+    lines.extend([
+        '<article class="report-card">',
+        "## 選股優先順序表",
+        "",
+        '<div class="table-wrap"><table><thead><tr><th>優先級</th><th>組合</th><th>數量</th><th>風格判讀</th><th>建議動作</th><th>代表股票</th></tr></thead><tbody>',
+        "".join(priority_rows_html),
+        "</tbody></table></div>",
+        '<p class="section-note">優先順序：<code>☆短線買點</code> &gt; <code>★最佳買點</code> &gt; <code>◆超跌抄底</code> &gt; <code>三者全中</code> &gt; <code>品質底池 + 主力動向</code> &gt; <code>品質底池 + 發動確認</code> &gt; <code>主力動向 + 發動確認</code> &gt; <code>單策略命中</code>。</p>',
+        "</article>",
+    ])
+    lines.append("</div>")
+    lines.append('<div id="tech-section-marker"></div>')
+    lines.extend(_candidate_analysis_block(rows, portfolio_decisions, chip_snapshot_by_symbol))
+    # 第二階段：資金與籌碼面、產業面。融資餘額/外資期貨/外資動向/RSS 產業訊號
+    # 這四個區塊兩兩併排（見 report_hybrid_interactive.py 的 .report-grid--two），
+    # 卡片夠寬、內容不會擠成好幾行反而更高。產業鏈同步訊號長度不固定，緊接在後
+    # 單獨佔一整排。
     lines.append('<div class="report-grid report-grid--two">')
     lines.extend(_margin_balance_section(report_date))
     lines.extend(_foreign_futures_section())
     lines.extend(_foreign_flow_section(report_date))
     lines.extend([
         '<article class="report-card">',
-        "## \u0052\u0053\u0053 \u7522\u696d\u8a0a\u865f",
+        "## RSS 產業訊號",
         "",
         '<div class="rss-signal-grid">',
         "".join(rss_cards_html),
@@ -1116,18 +1134,6 @@ def _save_report(
     ])
     lines.append("</div>")
     lines.extend(_industry_chain_consensus_section(rows))
-    # 第三階段：個股選股與進場（互動 K 線圖為核心功能，緊接在優先順序表後）
-    lines.extend([
-        '<section class="report-card">',
-        "<h2>選股優先順序表</h2>",
-        '<div class="table-wrap"><table><thead><tr><th>優先級</th><th>組合</th><th>數量</th><th>風格判讀</th><th>建議動作</th><th>代表股票</th></tr></thead><tbody>',
-        "".join(priority_rows_html),
-        "</tbody></table></div>",
-        '<p class="section-note">優先順序：<code>☆短線買點</code> &gt; <code>★最佳買點</code> &gt; <code>◆超跌抄底</code> &gt; <code>三者全中</code> &gt; <code>品質底池 + 主力動向</code> &gt; <code>品質底池 + 發動確認</code> &gt; <code>主力動向 + 發動確認</code> &gt; <code>單策略命中</code>。</p>',
-        "</section>",
-        '<div id="tech-section-marker"></div>',
-    ])
-    lines.extend(_candidate_analysis_block(rows, portfolio_decisions, chip_snapshot_by_symbol))
     # 第四階段：操作建議與紀律（結論 → 333 翻倍計畫部位管理）
     lines.extend(_recommendation_section(recommendation_summary))
     lines.extend(_position_management_playbook_section())

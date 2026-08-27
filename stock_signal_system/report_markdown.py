@@ -35,9 +35,11 @@ BASIC_REPORT_CSS = """
       -webkit-font-smoothing: antialiased;
     }
     main {
-      max-width: 1040px;
+      box-sizing: border-box;
+      max-width: 1600px;
+      width: 96%;
       margin: 0 auto;
-      padding: 34px 20px 64px;
+      padding: 34px 32px 64px;
       background: var(--paper-card);
       min-height: 100vh;
       border-left: 1px solid var(--line);
@@ -79,7 +81,7 @@ BASIC_REPORT_CSS = """
     .table-wrap { overflow-x: auto; margin: 12px 0 24px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); }
     table { width: 100%; border-collapse: collapse; min-width: 860px; font-size: 13.5px; }
     th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-variant-numeric: tabular-nums; }
-    th { background: #f3ecdb; font-family: var(--font-mono); font-weight: 600; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--brass-deep); }
+    th { background: #f3ecdb; font-family: var(--font-mono); font-weight: 600; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--brass-deep); white-space: nowrap; }
     tr:nth-child(even) td { background: #fbf8f1; }
     tr:last-child td { border-bottom: 0; }
     tr:hover td { background: #f6efdd; }
