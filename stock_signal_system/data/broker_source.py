@@ -20,6 +20,14 @@ HISTOCK_BRANCH_URL = "https://histock.tw/stock/branch.aspx"
 HISTOCK_BROKER_MAX_ATTEMPTS = 3
 HISTOCK_BROKER_RETRY_DELAY_SECONDS = 4.0
 
+# 呼叫端（load_histock_broker_summaries）在迴圈裡對每一檔股票 x 每一天都會呼叫
+# fetch_histock_branch_snapshot，如果 HiStock 當下是「整站持續異常」而非單次
+# 隨機失敗，重試成本會被迴圈次數放大成好幾分鐘，2026-08-27 的排程就是這樣被
+# 拖到 CI 12 分鐘逾時、整個 job 失敗、當天完全沒有報告也沒有發 LINE（見
+# project_state.md）。呼叫端應該用這個門檻數字做斷路器：連續這麼多次「重試
+# 到用盡都還是 degraded」就判斷是整站異常，之後這次執行改成單次嘗試。
+HISTOCK_BROKER_OUTAGE_CIRCUIT_BREAKER_THRESHOLD = 3
+
 _UPDATED_AT_RE = re.compile(r"更新時間[:：]\s*(\d{4})[./-](\d{2})[./-](\d{2})")
 _ROW_RE = re.compile(
     # 數字欄位用 * 而非 +：真實頁面裡，一檔券商當天若只出現在買方或賣方，

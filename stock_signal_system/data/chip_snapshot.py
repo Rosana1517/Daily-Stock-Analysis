@@ -5,7 +5,11 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
-from stock_signal_system.data.broker_source import fetch_histock_branch_snapshot
+from stock_signal_system.data.broker_source import (
+    HISTOCK_BROKER_MAX_ATTEMPTS,
+    HISTOCK_BROKER_OUTAGE_CIRCUIT_BREAKER_THRESHOLD,
+    fetch_histock_branch_snapshot,
+)
 from stock_signal_system.data.official_broker import is_official_bank_broker
 from stock_signal_system.data.rate_limit import RateLimitedHttpClient
 
@@ -140,18 +144,32 @@ def load_histock_broker_summaries(
         return {}
     official_dates = tuple(day.trade_date for day in twse_days[: max(1, broker_lookback_sessions)])
     results: dict[str, BrokerChipSummary] = {}
+    # 斷路器：連續 HISTOCK_BROKER_OUTAGE_CIRCUIT_BREAKER_THRESHOLD 次「重試到用盡
+    # 都還是 degraded」就判斷是整站異常，之後這次執行改成單次嘗試（不再重試），
+    # 避免重試成本被這裡的雙層迴圈（symbol x date）放大到拖垮整個排程的時間預算。
+    consecutive_exhausted_degraded = 0
+    retries_enabled = True
     for raw_symbol in broker_symbols:
         symbol = str(raw_symbol).split(".")[0].strip()
         if not symbol:
             continue
         snapshots = []
         for trade_date in official_dates:
+            attempts = HISTOCK_BROKER_MAX_ATTEMPTS if retries_enabled else 1
             try:
-                snapshot = fetch_histock_branch_snapshot(symbol, cache_dir, trade_date=trade_date)
+                snapshot = fetch_histock_branch_snapshot(symbol, cache_dir, trade_date=trade_date, max_attempts=attempts)
             except Exception:
                 snapshot = None
             if snapshot is not None:
                 snapshots.append(snapshot)
+                if retries_enabled:
+                    if snapshot.source_status == "ok":
+                        consecutive_exhausted_degraded = 0
+                    else:
+                        consecutive_exhausted_degraded += 1
+                        if consecutive_exhausted_degraded >= HISTOCK_BROKER_OUTAGE_CIRCUIT_BREAKER_THRESHOLD:
+                            retries_enabled = False
+                            print("warning: histock_branch_outage_suspected, disabling retries for remainder of run", flush=True)
         summary = _summarize_broker_snapshots(symbol, snapshots, latest_volume_by_symbol.get(symbol, 0))
         if summary is not None:
             results[symbol] = summary

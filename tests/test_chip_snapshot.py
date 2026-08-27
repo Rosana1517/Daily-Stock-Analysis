@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 from datetime import date
+from pathlib import Path
+from unittest.mock import patch
 
 from stock_signal_system.data.broker_source import BrokerBranchSnapshot, BrokerBranchTrade
 from stock_signal_system.data.chip_snapshot import (
@@ -9,6 +11,7 @@ from stock_signal_system.data.chip_snapshot import (
     TwseInstitutionalDay,
     _build_chip_rows_from_twse_days,
     _summarize_broker_snapshots,
+    load_histock_broker_summaries,
 )
 
 
@@ -159,6 +162,68 @@ class SummarizeBrokerSnapshotsOfficialBuyTest(unittest.TestCase):
         summary = _summarize_broker_snapshots("2330", [snapshot], latest_volume=100_000)
 
         self.assertEqual(summary.official_broker_net_buy, 0)
+
+
+class LoadHistockBrokerSummariesCircuitBreakerTest(unittest.TestCase):
+    def test_disables_retries_after_consecutive_degraded_exhaustion(self):
+        # 2026-08-27 的排程曾經因為 HiStock 整站異常，degraded 重試在
+        # symbol x date 的雙層迴圈裡被放大成好幾分鐘，把整個 CI step 拖到逾時、
+        # 當天完全沒有報告也沒有發 LINE。斷路器應該在連續 3 次「重試到用盡都還
+        # 是 degraded」之後，把剩下的呼叫都改成單次嘗試（不再重試）。
+        degraded = BrokerBranchSnapshot(
+            symbol="0000",
+            trade_date=None,
+            buy_trades=(),
+            sell_trades=(),
+            source_url="https://histock.tw/stock/branch.aspx?no=0000",
+            source_status="degraded",
+        )
+        twse_days = tuple(TwseInstitutionalDay(date(2026, 8, d), ()) for d in (24, 23, 22))
+        symbols = ("1111", "2222", "3333", "4444", "5555")
+
+        with patch(
+            "stock_signal_system.data.chip_snapshot.fetch_histock_branch_snapshot",
+            return_value=degraded,
+        ) as mock_fetch:
+            load_histock_broker_summaries(
+                cache_dir=Path("unused"),
+                twse_days=twse_days,
+                broker_symbols=symbols,
+                latest_volume_by_symbol={},
+                broker_lookback_sessions=3,
+            )
+
+        attempts_used = [call.kwargs["max_attempts"] for call in mock_fetch.call_args_list]
+        self.assertEqual(len(attempts_used), 15)
+        self.assertEqual(attempts_used[:3], [3, 3, 3])
+        self.assertEqual(attempts_used[3:], [1] * 12)
+
+    def test_keeps_retrying_when_results_are_ok(self):
+        ok_snapshot = BrokerBranchSnapshot(
+            symbol="0000",
+            trade_date=None,
+            buy_trades=(BrokerBranchTrade(broker="A", buy_shares=1, sell_shares=0, net_shares=1, average_price=10.0),),
+            sell_trades=(),
+            source_url="https://histock.tw/stock/branch.aspx?no=0000",
+            source_status="ok",
+        )
+        twse_days = tuple(TwseInstitutionalDay(date(2026, 8, d), ()) for d in (24, 23, 22))
+        symbols = ("1111", "2222")
+
+        with patch(
+            "stock_signal_system.data.chip_snapshot.fetch_histock_branch_snapshot",
+            return_value=ok_snapshot,
+        ) as mock_fetch:
+            load_histock_broker_summaries(
+                cache_dir=Path("unused"),
+                twse_days=twse_days,
+                broker_symbols=symbols,
+                latest_volume_by_symbol={},
+                broker_lookback_sessions=3,
+            )
+
+        attempts_used = [call.kwargs["max_attempts"] for call in mock_fetch.call_args_list]
+        self.assertEqual(attempts_used, [3] * len(attempts_used))
 
 
 if __name__ == "__main__":
