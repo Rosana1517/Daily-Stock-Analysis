@@ -15,3 +15,7 @@ doc/task_issue.md
 doc/op_notes.docx
 doc/stock_select.docx
 doc/candlestick_new.pdf
+
+.dev.vars*
+!.dev.vars.example
+!.env.example
