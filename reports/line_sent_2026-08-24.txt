@@ -1,2 +1,0 @@
-sent_at_utc=2026-08-24T09:38:15Z
-workflow_run=32711907293
