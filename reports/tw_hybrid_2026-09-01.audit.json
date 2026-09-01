@@ -1,0 +1,43 @@
+{
+  "report_date": "2026-09-01",
+  "timezone": "Asia/Taipei",
+  "branch": "market_day",
+  "session": "09:00-13:30 Asia/Taipei",
+  "market_scope": "tw_listed_otc",
+  "artifacts": {
+    "markdown": "reports/tw_hybrid_2026-09-01.md",
+    "html": "reports/stock_signals_2026-09-01.html"
+  },
+  "sources": [
+    {
+      "name": "TWSE",
+      "url": "https://www.twse.com.tw/"
+    },
+    {
+      "name": "TPEx",
+      "url": "https://www.tpex.org.tw/"
+    },
+    {
+      "name": "TPEx Industry Value Chain",
+      "url": "https://ic.tpex.org.tw/"
+    },
+    {
+      "name": "RSS sources",
+      "path": "configs/rss_sources.example.json"
+    }
+  ],
+  "data_gaps": [
+    "price_1h_path 未設定，市場結構改用日線資料",
+    "price_5m_path 未設定，流動性掃描改用日線資料"
+  ],
+  "qa": {
+    "markdown_exists": true,
+    "html_exists": true,
+    "html_shell": true,
+    "self_contained_html": true,
+    "mobile_css_present": true,
+    "has_industry_chain_section": true,
+    "has_data_gap_section": true,
+    "no_investment_advice_claim": true
+  }
+}
