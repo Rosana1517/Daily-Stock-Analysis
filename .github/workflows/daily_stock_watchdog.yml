@@ -23,6 +23,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # GitHub 排程常被延遲好幾個小時。台北 00:00 之後「新的一天」還沒有
+          # marker 是正常的，不是漏跑；這時重派整套分析只會多燒 Actions 時間，
+          # 還可能在半夜發出 LINE。只在平日台北 17:35 之後(當天)才補跑。
+          dow="$(TZ=Asia/Taipei date +%u)"
+          hhmm="$((10#$(TZ=Asia/Taipei date +%H%M)))"
+          if [ "$dow" -gt 5 ] || [ "$hhmm" -lt 1735 ]; then
+            echo "watchdog_skipped=outside_window dow=${dow} hhmm=${hhmm}"
+            exit 0
+          fi
           today="$(TZ=Asia/Taipei date +%F)"
           marker="reports/line_sent_${today}.txt"
           if gh api "repos/${GITHUB_REPOSITORY}/contents/${marker}?ref=main" >/dev/null 2>&1; then

@@ -85,6 +85,12 @@ jobs:
             --report-html "$latest_report" \
             --repo-dir . \
             --public-base-url "$REPORT_BASE_URL"
+          # 記下這份報告實際的日期(資料日)。LINE 連結與 marker 都要用它，
+          # 不能用發送當下的台北日期：GitHub 排程常被延遲到台北 00:00 之後才跑，
+          # 那時「今天」已經跨日，會組出不存在的 stock_signals_<隔天>.html (404)，
+          # 還會預先建立隔天的 marker，讓隔天正常時段的 LINE 被誤判成已發送。
+          report_date="$(basename "$latest_report" .html | sed 's/^stock_signals_//')"
+          echo "REPORT_DATE=${report_date}" >> "$GITHUB_ENV"
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v6
@@ -104,23 +110,39 @@ jobs:
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
         run: |
-          marker="reports/line_sent_$(TZ=Asia/Taipei date +%F).txt"
+          if [ -z "$REPORT_DATE" ]; then
+            echo "line_failed=missing_REPORT_DATE"
+            exit 1
+          fi
+          marker="reports/line_sent_${REPORT_DATE}.txt"
           force_send_line="${{ github.event.inputs.force_send_line }}"
           if [ -f "$marker" ] && [ "$force_send_line" != "true" ]; then
-            echo "line_skipped=already_sent_today"
+            echo "line_skipped=already_sent_for_${REPORT_DATE}"
             exit 0
           fi
           if [ -z "$LINE_CHANNEL_ACCESS_TOKEN" ]; then
             echo "line_failed=missing_LINE_CHANNEL_ACCESS_TOKEN"
             exit 1
           fi
-          today="$(TZ=Asia/Taipei date +%F)"
-          report_url="${REPORT_BASE_URL}/stock_signals_${today}.html"
-          LINE_BODY="$(printf '%s\n\n%s' "$today" "$report_url")" python -c "import os; from stock_signal_system.notify import send_notification; body=os.environ['LINE_BODY']; print(send_notification('', body, None, 'LINE_CHANNEL_ACCESS_TOKEN', None, True))"
+          report_url="${REPORT_BASE_URL}/stock_signals_${REPORT_DATE}.html"
+          # Pages 剛部署完可能還有傳播延遲；確認連結真的是 200 才發，
+          # 寧可不發也不要把 404 連結推給使用者。
+          ok=0
+          for attempt in $(seq 1 12); do
+            code="$(curl -s -o /dev/null -w '%{http_code}' "$report_url" || true)"
+            if [ "$code" = "200" ]; then ok=1; break; fi
+            echo "report_url_not_ready http=${code} attempt=${attempt}"
+            sleep 10
+          done
+          if [ "$ok" != "1" ]; then
+            echo "line_skipped=report_url_not_live url=${report_url}"
+            exit 1
+          fi
+          LINE_BODY="$(printf '%s\n\n%s' "$REPORT_DATE" "$report_url")" python -c "import os; from stock_signal_system.notify import send_notification; body=os.environ['LINE_BODY']; print(send_notification('', body, None, 'LINE_CHANNEL_ACCESS_TOKEN', None, True))"
           {
             echo "sent_at_utc=$(date -u +%FT%TZ)"
             echo "workflow_run=${GITHUB_RUN_ID}"
           } > "$marker"
           git add "$marker"
-          git commit -m "Mark LINE sent ${today}" || true
+          git commit -m "Mark LINE sent ${REPORT_DATE}" || true
           git push || true
