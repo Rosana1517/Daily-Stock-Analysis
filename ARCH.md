@@ -41,7 +41,7 @@
 - **成本上限**:GitHub Actions 免費額度 + Cloudflare Workers 免費層;第三方資料源(FinMind/yfinance)多為免費或有速率限制,超額時需 fallback 或降級
 - **安全底線**:無使用者敏感資料;金鑰(LINE token、FinMind token 等)一律走 `.env`/GitHub Secrets,已於體檢確認無硬編碼外洩
 - **可用性**:可接受單日排程失敗(watchdog 二次補跑機制已覆蓋此風險),無需 7x24 監控
-- **第三方依賴**:TWSE/TPEX 官方 API、FinMind、yfinance、twstock、RSS 來源、LINE Messaging API、外部 fork(`Rosana1517/Kronos`、`qlib`、`OpenBB`)——外部 fork 若失效或 API 改版,quant_research_platform 的進階分析會受影響,但 stock_signal_system 主流程設計上不強依賴它們(dependencies 為空,quant 為 optional-dependencies)
+- **第三方依賴**:TWSE/TPEX 官方 API、FinMind、yfinance、twstock、RSS 來源、LINE Messaging API、官方原版 Kronos(`shiyu-coder/Kronos`,鎖 commit)、qlib(`microsoft/qlib`,鎖 commit)、OpenBB(PyPI `openbb==4.7.1`)——2026-10 原本依賴的 Rosana1517 fork 被刪除後改用官方原版;若上游失效或 API 改版,quant_research_platform 的進階分析會受影響,但 stock_signal_system 主流程設計上不強依賴它們(dependencies 為空,quant 為 optional-dependencies)
 - **上線平台**:Web(GitHub Pages 靜態展示)+ 排程後端(GitHub Actions),無 App
 - **維護方式**:使用者本人維護,無 SLA 承諾
 

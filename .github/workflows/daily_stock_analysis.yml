@@ -44,15 +44,21 @@ jobs:
         with:
           python-version: "3.11"
 
+      # 第三方套件一律用官方原版並鎖定版本。原本依賴 Rosana1517 底下的 fork
+      # (Kronos/qlib/OpenBB)且追 default branch，2026-10 fork 被刪除後整條
+      # 排程在 clone 這一步就失敗(exit 128)，當天沒有報告也沒有 LINE。
+      # 鎖定的版本對齊 2026-10-02 最後一次成功執行實際安裝到的版本。
       - name: Prepare Kronos repository
-        run: git clone --depth 1 https://github.com/Rosana1517/Kronos.git external/Kronos
+        run: |
+          git clone https://github.com/shiyu-coder/Kronos.git external/Kronos
+          git -C external/Kronos checkout --detach 67b630e67f6a18c9e9be918d9b4337c960db1e9a
 
       - name: Install package
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[market]"
-          python -m pip install git+https://github.com/Rosana1517/qlib.git
-          python -m pip install git+https://github.com/Rosana1517/OpenBB.git#subdirectory=openbb_platform
+          python -m pip install "git+https://github.com/microsoft/qlib.git@be725493eb1a6bbb42bf11b37aa7669f59610ff1"
+          python -m pip install "openbb==4.7.1"
           python -m pip install -r external/Kronos/requirements.txt
 
       - name: Refresh market and news data
