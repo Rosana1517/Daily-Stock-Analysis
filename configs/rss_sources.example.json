@@ -250,5 +250,32 @@
     "quality": "social",
     "source_type": "social",
     "weight": 1
+  },
+  {
+    "name": "LTN Life",
+    "url": "https://news.ltn.com.tw/rss/life.xml",
+    "region": "taiwan",
+    "category": "health",
+    "quality": "major_media",
+    "source_type": "media",
+    "weight": 1
+  },
+  {
+    "name": "Google News Biotech",
+    "url": "https://news.google.com/rss/search?hl=zh-TW&gl=TW&ceid=TW:zh-Hant&q=%E7%94%9F%E6%8A%80+OR+%E9%86%AB%E7%99%82+OR+%E7%96%AB%E6%83%85+OR+%E7%96%AB%E8%8B%97+when:1d",
+    "region": "taiwan",
+    "category": "health",
+    "quality": "aggregator",
+    "source_type": "aggregator",
+    "weight": 1
+  },
+  {
+    "name": "Google News TW Concept Stocks",
+    "url": "https://news.google.com/rss/search?hl=zh-TW&gl=TW&ceid=TW:zh-Hant&q=%E5%8F%B0%E8%82%A1+%E6%A6%82%E5%BF%B5%E8%82%A1+when:1d",
+    "region": "taiwan",
+    "category": "finance",
+    "quality": "aggregator",
+    "source_type": "aggregator",
+    "weight": 1
   }
 ]

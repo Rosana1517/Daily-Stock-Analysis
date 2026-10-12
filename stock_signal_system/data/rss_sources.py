@@ -8,6 +8,7 @@ import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import date
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 from stock_signal_system.data.rate_limit import RateLimitedHttpClient
@@ -103,11 +104,18 @@ def _parse_feed(source: RssSource, xml_text: str, limit: int) -> list[NewsItem]:
     for item in items:
         title = _clean_text(_text(item, "title") or _text(item, "{http://www.w3.org/2005/Atom}title"))
         body = _clean_text(_text(item, "description") or _text(item, "{http://www.w3.org/2005/Atom}summary"))
+        published = _parse_published(
+            _text(item, "pubDate")
+            or _text(item, "{http://www.w3.org/2005/Atom}published")
+            or _text(item, "{http://www.w3.org/2005/Atom}updated")
+        )
+        if _is_stale(published):
+            continue
         industries = _classify_industries(title, body)
         if industries:
             parsed.append(
                 NewsItem(
-                    date=date.today(),
+                    date=published or date.today(),
                     title=title,
                     source=source.name,
                     body=body,
@@ -123,12 +131,15 @@ def _parse_feed_with_regex(source: RssSource, xml_text: str, limit: int) -> list
     for raw_item in re.findall(r"<item\b.*?</item>", xml_text, flags=re.IGNORECASE | re.DOTALL)[:limit]:
         title = _clean_text(_tag_text(raw_item, "title"))
         body = _clean_text(_tag_text(raw_item, "description"))
+        published = _parse_published(_tag_text(raw_item, "pubDate"))
+        if _is_stale(published):
+            continue
         industries = _classify_industries(title, body)
         if not title or not industries:
             continue
         parsed.append(
             NewsItem(
-                date=date.today(),
+                date=published or date.today(),
                 title=title,
                 source=source.name,
                 body=body,
@@ -160,6 +171,36 @@ def _clean_text(value: str) -> str:
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
+
+
+# 有些來源會混入幾週前、甚至幾年前的舊新聞(CNA health feed 停在 2020 年、
+# BBC/Reddit/DIGITIMES 常混入 2~6 週前的項目)。原本一律把日期當成「今天」，
+# 舊新聞會被當成當天事件。改用 RSS 的發布時間，超過這個天數就丟掉。
+MAX_NEWS_AGE_DAYS = 3
+
+
+def _parse_published(value: str) -> date | None:
+    value = (value or "").strip()
+    if not value:
+        return None
+    try:
+        return parsedate_to_datetime(value).date()
+    except (TypeError, ValueError, IndexError):
+        pass
+    match = re.match(r"(\d{4})-(\d{2})-(\d{2})", value)
+    if match:
+        try:
+            return date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        except ValueError:
+            return None
+    return None
+
+
+def _is_stale(published: date | None, today: date | None = None) -> bool:
+    """沒有發布時間的項目保留(無法判斷)；有的話超過 MAX_NEWS_AGE_DAYS 就視為過期。"""
+    if published is None:
+        return False
+    return ((today or date.today()) - published).days > MAX_NEWS_AGE_DAYS
 
 
 def _sanitize_xml(value: str) -> str:
@@ -225,6 +266,45 @@ INDUSTRY_RULES_ZH = {
         "context": ("出貨", "庫存", "鏡頭", "面板", "3c", "device", "pc"),
         "exclude": ("航空", "餐廳"),
     },
+    # 以下為事件驅動型產業。原本只有上面 6 個科技/電力產業，分類不到的新聞
+    # 會被整則丟棄(_parse_feed 的 `if industries:`)，2026-10-06 俄羅斯肺鼠疫
+    # 新聞(TechNews 有發)就因此完全沒進報告，醫療股上漲也沒有提示。
+    # "standalone"：本身就足以判定產業、不需 context 佐證的強事件詞。
+    "生技醫療": {
+        "standalone": (
+            "鼠疫", "肺鼠疫", "疫情爆發", "大流行", "新冠", "禽流感", "猴痘", "流感疫情",
+            "防疫概念股", "疫苗股", "生技股", "醫材股", "plague", "pandemic", "outbreak", "epidemic",
+        ),
+        "required": (
+            "生技", "醫療", "醫材", "新藥", "藥廠", "製藥", "藥品", "疫苗", "疫情", "防疫", "病毒",
+            "傳染", "感染", "快篩", "口罩", "biotech", "pharma", "vaccine", "virus", "fda",
+        ),
+        "context": (
+            "股", "概念", "營收", "訂單", "需求", "臨床", "授權", "藥證", "確診", "病例", "擴散",
+            "世衛", "who", "疾管署", "衛福部", "公衛", "drug", "approval", "trial", "sales",
+        ),
+        "exclude": ("彈藥", "農藥", "炸藥", "火藥", "電腦病毒", "勒索", "惡意程式", "資安"),
+    },
+    "航運": {
+        "required": ("航運", "貨櫃", "散裝", "運價", "海運", "長榮", "陽明", "萬海", "shipping", "freight", "container"),
+        "context": ("運價", "航線", "塞港", "紅海", "蘇伊士", "需求", "股", "scfi", "bdi", "rates", "port"),
+        "exclude": ("食譜",),
+    },
+    "觀光餐旅": {
+        "required": ("觀光", "旅遊", "飯店", "旅行社", "來台旅客", "陸客", "tourism", "travel", "hotel"),
+        "context": ("人次", "訂房", "住房率", "營收", "開放", "簽證", "股", "需求", "booking"),
+        "exclude": ("太空旅遊",),
+    },
+    "金融保險": {
+        "required": ("金控", "銀行", "壽險", "保險", "券商", "升息", "降息", "聯準會", "央行", "fed"),
+        "context": ("獲利", "股利", "配息", "放款", "利差", "股", "eps", "殖利率", "利率", "rate"),
+        "exclude": ("食物銀行", "血液銀行", "時間銀行"),
+    },
+    "鋼鐵": {
+        "required": ("鋼鐵", "鋼價", "中鋼", "鋼材", "steel"),
+        "context": ("報價", "需求", "股", "產能", "反傾銷", "price", "tariff"),
+        "exclude": (),
+    },
 }
 
 
@@ -242,6 +322,8 @@ def _classify_industries(title: str, body: str) -> list[str]:
 def _matches_clean_rule(text: str, rule: dict[str, tuple[str, ...]]) -> bool:
     if any(_contains_term(text, term) for term in rule.get("exclude", ())):
         return False
+    if any(_contains_term(text, term) for term in rule.get("standalone", ())):
+        return True
     required = any(_contains_term(text, term) for term in rule.get("required", ()))
     context = any(_contains_term(text, term) for term in rule.get("context", ()))
     return required and context

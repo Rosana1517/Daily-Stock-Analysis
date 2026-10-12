@@ -196,19 +196,34 @@ def send_hybrid_notification(
     )
 
 
+# RSS 新聞產業(rss_sources.INDUSTRY_RULES_ZH 的 key) → 證交所個股產業分類。
+# 兩邊命名不同(例如「半導體」vs「半導體業」)，原本只做字串完全相等比對，
+# 幾乎永遠對不上；fallback 又寫成 `term in source or term in text`，只要當天
+# 有「AI伺服器」新聞，每一檔股票(連食品股)都會拿到 AI 的新聞分，等於新聞
+# 分數對所有股票一視同仁、沒有鑑別力。
+NEWS_INDUSTRY_TO_STOCK_INDUSTRIES: dict[str, tuple[str, ...]] = {
+    "AI伺服器": ("電腦及週邊設備業", "電子零組件業", "其他電子業", "數位雲端"),
+    "半導體": ("半導體業",),
+    "散熱": ("電子零組件業", "電腦及週邊設備業"),
+    "電力設備": ("電機機械", "電器電纜", "綠能環保", "油電燃氣業"),
+    "儲能": ("電機機械", "綠能環保", "電器電纜"),
+    "消費電子": ("光電業", "通信網路業", "電子零組件業", "電子通路業", "其他電子業"),
+    "生技醫療": ("生技醫療業",),
+    "航運": ("航運業",),
+    "觀光餐旅": ("觀光餐旅", "觀光事業", "運動休閒"),
+    "金融保險": ("金融保險業",),
+    "鋼鐵": ("鋼鐵工業",),
+}
+
+
 def industry_news_score(industry: str, signals: list[IndustrySignal]) -> float:
-    if not signals:
-        return 50.0
-    direct = {item.industry: item.score for item in signals}
-    if industry in direct:
-        return direct[industry]
-    text = industry.lower()
-    best = 50.0
+    """個股所屬產業有對應的新聞產業訊號才給分(取最高)，沒有就維持中性 50。"""
+    best: float | None = None
     for item in signals:
-        source = item.industry.lower()
-        if any(term in source or term in text for term in ("ai", "半導體", "ic", "server", "伺服器")):
-            best = max(best, item.score)
-    return best
+        mapped = NEWS_INDUSTRY_TO_STOCK_INDUSTRIES.get(item.industry, ())
+        if industry == item.industry or industry in mapped:
+            best = item.score if best is None else max(best, item.score)
+    return 50.0 if best is None else best
 
 
 def _intraday_status(value: float) -> str:

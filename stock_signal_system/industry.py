@@ -44,6 +44,12 @@ CAUTION_TERMS = (
 )
 
 
+# 疫情類新聞常帶「風險」「調查」等字眼，一般會被算成負面；但對生技醫療
+# (疫苗、快篩、藥品、醫材需求)而言是利多，不能套用一般的情緒判斷。
+OUTBREAK_TERMS = ("鼠疫", "疫情", "大流行", "新冠", "禽流感", "猴痘", "傳染", "plague", "pandemic", "outbreak", "epidemic")
+OUTBREAK_DEMAND_SENTIMENT = 14
+
+
 def analyze_industries(news: list[NewsItem]) -> list[IndustrySignal]:
     scores: dict[str, float] = defaultdict(float)
     catalysts: dict[str, list[str]] = defaultdict(list)
@@ -54,10 +60,14 @@ def analyze_industries(news: list[NewsItem]) -> list[IndustrySignal]:
         text = f"{item.title} {item.body}"
         sentiment = _term_score(text)
         weight = max(0.1, float(getattr(item, "source_weight", 1.0)))
+        is_outbreak = any(term in text.lower() for term in OUTBREAK_TERMS)
         for industry in item.industries:
+            item_sentiment = sentiment
+            if industry == "生技醫療" and is_outbreak:
+                item_sentiment = max(sentiment, OUTBREAK_DEMAND_SENTIMENT)
             counts[industry] += 1
             weights[industry] += weight
-            scores[industry] += (45 + sentiment) * weight
+            scores[industry] += (45 + item_sentiment) * weight
             catalysts[industry].append(item.title)
 
     signals = [
