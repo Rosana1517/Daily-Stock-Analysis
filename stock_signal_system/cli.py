@@ -4,6 +4,7 @@ import argparse
 
 from stock_signal_system.cli_handlers import (
     handle_backtest_chip_breakout,
+    handle_collect_news,
     handle_fetch_news,
     handle_fetch_tpex,
     handle_fetch_twse,
@@ -49,6 +50,11 @@ def main() -> None:
     quant_realtime_parser.add_argument("--config", required=True, help="Path to quant platform JSON config.")
     quant_realtime_parser.add_argument("--cache", required=True, help="Realtime cache CSV path.")
     quant_realtime_parser.add_argument("--batch-size", type=int, default=75, help="Symbols per realtime request batch.")
+
+    collect_parser = subparsers.add_parser("collect-news", help="Fetch RSS once and merge into the rolling news history.")
+    collect_parser.add_argument("--config", required=True, help="Path to JSON config.")
+    collect_parser.add_argument("--history", default="data/news_history.csv", help="Rolling news history CSV.")
+    collect_parser.add_argument("--cache-dir", default=".cache", help="Cache directory.")
 
     rss_parser = subparsers.add_parser("fetch-news", help="Fetch RSS news into a CSV file.")
     rss_parser.add_argument("--sources", required=True, help="Path to RSS sources JSON.")
@@ -111,6 +117,8 @@ def main() -> None:
         handle_refresh_quant_ohlcv(args)
     elif args.command == "refresh-quant-realtime":
         handle_refresh_quant_realtime(args)
+    elif args.command == "collect-news":
+        handle_collect_news(args)
     elif args.command == "fetch-news":
         handle_fetch_news(args)
     elif args.command == "fetch-yfinance":

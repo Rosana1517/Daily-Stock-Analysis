@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from stock_signal_system.data.csv_sources import load_news
+from stock_signal_system.data.news_history import NEWS_HISTORY_PATH, with_history
 from stock_signal_system.data.rss_sources import fetch_rss_news, save_news_csv
 from stock_signal_system.industry import analyze_industries
 from stock_signal_system.models import IndustrySignal, PriceBar
@@ -121,9 +122,11 @@ def load_or_fetch_industry_signals(
     news_path: Path | None = None,
     rss_sources_path: Path | None = None,
     cache_dir: Path = Path(".cache"),
+    history_path: Path | None = NEWS_HISTORY_PATH,
 ) -> list[IndustrySignal]:
     if rss_sources_path:
-        news = fetch_rss_news(rss_sources_path, cache_dir)
+        # 併入 news-collector 當天稍早累積的新聞，不只看 17:30 這一刻的 RSS。
+        news = with_history(fetch_rss_news(rss_sources_path, cache_dir), history_path)
         if news:
             if news_path:
                 save_news_csv(news, news_path)

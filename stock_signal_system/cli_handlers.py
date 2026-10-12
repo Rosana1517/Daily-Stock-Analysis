@@ -14,6 +14,7 @@ from pathlib import Path
 from stock_signal_system.cli_handlers_market_data import (  # noqa: F401 (re-exported for tests)
     _ensure_quant_chip_snapshot_current,
     _validate_chip_snapshot_schema,
+    handle_collect_news,
     handle_fetch_news,
     handle_fetch_tpex,
     handle_fetch_twse,
@@ -39,6 +40,7 @@ __all__ = [
     "handle_validate_config",
     "handle_publish_pages",
     "handle_refresh_data",
+    "handle_collect_news",
     "handle_fetch_news",
     "handle_fetch_yfinance",
     "handle_fetch_twse",

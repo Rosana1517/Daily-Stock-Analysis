@@ -12,6 +12,7 @@ from pathlib import Path
 from stock_signal_system.cli_step_timer import _step_timer
 from stock_signal_system.config import AppConfig
 from stock_signal_system.data.chip_snapshot import build_tw_chip_snapshot_csv, load_recent_twse_institutional_days
+from stock_signal_system.data.news_history import update_news_history, with_history
 from stock_signal_system.data.rss_sources import fetch_rss_news, save_news_csv
 from stock_signal_system.data.tpex import (
     build_tpex_daily_price_csv,
@@ -32,7 +33,7 @@ def handle_refresh_data(args) -> None:
     config = AppConfig.from_file(args.config)
     if config.rss_sources_path:
         with _step_timer("rss_news_refresh"):
-            news = fetch_rss_news(config.rss_sources_path, Path(args.cache_dir))
+            news = with_history(fetch_rss_news(config.rss_sources_path, Path(args.cache_dir)))
             output = save_news_csv(news, config.news_path)
             print(f"rss_news_rows={len(news)}", flush=True)
             print(f"rss_news_output={output}", flush=True)
@@ -123,6 +124,19 @@ def handle_refresh_data(args) -> None:
         print("warning: market_refresh_unavailable=using_example_fallback", flush=True)
     else:
         raise SystemExit("ERROR no TWSE/TPEx data could be refreshed and no fallback examples are available.")
+
+
+def handle_collect_news(args) -> None:
+    """news-collector workflow 用：抓一次 RSS 併進累積的新聞歷史檔。"""
+    config = AppConfig.from_file(args.config)
+    if not config.rss_sources_path:
+        print("collect_news_skipped=no_rss_sources_path", flush=True)
+        return
+    fresh = fetch_rss_news(config.rss_sources_path, Path(args.cache_dir))
+    merged = update_news_history(fresh, Path(args.history))
+    print(f"collect_news_fresh={len(fresh)}", flush=True)
+    print(f"collect_news_history_total={len(merged)}", flush=True)
+    print(f"collect_news_history={args.history}", flush=True)
 
 
 def handle_fetch_news(args) -> None:

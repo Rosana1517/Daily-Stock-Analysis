@@ -61,6 +61,15 @@ jobs:
           python -m pip install "openbb==4.7.1"
           python -m pip install -r external/Kronos/requirements.txt
 
+      # 還原 news-collector 當天每 2 小時累積的新聞，分析時一併納入。
+      # 找不到 cache(例如 collector 還沒跑過)不影響主流程，只是退回只看當下的 RSS。
+      - name: Restore news history
+        uses: actions/cache/restore@v4
+        with:
+          path: data/news_history.csv
+          key: news-history-${{ github.run_id }}
+          restore-keys: news-history-
+
       - name: Refresh market and news data
         timeout-minutes: 12
         run: python -m stock_signal_system.cli refresh-data --config "$CONFIG"
