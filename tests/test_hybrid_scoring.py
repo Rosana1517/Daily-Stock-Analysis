@@ -10,8 +10,13 @@ from quant_research_platform.agent_workflow import AgentDecision
 from quant_research_platform.daily_stock_bridge import notification_summary
 from quant_research_platform.data import Bar
 from quant_research_platform.hybrid import (
+    HYBRID_WEIGHTS,
     HybridRow,
     _action,
+    _is_chased,
+    _overall_focus_rows,
+    _pullback_score,
+    _runup_5d,
     _cross_status,
     _group_rows_by_industry,
     _fresh_ma_breakout,
@@ -91,10 +96,37 @@ class KronosAndRealtimeScoreTest(unittest.TestCase):
         self.assertEqual(_kronos_score(0.1), 100.0)
         self.assertEqual(_kronos_score(-0.5), 0.0)
 
-    def test_realtime_score_scales_intraday_return_and_clamps(self):
+    def test_realtime_score_penalizes_big_up_days_and_stays_neutral_on_down_days(self):
+        # 反追高：當天大漲不再加分(舊版 +10% 會拿滿分 100)。
         self.assertEqual(_realtime_score(0.0), 50.0)
-        self.assertEqual(_realtime_score(0.1), 100.0)
-        self.assertEqual(_realtime_score(-0.5), 0.0)
+        self.assertEqual(_realtime_score(0.1), 0.0)
+        self.assertAlmostEqual(_realtime_score(0.02), 36.0)
+        self.assertEqual(_realtime_score(-0.05), 50.0)
+
+
+class AntiChaseTest(unittest.TestCase):
+    def test_runup_5d_uses_last_six_closes_and_is_neutral_without_history(self):
+        bars = [_bar(i, close) for i, close in enumerate([100, 100, 101, 102, 104, 108, 110])]
+        self.assertAlmostEqual(_runup_5d(bars), 110 / 100 - 1)
+        self.assertEqual(_runup_5d(bars[:5]), 0.0)
+
+    def test_pullback_score_rewards_not_yet_risen(self):
+        self.assertEqual(_pullback_score(-0.10), 100.0)
+        self.assertEqual(_pullback_score(0.0), 50.0)
+        self.assertEqual(_pullback_score(0.10), 0.0)
+
+    def test_hybrid_weights_sum_to_one(self):
+        self.assertAlmostEqual(sum(HYBRID_WEIGHTS.values()), 1.0)
+
+    def test_focus_list_demotes_stocks_that_already_ran_up(self):
+        chased = replace(_make_row("1111", "半導體業", 90.0), short_entry=True, runup_5d=0.12)
+        quiet = replace(_make_row("2222", "半導體業", 55.0), runup_5d=-0.04)
+
+        ranked = _overall_focus_rows([chased, quiet])
+
+        self.assertEqual([row.symbol for row in ranked], ["2222", "1111"])
+        self.assertTrue(_is_chased(chased))
+        self.assertFalse(_is_chased(quiet))
 
 
 class QuoteIntradayStatusTest(unittest.TestCase):

@@ -18,16 +18,18 @@ SCORE_COMPONENTS = (
     "realtime_score",
     "confidence_score",
     "chip_score",
+    "pullback_score",
 )
 
-# Mirrors the production weights in quant_research_platform/hybrid.py::run_tw_hybrid.
+# Mirrors quant_research_platform/hybrid.py::HYBRID_WEIGHTS (2026-10-12 反追高版本)。
 CURRENT_WEIGHTS: dict[str, float] = {
-    "kronos_score": 0.35,
-    "news_score": 0.15,
-    "technical_score": 0.20,
-    "realtime_score": 0.10,
+    "kronos_score": 0.30,
+    "news_score": 0.10,
+    "technical_score": 0.15,
+    "realtime_score": 0.05,
     "confidence_score": 0.10,
     "chip_score": 0.10,
+    "pullback_score": 0.20,
 }
 
 
@@ -120,12 +122,29 @@ def append_score_snapshot(path: Path, entry_date: str, symbol: str, scores: dict
     so weight diagnostics can later correlate them against realized returns."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = ["entry_date", "symbol", *SCORE_COMPONENTS]
+    _migrate_header(path, fieldnames)
     is_new = not path.exists()
     with path.open("a", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
         if is_new:
             writer.writeheader()
         writer.writerow({"entry_date": entry_date, "symbol": symbol, **scores})
+
+
+def _migrate_header(path: Path, fieldnames: list[str]) -> None:
+    """新增分數分量後，舊檔的表頭會少欄位；直接 append 會讓新列欄位錯位。
+    表頭不同時用新表頭重寫整個檔案，舊列缺的欄位留空(讀取時視為中性 50)。"""
+    if not path.exists():
+        return
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if list(reader.fieldnames or []) == fieldnames:
+            return
+        rows = list(reader)
+    with path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def _load_evaluated_trades(log_path: Path) -> list[dict]:

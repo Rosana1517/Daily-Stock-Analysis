@@ -96,6 +96,26 @@ class WeightDiagnosticsTest(unittest.TestCase):
             self.assertEqual(len(rows), 2)
             self.assertEqual(rows[0]["symbol"], "1111.TW")
 
+    def test_score_snapshot_migrates_old_header_when_component_added(self):
+        # 新增 pullback_score 後，舊檔表頭少一欄；直接 append 會讓新列欄位錯位。
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "scores.csv"
+            old_fields = ["entry_date", "symbol", *[c for c in SCORE_COMPONENTS if c != "pullback_score"]]
+            with path.open("w", encoding="utf-8-sig", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=old_fields)
+                writer.writeheader()
+                writer.writerow({"entry_date": "2026-07-01", "symbol": "1111.TW", **{c: 40.0 for c in old_fields[2:]}})
+
+            append_score_snapshot(path, "2026-10-12", "2222.TW", {name: 70.0 for name in SCORE_COMPONENTS})
+
+            with path.open("r", encoding="utf-8-sig") as handle:
+                reader = csv.DictReader(handle)
+                rows = list(reader)
+            self.assertIn("pullback_score", reader.fieldnames)
+            self.assertEqual(rows[0]["kronos_score"], "40.0")
+            self.assertEqual(rows[0]["pullback_score"], "")
+            self.assertEqual(rows[1]["pullback_score"], "70.0")
+
 
 if __name__ == "__main__":
     unittest.main()

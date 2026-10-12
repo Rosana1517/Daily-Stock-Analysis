@@ -90,6 +90,7 @@ class HybridRow:
     best_entry: bool = False
     short_entry: bool = False
     dip_reversal: bool = False
+    runup_5d: float = 0.0
 
 
 def run_tw_hybrid(
@@ -166,14 +167,19 @@ def run_tw_hybrid(
         technical_score = 50 + (tech.score_adjustment if tech else 0)
         realtime_score = _realtime_score(intraday_return)
         chip_score = _chip_score(chip_snapshot)
+        runup_5d = _runup_5d(bars_by_symbol.get(symbol, []))
         hybrid_score = (
-            kronos_score * 0.35
-            + news_score * 0.15
-            + technical_score * 0.20
-            + realtime_score * 0.10
-            + signal.confidence * 100 * 0.10
-            + chip_score * 0.10
+            kronos_score * HYBRID_WEIGHTS["kronos"]
+            + news_score * HYBRID_WEIGHTS["news"]
+            + technical_score * HYBRID_WEIGHTS["technical"]
+            + realtime_score * HYBRID_WEIGHTS["realtime"]
+            + signal.confidence * 100 * HYBRID_WEIGHTS["confidence"]
+            + chip_score * HYBRID_WEIGHTS["chip"]
+            + _pullback_score(runup_5d) * HYBRID_WEIGHTS["pullback"]
         )
+        risk_note = _risk_note(signal.expected_return, tech.bias if tech else "neutral", intraday_return)
+        if runup_5d > ANTI_CHASE_RUNUP_THRESHOLD:
+            risk_note = f"{risk_note}；近5日已漲{runup_5d:.1%}，追高風險，等拉回"
         rows_by_symbol[symbol] = HybridRow(
             symbol=symbol,
             name=stock_name(symbol),
@@ -198,7 +204,7 @@ def run_tw_hybrid(
             predicted_close=signal.predicted_close,
             realtime_status=realtime.status if realtime else "無即時資料",
             action=_action(hybrid_score, signal.expected_return, intraday_return),
-            risk_note=_risk_note(signal.expected_return, tech.bias if tech else "neutral", intraday_return),
+            risk_note=risk_note,
             stop_loss_price=platform_neckline_price(bars_by_symbol.get(symbol, [])),
             take_profit_price=platform_measured_move_target(bars_by_symbol.get(symbol, [])),
             top10_main_force_buy_strength=_optional_float(chip_snapshot, "top10_main_force_buy_strength", "top10_main_force_buy_strength_proxy"),
@@ -215,6 +221,7 @@ def run_tw_hybrid(
             best_entry=_is_best_entry(bars_by_symbol.get(symbol, [])),
             short_entry=_is_short_entry(bars_by_symbol.get(symbol, [])),
             dip_reversal=_is_dip_reversal(bars_by_symbol.get(symbol, [])),
+            runup_5d=runup_5d,
         )
     report_symbols = []
     for symbol in (*analysis_symbols, *selection_plan.selected_symbols):
@@ -498,8 +505,44 @@ def _kronos_score(expected_return: float) -> float:
     return max(0.0, min(100.0, 50 + expected_return * 600))
 
 
+# 反追高設計(2026-10-12)。回測 2026-07-17~10-06 共 1,520 筆歷史推薦：
+# - 推薦前 5 日還沒漲(<=0)的那組，事後 5 日中位 +1.4%、勝率 62%，前後兩半一致；
+#   已經漲了的那組勝率只有 37~46%；當天大漲(舊 realtime_score>60)的那組最差。
+# - 全市場同條件勝率只有 47%，優勢來自「既有品質/籌碼篩選 + 還沒漲」的組合。
+# - 新權重 + 已漲多降級，每日前 5 名勝率 48% → 57%(前半 61%/後半 54%)。
+ANTI_CHASE_RUNUP_THRESHOLD = 0.03
+HYBRID_WEIGHTS: dict[str, float] = {
+    "kronos": 0.30,
+    "news": 0.10,
+    "technical": 0.15,
+    "realtime": 0.05,
+    "confidence": 0.10,
+    "chip": 0.10,
+    "pullback": 0.20,
+}
+
+
 def _realtime_score(intraday_return: float) -> float:
-    return max(0.0, min(100.0, 50 + intraday_return * 700))
+    """當天大漲不再加分、反而扣分(舊版是漲越多分越高，等於獎勵追高)；
+    當天下跌維持中性 50，不因為跌就加分。"""
+    return max(0.0, min(100.0, 50 - max(0.0, intraday_return) * 700))
+
+
+def _runup_5d(bars: list[Bar]) -> float:
+    """最近 5 個交易日的漲幅；資料不足時回傳 0(中性)。"""
+    if len(bars) < 6:
+        return 0.0
+    start, end = bars[-6].close, bars[-1].close
+    return end / start - 1 if start else 0.0
+
+
+def _pullback_score(runup_5d: float) -> float:
+    """5 日跌 10% → 100、持平 → 50、已漲 10% → 0。"""
+    return max(0.0, min(100.0, 50 - runup_5d * 500))
+
+
+def _is_chased(row: "HybridRow") -> bool:
+    return (row.runup_5d or 0.0) > ANTI_CHASE_RUNUP_THRESHOLD
 
 
 def _chip_score(chip_snapshot: dict) -> float:
@@ -628,6 +671,7 @@ def _track_recommendations(
                                 "branch_main_force_buy_streak_days": row.branch_main_force_buy_streak_days,
                             }
                         ),
+                        "pullback_score": _pullback_score(row.runup_5d),
                     },
                 )
         evaluated = evaluate_pending(RECOMMENDATION_LOG_PATH, PRICE_SNAPSHOT_DIR, report_date)
@@ -1388,6 +1432,8 @@ def _overall_focus_rows(rows: list[HybridRow], limit: int = 20) -> list[HybridRo
     ranked = sorted(
         rows,
         key=lambda row: (
+            # 近 5 日已漲超過門檻的一律排到後面(仍列出、但不佔前排)，見 ANTI_CHASE_RUNUP_THRESHOLD。
+            _is_chased(row),
             _overall_focus_priority(row),
             -(row.hybrid_score or 0.0),
             -(row.technical_score or 0.0),
