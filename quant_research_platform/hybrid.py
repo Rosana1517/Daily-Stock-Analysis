@@ -48,6 +48,7 @@ from stock_signal_system.data.foreign_flow_trend import summarize_market_foreign
 from stock_signal_system.data.foreign_futures_position import fetch_foreign_taiex_futures_position
 from stock_signal_system.data.industry_chain import INDUSTRY_CHAIN_NAMES, build_industry_chain_index, find_chain_consensus_groups
 from stock_signal_system.data.margin_balance_trend import load_recent_margin_balance_days, summarize_margin_balance_trend
+from stock_signal_system.data.politician_holdings import load_politician_pool
 from stock_signal_system.data.pristine_health import compute_debt_ratio_pct, compute_roe_pct, describe_valuation, evaluate_pristine_screen, fetch_fundamentals_for_symbol
 from stock_signal_system.data.pristine_index import evaluate_relative_strength, fetch_pristine_index_history
 
@@ -91,6 +92,7 @@ class HybridRow:
     short_entry: bool = False
     dip_reversal: bool = False
     runup_5d: float = 0.0
+    politician_holders: tuple[str, ...] = ()
 
 
 def run_tw_hybrid(
@@ -126,6 +128,10 @@ def run_tw_hybrid(
         regime_gate.bullish,
     )
     analysis_symbols = selection_plan.analysis_symbols or selection_plan.selected_symbols
+    # 政治人物持股觀察名單一併納入分析(拿到 Kronos/技術面/買點旗標)，進場時機由
+    # 既有訊號判斷；名單本身是約一年前的申報資料，見 politician_holdings 模組說明。
+    politician_pool = load_politician_pool(Path(".cache"), config.universe_path)
+    analysis_symbols = (*analysis_symbols, *(s for s in politician_pool if s not in analysis_symbols))
     config = replace(config, symbols=analysis_symbols)
     load_stock_profiles(config.universe_path, stock_snapshot_path)
     bars_by_symbol = _load_bars(config)
@@ -222,6 +228,7 @@ def run_tw_hybrid(
             short_entry=_is_short_entry(bars_by_symbol.get(symbol, [])),
             dip_reversal=_is_dip_reversal(bars_by_symbol.get(symbol, [])),
             runup_5d=runup_5d,
+            politician_holders=politician_pool[symbol].holders if symbol in politician_pool else (),
         )
     report_symbols = []
     for symbol in (*analysis_symbols, *selection_plan.selected_symbols):
@@ -229,6 +236,9 @@ def run_tw_hybrid(
             report_symbols.append(symbol)
     for symbol in report_symbols:
         if symbol in rows_by_symbol:
+            continue
+        # 觀察名單是盡力納入：抓不到 K 線的就不列，不要變成一堆「資料待補」列。
+        if symbol in politician_pool:
             continue
         rows_by_symbol[symbol] = _placeholder_row(
             symbol,
@@ -305,6 +315,7 @@ def run_tw_hybrid(
         benchmark_symbol=config.benchmark_symbol,
     )
     _save_csv(csv_path, report_rows)
+    _write_politician_alert(rows, politician_pool)
     recommendation_summary = _track_recommendations(rows, portfolio_decisions, report_date)
     _save_report(
         report_path,
@@ -543,6 +554,78 @@ def _pullback_score(runup_5d: float) -> float:
 
 def _is_chased(row: "HybridRow") -> bool:
     return (row.runup_5d or 0.0) > ANTI_CHASE_RUNUP_THRESHOLD
+
+
+# 政治人物持股觀察名單的「特別通知」寫到這個檔，workflow 的 Send LINE 步驟若看到
+# 就附加在當天那則 LINE 後面(同一個 job 的工作目錄；/data/ 已被 .gitignore)。
+POLITICIAN_ALERT_PATH = Path("data/politician_alert.txt")
+POLITICIAN_ALERT_MAX_LINES = 5
+
+
+def _politician_entry(row: "HybridRow") -> bool:
+    """名單內股票的進場條件：符合任一既有買點(☆/★/◆)，且近 5 日沒有追高。"""
+    has_entry = row.short_entry or row.best_entry or row.dip_reversal
+    return bool(row.politician_holders) and has_entry and not _is_chased(row) and row.signal_source != "data-limited"
+
+
+def _entry_marks(row: "HybridRow") -> str:
+    marks = [
+        label
+        for flag, label in ((row.short_entry, "☆短線買點"), (row.best_entry, "★最佳買點"), (row.dip_reversal, "◆超跌抄底"))
+        if flag
+    ]
+    return "、".join(marks)
+
+
+def _politician_alert_lines(rows: list["HybridRow"], politician_pool: dict) -> list[str]:
+    entries = sorted((row for row in rows if _politician_entry(row)), key=lambda row: -row.hybrid_score)
+    if not entries:
+        return []
+    declared = max((item.declaration_date for item in politician_pool.values() if item.declaration_date), default="")
+    lines = ["🏛️ 政治人物持股 進場訊號"]
+    for row in entries[:POLITICIAN_ALERT_MAX_LINES]:
+        holders = "、".join(row.politician_holders[:2]) + ("等" if len(row.politician_holders) > 2 else "")
+        lines.append(f"{row.symbol.split('.')[0]} {row.name}({holders}持有) {_entry_marks(row)} 5日{row.runup_5d:+.1%}")
+    if len(entries) > POLITICIAN_ALERT_MAX_LINES:
+        lines.append(f"…另有 {len(entries) - POLITICIAN_ALERT_MAX_LINES} 檔，詳見報告")
+    lines.append(f"(持股為 {declared[:7]} 申報資料，進場時機為系統判斷，非投資建議)")
+    return lines
+
+
+def _write_politician_alert(rows: list["HybridRow"], politician_pool: dict, path: Path = POLITICIAN_ALERT_PATH) -> None:
+    lines = _politician_alert_lines(rows, politician_pool)
+    path.unlink(missing_ok=True)  # 沒訊號的日子不能殘留前一天的通知
+    if lines:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        print(f"politician_alert_lines={len(lines)}", flush=True)
+
+
+def _politician_watch_section(rows: list["HybridRow"]) -> list[str]:
+    watched = [row for row in rows if row.politician_holders and row.signal_source != "data-limited"]
+    lines = ['<article class="report-card">', "## 🏛️ 政治人物持股觀察", ""]
+    lines.append(
+        '<p class="section-note">名單：持股市值前 5 名立委、單一部位市值 ≥ 100 萬的上市櫃股票(資料來源 legislator-wealth.tw，'
+        "解析自監察院公報財產申報)。<strong>持股是約一年前的申報資料</strong>，不代表他們近期有買賣；"
+        "「進場訊號」是本系統依 ☆/★/◆ 買點且近 5 日未追高所做的判斷。</p>"
+    )
+    if not watched:
+        lines.extend(["- 今日名單資料暫缺或無可分析的股票。", "", "</article>"])
+        return lines
+    watched.sort(key=lambda row: (not _politician_entry(row), _is_chased(row), -row.hybrid_score))
+    lines.append(
+        '<div class="table-wrap"><table><thead><tr><th>股票</th><th>名稱</th><th>持有立委</th>'
+        "<th>5日漲幅</th><th>買點</th><th>狀態</th><th>Hybrid</th></tr></thead><tbody>"
+    )
+    for row in watched:
+        status = "進場訊號" if _politician_entry(row) else "已漲多，等拉回" if _is_chased(row) else "觀察中"
+        lines.append(
+            f"<tr><td>{html.escape(row.symbol)}</td><td>{html.escape(row.name)}</td>"
+            f"<td>{html.escape('、'.join(row.politician_holders))}</td><td>{row.runup_5d:+.1%}</td>"
+            f"<td>{html.escape(_entry_marks(row) or '-')}</td><td>{status}</td><td>{row.hybrid_score:.1f}</td></tr>"
+        )
+    lines.extend(["</tbody></table></div>", "", "</article>"])
+    return lines
 
 
 def _chip_score(chip_snapshot: dict) -> float:
@@ -1156,6 +1239,7 @@ def _save_report(
         "</article>",
     ])
     lines.append("</div>")
+    lines.extend(_politician_watch_section(rows))
     lines.append('<div id="tech-section-marker"></div>')
     lines.extend(_candidate_analysis_block(rows, portfolio_decisions, chip_snapshot_by_symbol))
     # 第二階段：資金與籌碼面、產業面。融資餘額/外資期貨/外資動向/RSS 產業訊號

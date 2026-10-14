@@ -11,6 +11,7 @@ from quant_research_platform.data import fetch_openbb_ohlcv, fetch_yahoo_ohlcv, 
 from quant_research_platform.twse_realtime import poll_realtime_quotes
 from quant_research_platform.universe import build_candidate_selection_plan
 from stock_signal_system.cli_step_timer import _step_timer
+from stock_signal_system.data.politician_holdings import load_politician_pool
 
 
 def handle_backtest_chip_breakout(args) -> None:
@@ -35,6 +36,28 @@ def handle_backtest_chip_breakout(args) -> None:
             " (needs >=21 daily price snapshots plus 5 forward sessions)",
             flush=True,
         )
+
+
+def _fetch_politician_pool_bars(config, candidate_symbols, period: str, required_bars: int) -> dict:
+    """政治人物持股觀察名單的 K 線：盡力抓，抓不到的直接略過。
+    刻意不放進下面候選股的嚴格覆蓋檢查(缺任何一檔就 SystemExit)，名單裡可能有
+    資料不全的股票，不能因此讓整個每日排程失敗。"""
+    try:
+        pool_symbols = tuple(s for s in load_politician_pool(Path(".cache"), config.universe_path) if s not in candidate_symbols)
+        if not pool_symbols:
+            return {}
+        bars = fetch_openbb_ohlcv(pool_symbols, config.openbb_provider, period)
+        short = tuple(s for s in pool_symbols if len(bars.get(s, [])) < required_bars)
+        if short:
+            for symbol, retried in fetch_yahoo_ohlcv(short, period).items():
+                if len(retried) > len(bars.get(symbol, [])):
+                    bars[symbol] = retried
+        usable = {s: b for s, b in bars.items() if s in pool_symbols and len(b) >= required_bars}
+        print(f"politician_pool_ohlcv_symbols={len(usable)}/{len(pool_symbols)}", flush=True)
+        return usable
+    except Exception as exc:
+        print(f"warning: politician_pool_ohlcv_skipped error={exc}", flush=True)
+        return {}
 
 
 def handle_refresh_quant_ohlcv(args) -> None:
@@ -81,6 +104,7 @@ def handle_refresh_quant_ohlcv(args) -> None:
                 unresolved_symbols.append(symbol)
         merged_bars = dict(existing_all)
         merged_bars.update(bars_by_symbol)
+        merged_bars.update(_fetch_politician_pool_bars(config, symbols, args.period, required_bars))
         output = save_ohlcv_csv(config.ohlcv_path, merged_bars)
         rows = sum(len(rows) for rows in bars_by_symbol.values())
         print(f"quant_ohlcv_output={output}", flush=True)
